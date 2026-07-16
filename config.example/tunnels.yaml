@@ -1,0 +1,30 @@
+# Tunnel configuration for VPN-required environments
+# Each tunnel specifies a type and its check mechanism
+
+tunnels:
+  # WireGuard tunnels (globex workspace)
+  vpn1:
+    type: wireguard
+    tunnel: vpn1
+    check_url: ""  # Uses built-in wg show
+
+  # GlobalProtect (future - acme, etc.)
+  # globalprotect:
+  #   type: globalprotect
+  #   portal: ""  # GP portal address
+
+# Tunnel types and their check mechanisms
+tunnel_types:
+  wireguard:
+    check_command: "wg show {tunnel} dump"
+    success_indicator: "transfer_tx"
+
+  globalprotect:
+    check_command: "gpstatus"
+    success_indicator: "Connected"
+
+  # Generic TCP connectivity check as fallback
+  tcp:
+    check_host: ""  # Set per-tunnel
+    check_port: 443
+    timeout_ms: 3000

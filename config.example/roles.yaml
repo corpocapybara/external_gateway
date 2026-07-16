@@ -1,0 +1,193 @@
+# Roles define reusable operation sets for agents
+# Operations reference the operations.yaml registry
+
+roles:
+  dev-bot:
+    description: "Full development access - Jira read/write, Postgres queries"
+    operations:
+      - jira.search
+      - jira.create
+      - jira.comment
+      - jira.status
+      - jira.assign
+      - pg.query
+      - pg.tables
+      - pg.schema
+
+  dev-bot-jira-only:
+    description: "Jira access only for development bots"
+    operations:
+      - jira.search
+      - jira.create
+      - jira.comment
+      - jira.status
+
+  readonly:
+    description: "Read-only access - search and query only"
+    operations:
+      - jira.search
+      - pg.query
+
+  readonly-jira:
+    description: "Jira read-only access"
+    operations:
+      - jira.search
+      - jira.status
+
+  readonly-postgres:
+    description: "Postgres read-only access"
+    operations:
+      - pg.query
+      - pg.tables
+      - pg.schema
+
+  repo-reader:
+    description: "Repository reading - PRs, code search"
+    operations:
+      - bitbucket.pr
+      - bitbucket.pr_comments
+      - bitbucket.commits
+      - gitlab.mr
+      - gitlab.mr_comments
+      - github.pr
+      - github.pr_files
+      - github.pr_comments
+      - github.issues
+      - github.issue
+      - github.issue_comments
+      - github.search_code
+      - github.branches
+      - github.commits
+      - github.contents
+
+  scheduler:
+    description: "Clockify scheduling for automated workflows"
+    operations:
+      - clockify.workspace
+      - clockify.projects
+      - clockify.entries
+      - clockify.add_entry
+      - clockify.edit_entry
+
+  kibana-user:
+    description: "Kibana search access"
+    operations:
+      - kibana.search
+      - kibana.login
+
+  slack-user:
+    description: "Slack messaging access"
+    operations:
+      - slack.channels
+      - slack.messages
+      - slack.send
+
+  wireguard-readonly:
+    description: "WireGuard tunnel status (no control)"
+    operations:
+      - wireguard.status
+      - wireguard.test
+
+  github-writer:
+    description: "GitHub issues + PRs read-write"
+    operations:
+      - github.pr
+      - github.pr_files
+      - github.pr_comments
+      - github.issues
+      - github.issue
+      - github.issue_comments
+      - github.create_issue
+      - github.create_pr
+      - github.issue_comment
+      - github.search_code
+      - github.branches
+      - github.commits
+      - github.contents
+
+  trello-user:
+    description: "Trello board management"
+    operations:
+      - trello.boards
+      - trello.board
+      - trello.lists
+      - trello.cards
+      - trello.card
+      - trello.create_card
+      - trello.update_card
+      - trello.add_comment
+      - trello.members
+      - trello.labels
+      - trello.checklists
+
+  email-user:
+    description: "Email read + send"
+    operations:
+      - email.list_mailboxes
+      - email.search
+      - email.read
+      - email.send
+
+  email-readonly:
+    description: "Email read-only"
+    operations:
+      - email.list_mailboxes
+      - email.search
+      - email.read
+
+  full-access:
+    description: "All available operations (use sparingly)"
+    operations:
+      - jira.search
+      - jira.create
+      - jira.comment
+      - jira.status
+      - jira.assign
+      - bitbucket.pr
+      - bitbucket.pr_comments
+      - bitbucket.commits
+      - gitlab.mr
+      - gitlab.mr_comments
+      - github.pr
+      - github.pr_files
+      - github.pr_comments
+      - github.issues
+      - github.issue
+      - github.issue_comments
+      - github.create_issue
+      - github.create_pr
+      - github.issue_comment
+      - github.search_code
+      - github.branches
+      - github.commits
+      - github.contents
+      - pg.query
+      - pg.tables
+      - pg.schema
+      - kibana.search
+      - kibana.login
+      - clockify.workspace
+      - clockify.projects
+      - clockify.entries
+      - clockify.add_entry
+      - clockify.edit_entry
+      - slack.channels
+      - slack.messages
+      - slack.send
+      - trello.boards
+      - trello.board
+      - trello.lists
+      - trello.cards
+      - trello.card
+      - trello.create_card
+      - trello.update_card
+      - trello.add_comment
+      - trello.members
+      - trello.labels
+      - trello.checklists
+      - email.list_mailboxes
+      - email.search
+      - email.read
+      - email.send
+      - wireguard.status
+      - wireguard.test

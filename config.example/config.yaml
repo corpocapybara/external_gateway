@@ -1,0 +1,214 @@
+server:
+  listen_addr: "127.0.0.1"
+  # port: assigned alphabetically at deploy time (base 8443, sorted by
+  # workspace name). Uncomment + set to pin/override this workspace's port.
+  #port: 8443
+  tls_cert: "C:\\Program Files\\external_gateway\\certs\\localhost.crt"
+  tls_key: "C:\\Program Files\\external_gateway\\certs\\localhost.key"
+
+audit:
+  dir: "C:\\ProgramData\\external_gateway\\audit"
+  max_size_mb: 100
+
+roles:
+  dev-bot:
+    operations:
+      - jira.search
+      - jira.create
+      - jira.comment
+      - jira.status
+      - pg.query
+  readonly:
+    operations:
+      - jira.search
+      - pg.query
+  repo-reader:
+    operations:
+      - bitbucket.pr
+      - bitbucket.search_code
+      - github.pr
+      - github.search_code
+
+agents:
+  - id: agent-globex
+    token_sha256: ""  # Set after generating token
+    grants:
+      - workspace: globex
+        role: dev-bot
+  - id: agent-acme
+    token_sha256: ""  # Set after generating token
+    grants:
+      - workspace: acme
+        role: readonly
+  - id: agent-initech
+    token_sha256: ""  # Set after generating token
+    grants:
+      - workspace: initech
+        role: repo-reader
+
+workspaces:
+  globex:
+    sites:
+      jira:
+        environments:
+          prod:
+            base_url: https://your-tenant.atlassian.net
+            auth:
+              type: basic
+            user: bot@globex.io
+            secret_ref: secret://globex/jira
+      bitbucket:
+        environments:
+          prod:
+            base_url: https://api.bitbucket.org
+            auth:
+              type: basic
+            workspace: myorg
+            user: bot@globex.io
+            secret_ref: secret://globex/bitbucket
+      github:
+        environments:
+          prod:
+            base_url: https://api.github.com
+            auth:
+              type: bearer
+            org: ""  # Set to GitHub org
+            secret_ref: secret://globex/github
+      email:
+        environments:
+          prod:
+            host: mail.example.com
+            user: bot@globex.io
+            imap_port: 993
+            smtp_port: 587
+            auth:
+              type: basic
+            secret_ref: secret://globex/email
+      kibana:
+        environments:
+          umbrella:
+            base_url: https://elk.globex.example.com:5601
+            auth:
+              type: basic
+            user: ""
+            secret_ref: secret://globex/kibana-umbrella
+            requires_tunnel: vpn1
+          globex:
+            base_url: https://elk.myorg.example.com:5601
+            auth:
+              type: basic
+            user: ""
+            secret_ref: secret://globex/kibana-globex
+            requires_tunnel: vpn1
+      postgres:
+        environments:
+          local:
+            host: localhost
+            port: 5432
+            databases:
+              main:
+                db: appdb
+                schema: public
+            secret_ref: secret://globex/pg-local
+          staging:
+            host: stg-db.internal
+            port: 5432
+            databases:
+              main:
+                db: staging_main
+                schema: public
+            secret_ref: secret://globex/pg-staging
+            requires_tunnel: vpn1
+    policy:
+      jira_projects:
+        - PROJ1
+        - PROJ2
+      bitbucket_repos:
+        - backend-service
+        - admin-panel
+        - core-library
+        - auth-service
+      pg_allowed_tables:
+        - public.*
+        - reporting.*
+
+  acme:
+    sites:
+      jira:
+        environments:
+          prod:
+            base_url: https://your-corp-tenant.atlassian.net
+            auth:
+              type: basic
+            user: bot@acme.io
+            secret_ref: secret://acme/jira
+      gitlab:
+        environments:
+          prod:
+            base_url: https://gitlab.com/api/v4
+            auth:
+              type: bearer
+            group: acmeco
+            secret_ref: secret://acme/gitlab
+      postgres:
+        environments:
+          staging:
+            host: stg-pg.acme.internal
+            port: 5432
+            secret_ref: secret://acme/pg-staging
+            requires_tunnel: acme-vpn
+            databases:
+              core:
+                db: appdb
+                schema: public
+              bonus:
+                db: bonus-system
+                schema: public
+              payments:
+                db: payments-core
+                schema: public
+              referrals:
+                db: referral-engine
+                schema: public
+          prod:
+            host: prod-pg.acme.internal
+            port: 5432
+            secret_ref: secret://acme/pg-prod
+            requires_tunnel: acme-vpn
+            databases:
+              core:
+                db: appdb
+                schema: public
+              bonus:
+                db: bonus-system
+                schema: public
+    policy:
+      jira_projects:
+        - PROJ
+      gitlab_projects:
+        - acmeco/services/*
+        - acmeco/core/*
+      pg_allowed_tables:
+        - public.*
+
+  initech:
+    sites:
+      github:
+        environments:
+          prod:
+            base_url: https://api.github.com
+            auth:
+              type: bearer
+            org: ""  # Set to actual org name
+            secret_ref: secret://initech/github
+      trello:
+        environments:
+          prod:
+            base_url: https://api.trello.com/1
+            auth:
+              type: trello
+            secret_ref: secret://initech/trello-key
+            cookie_secret_ref: secret://initech/trello-token
+    policy:
+      github_repos:
+        - ""  # Set to actual repos
