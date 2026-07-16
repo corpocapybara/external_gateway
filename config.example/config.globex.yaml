@@ -1,0 +1,211 @@
+server:
+  listen_addr: "127.0.0.1"
+  # port: assigned alphabetically at deploy time (base 8443, sorted by
+  # workspace name). Uncomment + set to pin/override this workspace's port.
+  #port: 8443
+
+audit:
+  dir: "C:\\ProgramData\\external_gateway\\audit"
+  max_size_mb: 100
+
+roles:
+  dev-bot:
+    operations:
+      - jira.search
+      - jira.create
+      - jira.comment
+      - jira.assign
+      - jira.status
+      - jira.transitions
+      - jira.status_history
+      - jira.issue
+      - jira.comments
+      - jira.me
+      - bitbucket.pr
+      - bitbucket.diff
+      - bitbucket.comments
+      - bitbucket.commits
+      - bitbucket.branches
+      - bitbucket.create_pr
+      - bitbucket.pr_by_branch
+      - bitbucket.update_pr
+      - github.pr
+      - github.pr_files
+      - github.pr_comments
+      - github.issues
+      - github.issue
+      - github.issue_comments
+      - github.create_issue
+      - github.create_pr
+      - github.issue_comment
+      - github.search_code
+      - github.branches
+      - github.commits
+      - github.contents
+      - kibana.search
+      - kibana.login
+      - postgres.query
+      - postgres.tables
+      - postgres.schema
+      - trello.boards
+      - trello.board
+      - trello.lists
+      - trello.cards
+      - trello.card
+      - trello.create_card
+      - trello.add_comment
+      - trello.labels
+      - email.list_mailboxes
+      - email.search
+      - email.read
+      - email.send
+      - wireguard.status
+      - wireguard.test
+
+  readonly:
+    operations:
+      - jira.search
+      - jira.issue
+      - jira.comments
+      - jira.status
+      - jira.transitions
+      - jira.me
+      - bitbucket.pr
+      - bitbucket.diff
+      - bitbucket.comments
+      - bitbucket.commits
+      - kibana.search
+      - kibana.login
+      - postgres.query
+      - postgres.tables
+      - postgres.schema
+
+  jira-only:
+    operations:
+      - jira.search
+      - jira.issue
+      - jira.comments
+      - jira.comment
+      - jira.status
+      - jira.transitions
+      - jira.me
+
+agents:
+  - id: agent-globex
+    token_sha256: ""  # TODO: Set after generating token
+    grants:
+      - workspace: globex
+        role: dev-bot
+
+workspaces:
+  globex:
+    description: "Globex workspace - Jira (PROJ1/PROJ2), Bitbucket, Kibana, PostgreSQL"
+    sites:
+      jira:
+        environments:
+          prod:
+            base_url: https://your-tenant.atlassian.net
+            auth:
+              type: basic
+            user: ""  # TODO: Set bot email
+            secret_ref: secret://globex/jira
+      bitbucket:
+        environments:
+          prod:
+            base_url: https://api.bitbucket.org
+            auth:
+              type: basic
+            workspace: myorg
+            user: ""  # TODO: Set bot email
+            secret_ref: secret://globex/bitbucket
+      github:
+        environments:
+          prod:
+            base_url: https://api.github.com
+            auth:
+              type: bearer
+            org: ""  # Set to GitHub org
+            secret_ref: secret://globex/github
+      trello:
+        environments:
+          prod:
+            base_url: https://api.trello.com/1
+            auth:
+              type: trello
+            secret_ref: secret://globex/trello-key
+            cookie_secret_ref: secret://globex/trello-token
+      email:
+        environments:
+          prod:
+            host: mail.example.com
+            user: bot@globex.io
+            imap_port: 993
+            smtp_port: 587
+            auth:
+              type: basic
+            secret_ref: secret://globex/email
+      kibana:
+        environments:
+          umbrella:
+            base_url: https://elk.globex.example.com:5601
+            auth:
+              type: basic
+            user: ""  # TODO: Set user
+            secret_ref: secret://globex/kibana-umbrella
+            requires_tunnel: vpn1
+          globex:
+            base_url: https://elk.myorg.example.com:5601
+            auth:
+              type: basic
+            user: ""  # TODO: Set user
+            secret_ref: secret://globex/kibana-globex
+            requires_tunnel: vpn1
+      postgres:
+        environments:
+          local:
+            host: localhost
+            port: 5432
+            user: postgres
+            databases:
+              app:
+                db: appdb
+                schema: public
+            secret_ref: secret://globex/pg-local
+          staging:
+            host: stg-db.internal
+            port: 5432
+            user: postgres
+            databases:
+              staging_main:
+                db: staging_main
+                schema: public
+            secret_ref: secret://globex/pg-staging
+            requires_tunnel: vpn1
+      wireguard:
+        environments:
+          vpn1:
+            tunnel: vpn1
+            endpoint: ""  # TODO: Set WireGuard endpoint if needed
+    policy:
+      jira_projects:
+        - PROJ1
+        - PROJ2
+      bitbucket_repos:
+        - backend-service
+        - admin-panel
+        - core-library
+        - auth-service
+      github_repos:
+        - backend-service
+        - admin-panel
+        - core-library
+        - auth-service
+      kibana_clusters:
+        - umbrella
+        - globex
+      kibana_indices:
+        - logstash-nth-stg*
+        - logstash-*
+      pg_allowed_tables:
+        - public.*
+        - reporting.*

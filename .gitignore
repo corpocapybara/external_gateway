@@ -1,0 +1,50 @@
+# Binaries
+*.exe
+*.test
+*.prof
+
+# Go
+vendor/
+go.work
+go.work.sum
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets (never commit)
+agent-keys.txt
+**/secrets/
+*.pem
+*.crt
+*.key
+
+# Runtime artifacts
+*.log
+feedback.log
+
+# Config (use config.example/ as template)
+# Every live per-workspace config + operation catalog is ignored generically:
+# they carry real hostnames, emails, token hashes, and cluster/env/group ids.
+# The workspace token is the `<x>` in config.<x>.yaml / operations.<x>.yaml.
+# All root-anchored (leading /) so config.example/ templates stay tracked.
+/config.yaml
+/secrets.yaml
+/config.*.yaml
+/operations.*.yaml
+
+# Local domain knowledge (workspace specifics, tokens, URLs)
+.ai/LOCAL.md
+
+# Build / deploy
+dist/
+
+# Temp
+tmp/

@@ -1,0 +1,1195 @@
+# Globex Workspace Operations
+# Example Gateway
+
+operations:
+  # === Jira Operations ===
+  jira.issue:
+    connector: http-rest
+    site: jira
+    method: GET
+    path: /rest/api/2/issue/{key}
+    params:
+      key:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - key
+        - fields.summary
+        - fields.description
+        - fields.status
+        - fields.assignee
+        - fields.reporter
+        - fields.created
+        - fields.updated
+        - fields.issuetype
+
+  jira.comments:
+    connector: http-rest
+    site: jira
+    method: GET
+    path: /rest/api/2/issue/{key}/comment
+    params:
+      key:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - comments[].id
+        - comments[].body
+        - comments[].author.displayName
+        - comments[].created
+
+  jira.search:
+    connector: http-rest
+    site: jira
+    method: POST
+    path: /rest/api/3/search/jql
+    params:
+      jql:
+        type: string
+        required: true
+      maxResults:
+        type: int
+        max: 100
+        default: 50
+    constraints:
+      - type: jql_scope
+        projects: $workspace.jira_projects
+    response:
+      allow_fields:
+        - issues[].key
+        - issues[].fields.summary
+        - issues[].fields.description
+        - issues[].fields.status
+        - issues[].fields.assignee
+        - issues[].fields.created
+        - issues[].fields.updated
+        - issues[].fields.issuetype
+
+  jira.comment:
+    connector: http-rest
+    site: jira
+    method: POST
+    path: /rest/api/2/issue/{key}/comment
+    params:
+      key:
+        type: string
+        required: true
+      body:
+        type: string
+        maxlen: 8000
+        required: true
+    body_template: |
+      {"body":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"{{body}}"}]}]}}
+    response:
+      allow_fields:
+        - id
+        - self
+
+  jira.assign:
+    connector: http-rest
+    site: jira
+    method: PUT
+    path: /rest/api/2/issue/{key}/assignee
+    params:
+      key:
+        type: string
+        required: true
+      accountId:
+        type: string
+        required: true
+    body_template: |
+      {"accountId":"{{accountId}}"}
+    response:
+      allow_fields:
+        - accountId
+        - displayName
+
+  jira.transitions:
+    connector: http-rest
+    site: jira
+    method: GET
+    path: /rest/api/2/issue/{key}/transitions
+    params:
+      key:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - transitions[].id
+        - transitions[].name
+
+  jira.status_history:
+    connector: http-rest
+    site: jira
+    method: GET
+    path: /rest/api/2/issue/{key}
+    params:
+      key:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - key
+        - fields.summary
+        - fields.status
+        - fields.updated
+        - changelog.histories[].created
+        - changelog.histories[].author.displayName
+        - changelog.histories[].items[].field
+        - changelog.histories[].items[].fromString
+        - changelog.histories[].items[].toString
+
+  jira.status:
+    connector: http-rest
+    site: jira
+    method: POST
+    path: /rest/api/2/issue/{key}/transitions
+    params:
+      key:
+        type: string
+        required: true
+      transition:
+        type: string
+        required: true
+    body_template: |
+      {"transition":{"name":"{{transition}}"}}
+    response:
+      allow_fields:
+        - id
+        - status
+
+  jira.me:
+    connector: http-rest
+    site: jira
+    method: GET
+    path: /rest/api/2/myself
+    response:
+      allow_fields:
+        - accountId
+        - displayName
+        - emailAddress
+
+  jira.create:
+    connector: http-rest
+    site: jira
+    method: POST
+    path: /rest/api/2/issue
+    params:
+      project:
+        type: enum
+        values:
+          - PROJ1
+          - PROJ2
+        required: true
+      type:
+        type: enum
+        values:
+          - Bug
+          - Task
+          - Story
+          - Epic
+        required: true
+      summary:
+        type: string
+        maxlen: 255
+        required: true
+      description:
+        type: string
+        maxlen: 8000
+    body_template: |
+      {"fields":{"project":{"key":"{{project}}"},"issuetype":{"name":"{{type}}"},"summary":"{{summary}}","description":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"{{description}}"}]}]}}}
+    constraints:
+      - type: project_scope
+        projects: $workspace.jira_projects
+    response:
+      allow_fields:
+        - key
+        - id
+        - self
+
+  # === Bitbucket Operations ===
+  bitbucket.pr:
+    connector: http-rest
+    site: bitbucket
+    method: GET
+    path: /2.0/repositories/{site.workspace}/{repo}/pullrequests/{id}
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      id:
+        type: int
+        required: true
+    constraints:
+      - type: repo_scope
+        repos: $workspace.bitbucket_repos
+    response:
+      allow_fields:
+        - id
+        - title
+        - state
+        - source.branch.name
+        - destination.branch.name
+        - author.display_name
+        - created_on
+        - updated_on
+        - links.diff.href
+
+  bitbucket.diff:
+    connector: http-rest
+    site: bitbucket
+    method: GET
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      id:
+        type: int
+        required: true
+    response:
+      allow_fields: []
+
+  bitbucket.comments:
+    connector: http-rest
+    site: bitbucket
+    method: GET
+    path: /2.0/repositories/{site.workspace}/{repo}/pullrequests/{id}/comments
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      id:
+        type: int
+        required: true
+    response:
+      allow_fields:
+        - values[].id
+        - values[].content.raw
+        - values[].user.display_name
+        - values[].created_on
+
+  bitbucket.commits:
+    connector: http-rest
+    site: bitbucket
+    method: GET
+    path: /2.0/repositories/{site.workspace}/{repo}/commits/{branch}
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      branch:
+        type: string
+        default: develop
+      limit:
+        type: int
+        max: 50
+        default: 10
+    response:
+      allow_fields:
+        - values[].hash
+        - values[].message
+        - values[].author.display_name
+        - values[].date
+
+  bitbucket.branches:
+    connector: http-rest
+    site: bitbucket
+    method: GET
+    path: /2.0/repositories/{site.workspace}/{repo}/refs/branches
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      filter:
+        type: string
+    response:
+      allow_fields:
+        - values[].name
+        - values[].target.date
+        - values[].target.author.display_name
+
+  bitbucket.create_pr:
+    connector: http-rest
+    site: bitbucket
+    method: POST
+    path: /2.0/repositories/{site.workspace}/{repo}/pullrequests
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      title:
+        type: string
+        required: true
+      source_branch:
+        type: string
+        required: true
+      target_branch:
+        type: string
+        default: main
+      description:
+        type: string
+    body_template: |
+      {"title":"{{title}}","source":{"branch":{"name":"{{source_branch}}"}},"destination":{"branch":{"name":"{{target_branch}}"}},"description":"{{description}}","close_source_branch":true}
+    response:
+      allow_fields:
+        - id
+        - title
+        - state
+        - links.html.href
+
+  bitbucket.pr_by_branch:
+    connector: http-rest
+    site: bitbucket
+    method: GET
+    path: /2.0/repositories/{site.workspace}/{repo}/pullrequests
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      source_branch:
+        type: string
+        required: true
+      state:
+        type: string
+        default: OPEN
+    response:
+      allow_fields:
+        - values[].id
+        - values[].title
+        - values[].source.branch.name
+
+  bitbucket.update_pr:
+    connector: http-rest
+    site: bitbucket
+    method: PUT
+    path: /2.0/repositories/{site.workspace}/{repo}/pullrequests/{id}
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      id:
+        type: int
+        required: true
+      title:
+        type: string
+      description:
+        type: string
+      target_branch:
+        type: string
+    response:
+      allow_fields:
+        - id
+        - title
+        - description
+
+  # === Kibana Operations ===
+  kibana.login:
+    connector: http-rest
+    site: kibana
+    method: POST
+    path: /_security/api_key
+    params:
+      env:
+        type: string
+        required: true
+      password:
+        type: string
+        required: true
+      name:
+        type: string
+        default: gateway-login-{{now}}
+    body_template: |
+      {"name":"{{name}}"}
+    constraints:
+      - type: readonly
+
+  kibana.search:
+    connector: http-rest
+    site: kibana
+    method: POST
+    path: /_search
+    params:
+      query:
+        type: string
+        required: true
+      index:
+        type: string
+        default: logstash-*
+      size:
+        type: int
+        default: 20
+        max: 100
+      cluster:
+        type: enum
+        values:
+          - umbrella
+          - globex
+        default: umbrella
+    constraints:
+      - type: kibana_index_scope
+        indices: $workspace.kibana_indices
+    body_template: |
+      {"query":{"bool":{"must":[{"query_string":{"query":"{{query}}"}}]}},"size":{{size}},"sort":[{"@timestamp":"desc"}]}
+    response:
+      allow_fields:
+        - hits.total
+        - hits.hits[]._source.@timestamp
+        - hits.hits[]._source.message
+        - hits.hits[]._source.exceptions
+        - hits.hits[]._source.stackTrace
+        - hits.hits[]._source.level
+        - hits.hits[]._source.logger
+
+  # === PostgreSQL Operations ===
+  postgres.query:
+    connector: postgres
+    site: postgres
+    params:
+      env:
+        type: enum
+        values:
+          - local
+          - staging
+        required: true
+      db:
+        type: string
+        required: true
+      sql:
+        type: string
+        required: true
+    constraints:
+      - type: readonly
+      - type: allowed_tables
+        tables: $workspace.pg_allowed_tables
+      - type: max_rows
+        limit: 1000
+      - type: statement_timeout
+        ms: 5000
+
+  postgres.tables:
+    connector: postgres
+    site: postgres
+    params:
+      env:
+        type: enum
+        values:
+          - local
+          - staging
+        required: true
+      db:
+        type: string
+        required: true
+    constraints:
+      - type: readonly
+      - type: allowed_tables
+        tables: $workspace.pg_allowed_tables
+
+  postgres.schema:
+    connector: postgres
+    site: postgres
+    params:
+      env:
+        type: enum
+        values:
+          - local
+          - staging
+        required: true
+      db:
+        type: string
+        required: true
+      table:
+        type: string
+        required: true
+    constraints:
+      - type: readonly
+      - type: allowed_tables
+        tables: $workspace.pg_allowed_tables
+
+  # === GitHub Operations ===
+  github.pr:
+    connector: http-rest
+    site: github
+    method: GET
+    path: /repos/{site.org}/{repo}/pulls/{number}
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      number:
+        type: int
+        required: true
+    response:
+      allow_fields:
+        - id
+        - number
+        - title
+        - state
+        - head.ref
+        - base.ref
+        - user.login
+        - created_at
+        - updated_at
+
+  github.pr_files:
+    connector: http-rest
+    site: github
+    method: GET
+    path: /repos/{site.org}/{repo}/pulls/{number}/files
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      number:
+        type: int
+        required: true
+    response:
+      allow_fields:
+        - filename
+        - status
+        - additions
+        - deletions
+        - changes
+
+  github.pr_comments:
+    connector: http-rest
+    site: github
+    method: GET
+    path: /repos/{site.org}/{repo}/pulls/{number}/comments
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      number:
+        type: int
+        required: true
+    response:
+      allow_fields:
+        - id
+        - body
+        - user.login
+        - created_at
+        - path
+        - line
+
+  github.issues:
+    connector: http-rest
+    site: github
+    method: GET
+    path: /repos/{site.org}/{repo}/issues
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      state:
+        type: enum
+        values:
+          - open
+          - closed
+          - all
+        default: open
+      labels:
+        type: string
+    response:
+      allow_fields:
+        - number
+        - title
+        - state
+        - user.login
+        - labels[].name
+        - created_at
+        - updated_at
+
+  github.issue:
+    connector: http-rest
+    site: github
+    method: GET
+    path: /repos/{site.org}/{repo}/issues/{number}
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      number:
+        type: int
+        required: true
+    response:
+      allow_fields:
+        - number
+        - title
+        - state
+        - body
+        - user.login
+        - labels[].name
+        - assignees[].login
+        - created_at
+        - updated_at
+
+  github.issue_comments:
+    connector: http-rest
+    site: github
+    method: GET
+    path: /repos/{site.org}/{repo}/issues/{number}/comments
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      number:
+        type: int
+        required: true
+    response:
+      allow_fields:
+        - id
+        - body
+        - user.login
+        - created_at
+
+  github.create_issue:
+    connector: http-rest
+    site: github
+    method: POST
+    path: /repos/{site.org}/{repo}/issues
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      title:
+        type: string
+        maxlen: 256
+        required: true
+      body:
+        type: string
+        maxlen: 32000
+      labels:
+        type: list
+    body_template: |
+      {"title":"{{title}}","body":"{{body}}","labels":{{labels}}}
+    response:
+      allow_fields:
+        - number
+        - title
+        - state
+
+  github.create_pr:
+    connector: http-rest
+    site: github
+    method: POST
+    path: /repos/{site.org}/{repo}/pulls
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      title:
+        type: string
+        maxlen: 256
+        required: true
+      head:
+        type: string
+        required: true
+      base:
+        type: string
+        required: true
+      body:
+        type: string
+        maxlen: 32000
+    body_template: |
+      {"title":"{{title}}","head":"{{head}}","base":"{{base}}","body":"{{body}}"}
+    response:
+      allow_fields:
+        - number
+        - title
+        - state
+
+  github.issue_comment:
+    connector: http-rest
+    site: github
+    method: POST
+    path: /repos/{site.org}/{repo}/issues/{number}/comments
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      number:
+        type: int
+        required: true
+      body:
+        type: string
+        maxlen: 32000
+        required: true
+    body_template: |
+      {"body":"{{body}}"}
+    response:
+      allow_fields:
+        - id
+
+  github.search_code:
+    connector: http-rest
+    site: github
+    method: GET
+    path: /search/code
+    params:
+      q:
+        type: string
+        required: true
+      per_page:
+        type: int
+        max: 50
+        default: 10
+    response:
+      allow_fields:
+        - items[].name
+        - items[].path
+        - items[].repository.full_name
+        - total_count
+
+  github.branches:
+    connector: http-rest
+    site: github
+    method: GET
+    path: /repos/{site.org}/{repo}/branches
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+    response:
+      allow_fields:
+        - name
+        - commit.sha
+        - protected
+
+  github.commits:
+    connector: http-rest
+    site: github
+    method: GET
+    path: /repos/{site.org}/{repo}/commits
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      sha:
+        type: string
+      per_page:
+        type: int
+        max: 50
+        default: 10
+    response:
+      allow_fields:
+        - sha
+        - commit.message
+        - commit.author.name
+        - commit.author.date
+
+  github.contents:
+    connector: http-rest
+    site: github
+    method: GET
+    path: /repos/{site.org}/{repo}/contents/{path}
+    params:
+      repo:
+        type: enum
+        values:
+          - backend-service
+          - admin-panel
+          - core-library
+          - auth-service
+        required: true
+      path:
+        type: string
+        required: true
+      ref:
+        type: string
+    response:
+      allow_fields:
+        - name
+        - path
+        - content
+        - encoding
+        - size
+
+  # === Trello Operations ===
+  trello.boards:
+    connector: http-rest
+    site: trello
+    method: GET
+    path: /members/me/boards
+    params:
+      filter:
+        type: enum
+        values:
+          - all
+          - open
+          - closed
+        default: open
+    response:
+      allow_fields:
+        - id
+        - name
+        - url
+
+  trello.board:
+    connector: http-rest
+    site: trello
+    method: GET
+    path: /boards/{id}
+    params:
+      id:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - id
+        - name
+        - desc
+        - url
+        - lists[].id
+        - lists[].name
+
+  trello.lists:
+    connector: http-rest
+    site: trello
+    method: GET
+    path: /boards/{boardId}/lists
+    params:
+      boardId:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - id
+        - name
+
+  trello.cards:
+    connector: http-rest
+    site: trello
+    method: GET
+    path: /lists/{listId}/cards
+    params:
+      listId:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - id
+        - name
+        - desc
+        - due
+        - url
+        - pos
+
+  trello.card:
+    connector: http-rest
+    site: trello
+    method: GET
+    path: /cards/{id}
+    params:
+      id:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - id
+        - name
+        - desc
+        - due
+        - labels[].name
+        - url
+        - idList
+        - pos
+
+  trello.create_card:
+    connector: http-rest
+    site: trello
+    method: POST
+    path: /cards
+    params:
+      idList:
+        type: string
+        required: true
+      name:
+        type: string
+        maxlen: 16384
+        required: true
+      desc:
+        type: string
+        maxlen: 16384
+    body_template: |
+      {"idList":"{{idList}}","name":"{{name}}","desc":"{{desc}}"}
+    response:
+      allow_fields:
+        - id
+        - name
+        - url
+
+  trello.update_card:
+    connector: http-rest
+    site: trello
+    method: PUT
+    path: /cards/{id}
+    params:
+      id:
+        type: string
+        required: true
+      name:
+        type: string
+        maxlen: 16384
+      desc:
+        type: string
+        maxlen: 16384
+      idList:
+        type: string
+    response:
+      allow_fields:
+        - id
+        - name
+        - url
+
+  trello.add_comment:
+    connector: http-rest
+    site: trello
+    method: POST
+    path: /cards/{id}/actions/comments
+    params:
+      id:
+        type: string
+        required: true
+      text:
+        type: string
+        maxlen: 16384
+        required: true
+    body_template: |
+      {"text":"{{text}}"}
+    response:
+      allow_fields:
+        - id
+
+  trello.members:
+    connector: http-rest
+    site: trello
+    method: GET
+    path: /boards/{boardId}/members
+    params:
+      boardId:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - id
+        - username
+        - fullName
+
+  trello.labels:
+    connector: http-rest
+    site: trello
+    method: GET
+    path: /boards/{boardId}/labels
+    params:
+      boardId:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - id
+        - name
+        - color
+
+  # === Email Operations ===
+  email.list_mailboxes:
+    connector: email
+    site: email
+    params:
+      env:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - mailboxes[].name
+
+  email.search:
+    connector: email
+    site: email
+    params:
+      env:
+        type: string
+        required: true
+      mailbox:
+        type: string
+        default: INBOX
+      criteria:
+        type: string
+    response:
+      allow_fields:
+        - messages[].uid
+        - messages[].subject
+        - messages[].from
+        - messages[].date
+        - messages[].flags
+
+  email.read:
+    connector: email
+    site: email
+    params:
+      env:
+        type: string
+        required: true
+      mailbox:
+        type: string
+        default: INBOX
+      uid:
+        type: int
+        required: true
+    response:
+      allow_fields:
+        - uid
+        - subject
+        - from
+        - to
+        - date
+        - body
+        - flags
+
+  email.send:
+    connector: email
+    site: email
+    params:
+      env:
+        type: string
+        required: true
+      to:
+        type: string
+        required: true
+      subject:
+        type: string
+        maxlen: 998
+        required: true
+      body:
+        type: string
+        maxlen: 100000
+        required: true
+    response:
+      allow_fields:
+        - status
+        - to
+
+  # === WireGuard Operations (read-only) ===
+  wireguard.status:
+    connector: local-service
+    site: wireguard
+    method: STATUS
+    params:
+      tunnel:
+        type: string
+        default: vpn1
+    response:
+      allow_fields:
+        - tunnels[].name
+        - tunnels[].status
+
+  wireguard.test:
+    connector: local-service
+    site: wireguard
+    method: TEST
+    params:
+      host:
+        type: string
+        required: true
+      port:
+        type: int
+        required: true
+    response:
+      allow_fields:
+        - reachable
