@@ -14,9 +14,17 @@ type Config struct {
 	Server        ServerConfig         `yaml:"server"`
 	Audit         AuditConfig          `yaml:"audit"`
 	Tunnels       map[string]Tunnel    `yaml:"tunnels"`
+	SecretStore   SecretStoreConfig    `yaml:"secret_store"`
 	AdminTokenSHA string               `yaml:"admin_token_sha256"`
 	ConfigPath    string               `yaml:"-"`
 	OpsPath       string               `yaml:"-"`
+}
+
+type SecretStoreConfig struct {
+	Backend    string `yaml:"backend"`
+	PassDir    string `yaml:"pass_dir"`
+	KDBXPath   string `yaml:"kdbx_path"`
+	KDBXSecret string `yaml:"kdbx_secret"`
 }
 
 type Tunnel struct {

@@ -170,6 +170,15 @@ func setup(cfg *config.Config, opsPath_ string, port_ int, logger zerolog.Logger
 	}
 
 	secrets.GetResolver()
+	switch cfg.SecretStore.Backend {
+	case "pass":
+		secrets.SetStore(&secrets.PassStore{Dir: cfg.SecretStore.PassDir})
+	case "keepass":
+		secrets.SetStore(&secrets.KeePassStore{
+			Path:     cfg.SecretStore.KDBXPath,
+			Password: cfg.SecretStore.KDBXSecret,
+		})
+	}
 	secrets.GetTaintRegistry()
 
 	logger.Info().Str("ops", opsPath_).Msg("loading operations")

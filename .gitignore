@@ -22,6 +22,8 @@ Thumbs.db
 # Secrets (never commit)
 agent-keys.txt
 **/secrets/
+!internal/secrets/
+!/internal/secrets/*.go
 *.pem
 *.crt
 *.key
