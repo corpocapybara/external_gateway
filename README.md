@@ -116,41 +116,9 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8444/admin/secrets" -Method Post `
 
 If `admin_token_sha256` is configured, add `-Headers @{"Authorization" = "Bearer <token>"}`.
 
-The endpoint also accepts `PUT`.
+The endpoint also accepts `PUT` and `DELETE` (`DELETE /admin/secrets?workspace=acme&name=jira`).
 
-### Required secrets per workspace
-
-Secrets are referenced in config by the pattern `secret://<workspace>/<name>`.
-The actual list varies per deployment. Example secret references found in configs:
-
-**Acme:**
-- `secret://acme/jira` — Jira API token
-- `secret://acme/gitlab` — GitLab PAT
-- `secret://acme/kibana-prod` — Kibana/ES password
-- `secret://acme/kibana-stg` — Kibana staging password
-- `secret://acme/kibana-dev` — Kibana dev password
-- `secret://acme/pg-dev` — PostgreSQL password
-- `secret://acme/pg-stg` — PostgreSQL password
-- `secret://acme/pg-prod` — PostgreSQL password
-- `secret://acme/jenkins-dev` — Jenkins API token
-- `secret://acme/jenkins-staging` — Jenkins API token
-- `secret://acme/slack-xoxc` — Slack browser session token (`xoxc-…`) — see `docs/SLACK.md`
-- `secret://acme/slack-xoxd` — Slack `d` session cookie (`xoxd-…`)
-
-> Slack uses a session token instead of an app/bot. Provision (and rotate) both secrets
-> with `tools/slack-provision/Provision-Slack.ps1` — do not set them by hand.
-
-**Globex:**
-- `secret://globex/jira` — Jira API token
-- `secret://globex/bitbucket` — Bitbucket app password
-- `secret://globex/kibana-umbrella` — Kibana/ES password
-- `secret://globex/kibana-globex` — Kibana/ES password
-- `secret://globex/clockify` — Clockify API key
-- `secret://globex/pg-staging` — PostgreSQL password
-- `secret://globex/pg-staging-admin` — PostgreSQL password
-- `secret://globex/authentik-token` — Authentik API token
-- `secret://globex/slack-xoxc` — Slack session token
-- `secret://globex/slack-xoxd` — Slack session cookie
+See `docs/` for per-service token/credential guides and `.ai/SECRETS.md` for architecture details.
 
 ## Run
 
@@ -245,7 +213,7 @@ All endpoints that return JSON. Operations require `Authorization: Bearer <token
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/whoami` | GET | Current agent identity, roles, grants |
-| `/capabilities?workspace=<ws>` | GET | Operation schema + config checksum + feature status |
+| `/capabilities?workspace=<ws>` | GET | Operation schemas, params, example calls, config checksum, feature status |
 | `/v1/workspaces/<ws>/op/<op-id>` | POST, GET | Execute an operation |
 | `?dry_run=true` | — | Validate params + grants, skip upstream call |
 
@@ -254,8 +222,9 @@ All endpoints that return JSON. Operations require `Authorization: Bearer <token
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/admin/` | GET | List available admin endpoints |
-| `/admin/secrets` | POST, PUT | Set a secret in SYSTEM Credential Manager |
+| `/admin/secrets` | POST, PUT, DELETE | Set/delete a secret in SYSTEM Credential Manager |
 | `/admin/reload` | POST | Hot-reload config + ops from disk |
+| `/admin/diag` | POST | Test site auth (IMAP/SMTP/HTTP) without exposing passwords |
 
 ### egwctl CLI
 
@@ -332,35 +301,30 @@ Agent ──Bearer token──> AuthN ──> Policy (grants) ──> Operation 
                                                         Audit log + Response
 ```
 
-## Features
+## Capabilities
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Admin auth | ✓ | SHA256 token verification; opt-in via `admin_token_sha256` |
-| Config checksum | ✓ | SHA256 of config file exposed in `/capabilities` |
-| Hot-reload | ✓ | `POST /admin/reload` — atomic pointer swap on success |
-| Cross-tenant isolation | ✓ | Secret workspace prefix must match request workspace |
-| Response shaping | ✓ | `response.allow_fields` filters JSON responses via `ResponseShaper` |
-| Empty URL detection | ✓ | Returns descriptive error when `base_url` is unset |
-| Credential Manager | ✓ | 30s TTL cache + taint registry for leak prevention |
-| Postgres read-only | ✓ | Multi-statement detection + regex-based DDL/DML guard |
-| URL-encoded paths | ✓ | `{param\|urlencode}` template support |
-| Query params | ✓ | Unused params appended as query string |
-| Slack session auth | ✓ | `slack-session` type injects `xoxc` Bearer + `xoxd` `d` cookie (no app/bot) |
-| GitHub | ✓ | `bearer` PAT auth, `{site.org}` template, 13 operations |
-| Trello | ✓ | `trello` auth (key + token query params), `trello_allowed_lists` scoping |
-| Email (IMAP/SMTP) | ✓ | go-imap + net/smtp, works with Gmail app passwords |
-| Email policy whitelist | ✓ | `email_allowed_senders/mailboxes`, `email_denied_senders/mailboxes` |
-| OAuth auto-refresh | ✓ | `oauth` config block, refresh on 401, retry once |
-| Admin diagnostics | ✓ | `POST /admin/diag` tests IMAP/SMTP/HTTP auth without exposing passwords |
-| MCP (Model Context Protocol) | ✓ | JSON-RPC 2.0 Streamable HTTP, `tools/list` + `tools/call`, SSE support |
-| Form-session connector | ✓ | Form-based login with session cookie capture |
-| Outloofq/Hotmail | ✗ | Removed — requires XOAUTH2 (OAuth 2.0), go-imap/net-smtp basic auth rejected |
-| Slack channel allow-list | ✗ | `slack_channels` policy field exists but no constraint enforces it yet |
-| Kibana SSO proxy | ✗ | Basic Auth doesn't work through Upvote/Grafana proxy |
-| Clockify scheduler | ✗ | Stub — not wired to gateway |
-| Postgres AST parsing | ✗ | Uses regex + multi-statement detect instead of `pg_query_go` |
-| Unit tests | ✓ | 3 test files: param formatting (`buildbody_test.go`), response shaping (`hook_test.go`), SQL injection (`quote_test.go`) |
+| Capability | Status | Details |
+|------------|--------|---------|
+| Auth & isolation | ✓ | [Admin auth](.ai/SECRETS.md), [agent tokens](#agent-tokens), [cross-tenant](.ai/SECRETS.md#cross-tenant-isolation-checks-against-workspace-name-not-site-name) |
+| Config & hot-reload | ✓ | [SHA256 checksum](#api-reference), [POST /admin/reload](.ai/PITFALLS.md#config-hot-reload-replaces-in-memory-state-atomically) |
+| Response shaping | ✓ | [`.ai/OPERATIONS.md`](.ai/OPERATIONS.md) — `allow_fields` with dot-notation + array projection |
+| PostgreSQL read-only | ✓ | [AST-based validation](.ai/PITFALLS.md#postgresql-sql-guard-uses-regex-not-ast) via pgparser; multi-statement + FOR UPDATE detection |
+| Slack | ✓ | [Session token auth](docs/SLACK.md) — `xoxc` + `xoxd` cookie; [provision tool](docs/SLACK.md#provisioning--rotation-tool) |
+| GitHub | ✓ | [Bearer PAT](docs/GITHUB.md), 13 read/write ops, repo scoping via `github_repos` |
+| Trello | ✓ | [API key + token](docs/TRELLO.md), [list-scoping policy](docs/TRELLO.md#list-scoping-policy-trello_allowed_lists) |
+| Email (IMAP/SMTP) | ✓ | [Gmail app password](docs/GMAIL.md), [whitelist/blacklist policy](docs/GMAIL.md#email-policy-whitelistblacklist) |
+| OAuth auto-refresh | ✓ | [Google Docs](docs/GDOCS.md#auto-refresh) + [OneDrive](docs/ONEDRIVE.md#auto-refresh) — refresh on 401, retry once |
+| Clockify | ✓ | [API key](docs/CLOCKIFY.md) time tracking — workspace, projects, entries, add, edit |
+| Authentik | ✓ | [SSO integration](.ai/AUTHENTIK.md) — users, groups, tokens, blueprints |
+| Jenkins | ✓ | [CSRF crumb](.ai/PITFALLS.md#jenkins-csrf-crumb-required-for-post-operations) auto-fetched before POST ops |
+| Admin diagnostics | ✓ | [POST /admin/diag](#api-reference) — IMAP/SMTP/HTTP auth test, no password exposure |
+| MCP | ✓ | Streamable HTTP — `tools/list` + `tools/call` |
+| Form-session | ✓ | Connector defined, not wired to any operation |
+| Capabilities examples | ✓ | `/capabilities` returns PowerShell example call per operation |
+| Hotmail/Outlook | ✗ | Requires XOAUTH2 — [basic auth rejected](.ai/PITFALLS.md#hotmailoutlook-consumer-accounts-require-xoauth2) |
+| Kibana SSO proxy | ✗ | [Upvote/Grafana proxy](.ai/PITFALLS.md#kibana-prod-behind-grafana-upvote-sso-proxy) blocks Basic Auth |
+| Clockify scheduler | ✗ | Stub — not wired |
+| Slack channel allow-list | ✗ | `slack_channels` exists but [no constraint enforces it](.ai/PITFALLS.md#stalled--incomplete-features) |
 
 ## .ai/ Documentation
 
@@ -368,23 +332,23 @@ Detailed guides live in `.ai/`:
 
 | File | Covers |
 |------|--------|
-| `.ai/AGENTS.md` | Agent conventions — build, deploy, secrets, admin API, architecture |
+| `.ai/AGENTS.md` | Agent conventions — build, deploy, secrets, admin API, service lifecycle, architecture |
 | `.ai/INDEX.md` | Doc index — quick reference to all docs |
 | `.ai/DEVELOPMENT.md` | Build, deploy, testing, adding operations |
-| `.ai/PITFALLS.md` | Known bugs, YAML issues (trailing whitespace, `@` quoting), design gotchas |
+| `.ai/PITFALLS.md` | Known bugs, YAML pitfalls, design gotchas, session caveats |
 | `.ai/RULES.md` | Code conventions, security rules, checklists |
 | `.ai/SECRETS.md` | Credential Manager deep-dive + admin auth setup |
 | `.ai/CONNECTORS.md` | Connector interface, HTTP/PG/Email/MCP/Local-service details |
 | `.ai/OPERATIONS.md` | Operation YAML syntax, param types, constraints |
-| `.ai/LOCAL.md` | Workspace-specific domain knowledge (gitignored; real URLs/paths) |
+| `.ai/AUTHENTIK.md` | Authentik SSO integration — token setup, operations |
+| `.ai/LOCAL.md` | **(gitignored)** Workspace-specific domain knowledge (real URLs/paths) |
 
 Per-service token/auth guides in `docs/`:
 
 | File | Covers |
 |------|--------|
-| `docs/AUTHENTIK.md` | Authentik SSO integration — token setup, operations |
 | `docs/SLACK.md` | Slack session token provisioning, rotation |
-| `docs/CLOCKIFY.md` | Clockify API key setup |
+| `docs/CLOCKIFY.md` | Clockify time tracking — all operations with examples |
 | `docs/TRELLO.md` | Trello API key + token setup, list-scoping policy |
 | `docs/GITHUB.md` | GitHub PAT (classic + fine-grained) |
 | `docs/GMAIL.md` | Gmail app password + email whitelist/blacklist policy |
