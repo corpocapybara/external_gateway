@@ -18,6 +18,9 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
+	github.com/tobischo/argon2 v0.1.0 // indirect
+	github.com/tobischo/gokeepasslib/v3 v3.6.2 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 )

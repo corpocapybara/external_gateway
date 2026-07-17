@@ -10,6 +10,9 @@ audit:
   dir: "C:\\ProgramData\\external_gateway\\audit"
   max_size_mb: 100
 
+secret_store:
+  backend: "wincred"
+
 roles:
   dev-bot:
     operations:
