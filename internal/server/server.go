@@ -1471,6 +1471,10 @@ func (s *Server) workspaceHelp(name string, ws *config.Workspace) []string {
 		if op.Path != "" {
 			out = append(out, fmt.Sprintf("    path: %s", op.Path))
 		}
+		if len(op.Response.AllowFields) > 0 {
+			example := buildExampleResponse(id, op.Response.AllowFields)
+			out = append(out, fmt.Sprintf("    example response: %s", example))
+		}
 	}
 	out = append(out, "")
 
@@ -1500,6 +1504,79 @@ func (s *Server) workspaceHelp(name string, ws *config.Workspace) []string {
 	out = append(out, "")
 
 	return out
+}
+
+func buildExampleResponse(opID string, allowFields []string) string {
+	root := make(map[string]interface{})
+	parts := strings.SplitN(opID, ".", 2)
+	site := ""
+	if len(parts) > 0 {
+		site = parts[0]
+	}
+
+	for _, field := range allowFields {
+		root = setExampleValue(root, field, site)
+	}
+	b, _ := json.Marshal(root)
+	return string(b)
+}
+
+func setExampleValue(root map[string]interface{}, field string, site string) map[string]interface{} {
+	// Fields starting with @ are single keys (e.g. @microsoft.graph.downloadUrl),
+	// not dot-separated paths.
+	if strings.HasPrefix(field, "@") {
+		root[field] = exampleFieldValue(site, field)
+		return root
+	}
+	segments := strings.Split(field, ".")
+	current := root
+	for i, seg := range segments {
+		isArray := strings.HasSuffix(seg, "[]")
+		clean := strings.TrimSuffix(seg, "[]")
+		if isArray {
+			if _, ok := current[clean]; !ok {
+				current[clean] = []interface{}{}
+			}
+			arr := current[clean].([]interface{})
+			if len(arr) == 0 {
+				m := make(map[string]interface{})
+				arr = append(arr, m)
+				current[clean] = arr
+			}
+			current = arr[0].(map[string]interface{})
+		} else if i == len(segments)-1 {
+			current[clean] = exampleFieldValue(site, clean)
+		} else {
+				if _, ok := current[clean]; !ok {
+					current[clean] = make(map[string]interface{})
+				}
+				current = current[clean].(map[string]interface{})
+			}
+		}
+	}
+	b, _ := json.Marshal(root)
+	return string(b)
+}
+
+func exampleFieldValue(site, field string) string {
+	switch field {
+	case "id", "uuid", "uid", "number", "key":
+		return "..."
+	case "name", "title", "summary", "description", "body", "text", "subject", "displayName":
+		return "..."
+	case "status", "state":
+		return "..."
+	case "url", "webUrl", "shortUrl", "downloadUrl":
+		return "..."
+	case "email", "login", "user", "username", "from", "to":
+		return "...@..."
+	case "created_at", "updated_at", "date", "start", "end", "timestamp", "createdTime", "modifiedTime":
+		return "2026-..."
+	case "sha", "hash", "content":
+		return "..."
+	default:
+		return "..."
+	}
 }
 
 func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
