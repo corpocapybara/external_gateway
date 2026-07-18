@@ -1528,34 +1528,7 @@ func setExampleValue(root map[string]interface{}, field string, site string) map
 		root[field] = exampleFieldValue(site, field)
 		return root
 	}
-	segments := strings.Split(field, ".")
-	current := root
-	for i, seg := range segments {
-		isArray := strings.HasSuffix(seg, "[]")
-		clean := strings.TrimSuffix(seg, "[]")
-		if isArray {
-			if _, ok := current[clean]; !ok {
-				current[clean] = []interface{}{}
-			}
-			arr := current[clean].([]interface{})
-			if len(arr) == 0 {
-				m := make(map[string]interface{})
-				arr = append(arr, m)
-				current[clean] = arr
-			}
-			current = arr[0].(map[string]interface{})
-		} else if i == len(segments)-1 {
-			current[clean] = exampleFieldValue(site, clean)
-		} else {
-				if _, ok := current[clean]; !ok {
-					current[clean] = make(map[string]interface{})
-				}
-				current = current[clean].(map[string]interface{})
-			}
-		}
-	}
-	b, _ := json.Marshal(root)
-	return string(b)
+	return root
 }
 
 func exampleFieldValue(site, field string) string {
