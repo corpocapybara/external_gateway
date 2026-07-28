@@ -47,12 +47,20 @@ A workspace is a config file + an operations file, named by an opaque token `<x>
 |-----------|--------|------------|
 | Acme | `config.acme.yaml` | `operations.acme.yaml` |
 | Globex | `config.globex.yaml` | `operations.globex.yaml` |
+| **CM** | `config.cm.yaml` (gitignored) | `operations.cm.yaml` (gitignored) |
 
 `<x>` is the single source of truth: deploy dir, `egw-<x>` service, Credential
 Manager namespace `egw/<x>/…`, the `/v1/workspaces/<x>/…` API path, and the port
 (8443 + alphabetical index, override per-config via `server.port`, conflicts
 abort) all derive from it. Add a workspace by dropping in a `config.<x>.yaml` —
 `deploy/*.ps1` discover the rest. See `.ai/RULES.md` (Workspace convention section).
+
+> **CM workspace** (`config.cm.yaml` / `operations.cm.yaml`) is gitignored — it's a
+> live workspace deployed to `C:\Program Files\external_gateway\cm\`. The source of
+> truth is the pair of `.cm.yaml` files in this directory; copy them to Program Files
+> and `Restart-Service egw-cm` to deploy. Operations include Jira, Bitbucket
+> (branches, commits, commit_comments, PR, diff, etc.), Clockify, Slack, PostgreSQL,
+> Kibana, and WireGuard status. Full op list: `operations.cm.yaml`.
 
 ### Key config fields
 
