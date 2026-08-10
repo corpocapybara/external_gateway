@@ -134,7 +134,7 @@ Fields not listed are stripped from the response before returning to the agent. 
 | jira.assign | http-rest | jira | Assign issue |
 | jira.transitions | http-rest | jira | Get available transitions |
 | jira.status_history | http-rest | jira | Get status change history |
-| jira.status | http-rest | jira | Transition issue status |
+| jira.status | http-rest | jira | Transition issue status (**write**; `transition_id` from jira.transitions, not a name) |
 | jira.me | http-rest | jira | Get current user |
 | jira.create | http-rest | jira | Create issue |
 | jira.edit | http-rest | jira | Edit issue fields (**write**) |
@@ -176,7 +176,7 @@ Fields not listed are stripped from the response before returning to the agent. 
 | jira.issue | http-rest | jira | Get issue details |
 | jira.comments | http-rest | jira | Get issue comments |
 | jira.search | http-rest | jira | JQL search (scoped to Acme/SUP/OPS) |
-| jira.status | http-rest | jira | Transition status (**write**) |
+| jira.status | http-rest | jira | Transition status (**write**; `transition_id` from jira.transitions, HTTP 204 = ok via `upstream_status`) |
 | jira.transitions | http-rest | jira | Get transitions |
 | jira.me | http-rest | jira | Get current user |
 | jira.edit | http-rest | jira | Edit issue fields (**write**) |

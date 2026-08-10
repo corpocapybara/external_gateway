@@ -478,6 +478,10 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 	result["request_id"] = requestID
 	result["operation"] = opID
 	result["workspace"] = workspace
+	// Surface the upstream HTTP status so callers can confirm the real outcome —
+	// essential for write ops whose success body is empty (e.g. a Jira transition
+	// returns 204 No Content). Without this, success and failure look identical.
+	result["upstream_status"] = upstreamStatus
 	json.NewEncoder(w).Encode(result)
 }
 
@@ -837,19 +841,28 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		Str("body_preview", string(resp.Body[:min(200, len(resp.Body))])).
 		Msg("upstream response")
 
-	if len(op.Response.AllowFields) > 0 {
-		var jsonData map[string]interface{}
-		if err := json.Unmarshal(resp.Body, &jsonData); err == nil {
-			shaper := redact.NewResponseShaper(op.Response.AllowFields)
-			filtered := shaper.Shape(jsonData)
-			if filteredBody, err := json.Marshal(filtered); err == nil {
-				resp.Body = filteredBody
-				s.logger.Info().Int("original", len(resp.Body)).Int("filtered", len(filteredBody)).Msg("response shaping applied")
-			}
-		}
-	}
-
+	resp.Body = shapeResponse(resp.StatusCode, resp.Body, op.Response.AllowFields)
 	return resp.StatusCode, resp.Body, nil
+}
+
+// shapeResponse applies allow_fields response filtering, but ONLY to successful
+// responses (status < 400). Error bodies pass through unshaped so the upstream
+// error detail survives — otherwise allow_fields strips a rejected write (e.g. an
+// invalid Jira transition, HTTP 400) down to an empty envelope that looks
+// identical to a success. Non-JSON bodies (e.g. an empty 204) also pass through.
+func shapeResponse(status int, body []byte, allowFields []string) []byte {
+	if len(allowFields) == 0 || status >= 400 {
+		return body
+	}
+	var jsonData map[string]interface{}
+	if err := json.Unmarshal(body, &jsonData); err != nil {
+		return body
+	}
+	filtered := redact.NewResponseShaper(allowFields).Shape(jsonData)
+	if filteredBody, err := json.Marshal(filtered); err == nil {
+		return filteredBody
+	}
+	return body
 }
 
 // executeMcpConnector fronts a remote MCP server (JSON-RPC 2.0 over Streamable HTTP,
