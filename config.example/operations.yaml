@@ -86,17 +86,24 @@ operations:
   jira.status:
     connector: http-rest
     site: jira
-    method: GET
-    path: /rest/api/3/issue/{issueKey}/transitions
+    method: POST
+    path: /rest/api/3/issue/{key}/transitions
+    # Transition an issue. Jira selects the transition by ID (list them with
+    # jira.transitions), NOT by name. Success is HTTP 204 with an empty body —
+    # confirm via the `upstream_status` field in the response.
     params:
-      issueKey:
+      key:
         type: string
         required: true
+      transition_id:
+        type: string
+        required: true
+    body_template: |
+      {"transition":{"id":"{{transition_id}}"}}
     response:
       allow_fields:
-        - transitions[].id
-        - transitions[].name
-        - transitions[].to
+        - id
+        - status
 
   jira.assign:
     connector: http-rest
