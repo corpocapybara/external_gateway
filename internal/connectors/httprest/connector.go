@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"text/template"
 	"time"
@@ -20,13 +22,24 @@ type Connector struct {
 	insecure *http.Client // skips TLS verification (internal self-signed hosts only)
 }
 
+// noRedirect stops the client from following redirects. Following them silently
+// turns a POST/PUT write into a bodiless GET on 301/302/303 (the write is lost
+// but the redirect's 2xx is reported as success), and a cross-host redirect
+// would resend secret headers to the new host. Returning ErrUseLastResponse
+// surfaces the redirect response to the caller instead.
+func noRedirect(req *http.Request, via []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
 func NewConnector() *Connector {
 	return &Connector{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:       30 * time.Second,
+			CheckRedirect: noRedirect,
 		},
 		insecure: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:       30 * time.Second,
+			CheckRedirect: noRedirect,
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			},
@@ -73,6 +86,13 @@ func (c *Connector) Execute(ctx context.Context, req *connectors.Request) (*conn
 	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
+		// The wrapped *url.Error carries the full request URL, which may include
+		// secrets in query parameters (e.g. Trello key/token). Unwrap it so the
+		// error returned to (and surfaced to) the agent never echoes the URL.
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			return nil, fmt.Errorf("executing %s request: %w", req.Method, urlErr.Err)
+		}
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
 	defer resp.Body.Close()

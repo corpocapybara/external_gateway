@@ -23,9 +23,17 @@ func QuoteLiteral(literal string) string {
 }
 
 type Connector struct {
-	readOnly bool
-	db       *sql.DB
-	connStr  string
+	readOnly      bool
+	db            *sql.DB
+	connStr       string
+	allowedTables []string
+}
+
+// SetAllowedTables restricts which tables a SELECT may read (pg_allowed_tables).
+// Entries may be "*" (all), "schema.*", "schema.table", or a bare "table" name.
+// An empty list means no table restriction.
+func (c *Connector) SetAllowedTables(tables []string) {
+	c.allowedTables = tables
 }
 
 type ColumnDef struct {
@@ -99,17 +107,29 @@ func (c *Connector) ExecuteQuery(ctx context.Context, query string) (*QueryResul
 	if err := validateQueryAST(sanitized); err != nil {
 		return nil, err
 	}
-
-	if err := c.db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("connection lost: %w", err)
+	if len(c.allowedTables) > 0 {
+		if err := c.checkTableScope(sanitized); err != nil {
+			return nil, err
+		}
 	}
 
-	wrappedQuery := fmt.Sprintf(
-		"SET LOCAL statement_timeout = '5000'; BEGIN TRANSACTION READ ONLY; %s",
-		sanitized,
-	)
+	// Run inside a genuine READ ONLY transaction. lib/pq issues `BEGIN ... READ
+	// ONLY` for TxOptions.ReadOnly, so Postgres itself rejects any write — including
+	// a data-modifying CTE (WITH x AS (DELETE ...) SELECT ...) that the statement-
+	// level AST check does not descend into. We never commit (defer Rollback).
+	tx, err := c.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("beginning read-only transaction: %w", err)
+	}
+	defer tx.Rollback()
 
-	rows, err := c.db.QueryContext(ctx, wrappedQuery)
+	// Bound server-side execution time. SET LOCAL takes effect here because we are
+	// now inside a real transaction block (the previous mid-batch BEGIN did not).
+	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = 5000"); err != nil {
+		return nil, fmt.Errorf("setting statement timeout: %w", err)
+	}
+
+	rows, err := tx.QueryContext(ctx, sanitized)
 	if err != nil {
 		return nil, fmt.Errorf("query execution: %w", err)
 	}
@@ -144,6 +164,9 @@ func (c *Connector) ExecuteQuery(ctx context.Context, query string) (*QueryResul
 		}
 		resultRows = append(resultRows, row)
 		count++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading rows: %w", err)
 	}
 
 	return &QueryResult{
@@ -189,4 +212,123 @@ func validateQueryAST(query string) error {
 		}
 	}
 	return nil
+}
+
+type tableRef struct {
+	schema string
+	name   string
+}
+
+// checkTableScope enforces pg_allowed_tables. It is a best-effort read-scope: it
+// walks the FROM / JOIN / subquery / CTE structure of the SELECT and rejects any
+// table not covered by the allow-list. Table references buried in scalar
+// expression subqueries may not be reached, so this is a guard rail, not a
+// complete sandbox — the read-only transaction remains the hard write barrier.
+func (c *Connector) checkTableScope(query string) error {
+	stmts, err := pgparserparser.Parse(strings.TrimSpace(query))
+	if err != nil {
+		return fmt.Errorf("sql parse error: %w", err)
+	}
+	cte := map[string]bool{}
+	var refs []tableRef
+	for _, item := range stmts.Items {
+		walkTables(item, cte, &refs)
+	}
+	for _, ref := range refs {
+		if !tableAllowed(ref, c.allowedTables) {
+			full := ref.name
+			if ref.schema != "" {
+				full = ref.schema + "." + ref.name
+			}
+			return fmt.Errorf("table %q is not permitted by pg_allowed_tables", full)
+		}
+	}
+	return nil
+}
+
+func tableAllowed(ref tableRef, allowed []string) bool {
+	for _, a := range allowed {
+		a = strings.ToLower(strings.TrimSpace(a))
+		switch {
+		case a == "":
+			continue
+		case a == "*" || a == "*.*":
+			return true
+		case strings.HasSuffix(a, ".*"):
+			if ref.schema == strings.TrimSuffix(a, ".*") {
+				return true
+			}
+		case strings.Contains(a, "."):
+			if a == ref.schema+"."+ref.name {
+				return true
+			}
+		default:
+			if a == ref.name && (ref.schema == "" || ref.schema == "public") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func walkTables(n pgparsernodes.Node, cte map[string]bool, out *[]tableRef) {
+	switch v := n.(type) {
+	case nil:
+		return
+	case *pgparsernodes.List:
+		if v == nil {
+			return
+		}
+		for _, it := range v.Items {
+			walkTables(it, cte, out)
+		}
+	case *pgparsernodes.SelectStmt:
+		if v == nil {
+			return
+		}
+		if v.WithClause != nil && v.WithClause.Ctes != nil {
+			for _, it := range v.WithClause.Ctes.Items {
+				if c, ok := it.(*pgparsernodes.CommonTableExpr); ok {
+					cte[strings.ToLower(c.Ctename)] = true
+					walkTables(c.Ctequery, cte, out)
+				}
+			}
+		}
+		walkTables(v.FromClause, cte, out)
+		walkTables(v.WhereClause, cte, out)
+		walkTables(v.TargetList, cte, out)
+		walkTables(v.HavingClause, cte, out)
+		walkTables(v.Larg, cte, out)
+		walkTables(v.Rarg, cte, out)
+	case *pgparsernodes.JoinExpr:
+		if v == nil {
+			return
+		}
+		walkTables(v.Larg, cte, out)
+		walkTables(v.Rarg, cte, out)
+		walkTables(v.Quals, cte, out)
+	case *pgparsernodes.RangeSubselect:
+		if v == nil {
+			return
+		}
+		walkTables(v.Subquery, cte, out)
+	case *pgparsernodes.SubLink:
+		if v == nil {
+			return
+		}
+		walkTables(v.Subselect, cte, out)
+		walkTables(v.Testexpr, cte, out)
+	case *pgparsernodes.RangeVar:
+		if v == nil {
+			return
+		}
+		name := strings.ToLower(v.Relname)
+		if v.Schemaname == "" && cte[name] {
+			return // reference to a CTE, not a real table
+		}
+		*out = append(*out, tableRef{schema: strings.ToLower(v.Schemaname), name: name})
+	default:
+		// Best-effort: references nested in scalar expressions we do not descend
+		// into are not reached. Documented as a guard rail, not a sandbox.
+	}
 }

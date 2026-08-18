@@ -189,6 +189,10 @@ func setup(cfg *config.Config, opsPath_ string, port_ int, logger zerolog.Logger
 	reg.TunnelChecker = newTunnelChecker(cfg)
 
 	srv := server.New(cfg, reg, opsPath_, logger)
+	// Let /admin/reload rebuild the tunnel checker for the freshly-loaded config;
+	// without this the reloaded registry has a nil checker and every tunnel-gated
+	// operation is denied until the process restarts.
+	srv.SetTunnelCheckerFactory(newTunnelChecker)
 
 	listenAddr := fmt.Sprintf("127.0.0.1:%d", port_)
 	ln, err := net.Listen("tcp", listenAddr)
