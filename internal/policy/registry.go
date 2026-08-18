@@ -55,16 +55,22 @@ type JQLScopeConstraint struct {
 
 func (c *JQLScopeConstraint) Check(op *Operation, params map[string]interface{}, workspace *config.Workspace) error {
 	jql, ok := params["jql"].(string)
-	if !ok || jql == "" {
+	if !ok || strings.TrimSpace(jql) == "" {
 		return fmt.Errorf("jql parameter is required")
 	}
-	upperJQL := strings.ToUpper(jql)
-	for _, project := range workspace.Policy.JiraProjects {
-		if strings.Contains(upperJQL, strings.ToUpper(project)) {
-			return nil
-		}
+	projects := workspace.Policy.JiraProjects
+	if len(projects) == 0 {
+		// No configured project scope: nothing to enforce.
+		return nil
 	}
-	return fmt.Errorf("JQL does not scope to allowed projects %v", workspace.Policy.JiraProjects)
+	// Enforce scope by constraining the query to the allowed projects rather than
+	// trusting a substring match — which `project = OTHER OR summary ~ "ALLOWED"`
+	// trivially defeated. Wrapping preserves the original query's precedence:
+	//   (<jql>) AND project in (A,B)
+	// Project keys are simple identifiers, so they are emitted unquoted (quotes
+	// would be JSON-escaped when jql is placed into a request body or query).
+	params["jql"] = fmt.Sprintf("(%s) AND project in (%s)", jql, strings.Join(projects, ","))
+	return nil
 }
 
 type PostgresReadOnlyConstraint struct{}
@@ -236,25 +242,35 @@ func (r *OperationRegistry) ValidateParams(op *Operation, params map[string]inte
 				return fmt.Errorf("parameter %s exceeds max length %d", name, def.MaxLen)
 			}
 		case "int":
-			_, ok := val.(float64)
+			f, ok := val.(float64)
 			if !ok {
 				return fmt.Errorf("parameter %s must be an integer", name)
+			}
+			if def.Max > 0 && f > float64(def.Max) {
+				return fmt.Errorf("parameter %s exceeds max %d", name, def.Max)
 			}
 		case "enum":
 			s, ok := val.(string)
 			if !ok {
 				return fmt.Errorf("parameter %s must be a string", name)
 			}
-			if def.From == "$workspace.jira_projects" {
-				found := false
-				for _, p := range workspace.Policy.JiraProjects {
-					if p == s {
-						found = true
-						break
+			if strings.HasPrefix(def.From, "$workspace.") {
+				field := strings.TrimPrefix(def.From, "$workspace.")
+				allowed, known := workspace.Policy.List(field)
+				// Enforce membership only when the allow-list is configured. An
+				// empty/unset list means the operator has not restricted this
+				// value, not "deny everything".
+				if known && len(allowed) > 0 {
+					found := false
+					for _, p := range allowed {
+						if p == s {
+							found = true
+							break
+						}
 					}
-				}
-				if !found {
-					return fmt.Errorf("parameter %s must be one of %v", name, workspace.Policy.JiraProjects)
+					if !found {
+						return fmt.Errorf("parameter %s=%q is not in the workspace's allowed %s", name, s, field)
+					}
 				}
 			} else if def.Values != nil {
 				found := false
@@ -268,6 +284,19 @@ func (r *OperationRegistry) ValidateParams(op *Operation, params map[string]inte
 					return fmt.Errorf("parameter %s must be one of %v", name, def.Values)
 				}
 			}
+		}
+	}
+
+	// Reject parameters the operation does not declare. Undeclared params were
+	// otherwise forwarded verbatim as upstream query parameters (e.g. ?sudo=root
+	// or ?per_page=100000) — an arbitrary injection/amplification vector.
+	// `env`/`cluster` select the environment and are always permitted.
+	for name := range params {
+		if name == "env" || name == "cluster" {
+			continue
+		}
+		if _, declared := op.Params[name]; !declared {
+			return fmt.Errorf("unknown parameter: %s", name)
 		}
 	}
 	return nil

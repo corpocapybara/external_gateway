@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -21,9 +22,12 @@ type cachedSecret struct {
 }
 
 type TaintRegistry struct {
-	mu    sync.RWMutex
-	taint map[string]bool
+	mu     sync.RWMutex
+	seen   map[string]bool // sha256(value) -> present, for dedup
+	values [][]byte        // known secret values, redacted from outbound data
 }
+
+var redactPlaceholder = []byte("***")
 
 var (
 	globalResolver *Resolver
@@ -53,7 +57,7 @@ func GetResolver() *Resolver {
 func GetTaintRegistry() *TaintRegistry {
 	taintOnce.Do(func() {
 		globalTaint = &TaintRegistry{
-			taint: make(map[string]bool),
+			seen: make(map[string]bool),
 		}
 	})
 	return globalTaint
@@ -113,28 +117,55 @@ func (r *Resolver) FlushCache() {
 }
 
 func (t *TaintRegistry) Taint(secret []byte) {
+	// Ignore trivially short values — redacting a 1-4 byte string would mangle
+	// unrelated response content and leak nothing meaningful.
+	if len(secret) < 5 {
+		return
+	}
+	hash := sha256.Sum256(secret)
+	key := hex.EncodeToString(hash[:])
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	hash := sha256.Sum256(secret)
-	t.taint[hex.EncodeToString(hash[:])] = true
+	if t.seen[key] {
+		return
+	}
+	t.seen[key] = true
+	cp := make([]byte, len(secret))
+	copy(cp, secret)
+	t.values = append(t.values, cp)
 }
 
 func (t *TaintRegistry) IsTainted(secret []byte) bool {
+	hash := sha256.Sum256(secret)
+	key := hex.EncodeToString(hash[:])
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	hash := sha256.Sum256(secret)
-	return t.taint[hex.EncodeToString(hash[:])]
+	return t.seen[key]
 }
 
+// Redact replaces every occurrence of a known secret value in data with "***".
+// This is the outbound backstop: even if response shaping is disabled for an
+// operation, or an upstream echoes a credential back, the raw secret value does
+// not reach the caller. Values are matched as exact byte substrings.
 func (t *TaintRegistry) Redact(data []byte) []byte {
-	result := make([]byte, len(data))
-	copy(result, data)
-	for i := range result {
-		if result[i] != 0 {
-			result[i] = '*'
-		}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if len(t.values) == 0 {
+		return data
 	}
-	return result
+	out := data
+	for _, v := range t.values {
+		if len(v) == 0 {
+			continue
+		}
+		out = bytes.ReplaceAll(out, v, redactPlaceholder)
+	}
+	return out
+}
+
+// RedactString is the string convenience wrapper around Redact.
+func (t *TaintRegistry) RedactString(s string) string {
+	return string(t.Redact([]byte(s)))
 }
 
 func ResolveWithWorkspaceCheck(workspace, name, requestWorkspace string) ([]byte, error) {

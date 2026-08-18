@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ type Logger struct {
 	dir      string
 	maxSize  int64
 	sequence uint64
+	current  string // path of the active log file
 }
 
 type Record struct {
@@ -43,6 +45,12 @@ func Init(dir string, maxSizeMB int) error {
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("creating audit dir: %w", err)
+	}
+	// A missing/zero max_size_mb must NOT mean "rotate on every record" — default
+	// to a sane cap so an unset config doesn't spin up a new file (and leak a
+	// descriptor) per audit line.
+	if maxSizeMB <= 0 {
+		maxSizeMB = 100
 	}
 	globalLogger = &Logger{
 		dir:     dir,
@@ -71,23 +79,27 @@ func (l *Logger) Log(record *Record) error {
 		return fmt.Errorf("marshaling audit record: %w", err)
 	}
 
-	filename := filepath.Join(l.dir, fmt.Sprintf("audit_%s.log", time.Now().UTC().Format("20060102")))
-	f, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	// Pick the active file, rolling over on date change and rotating when the
+	// CURRENT file (not a stale base name) reaches the size cap. A single file is
+	// opened and closed per record — no reassigned-after-defer descriptor leak.
+	today := time.Now().UTC().Format("20060102")
+	base := filepath.Join(l.dir, fmt.Sprintf("audit_%s.log", today))
+	if l.current == "" || !strings.Contains(filepath.Base(l.current), "audit_"+today) {
+		l.current = base
+		l.sequence = 0
+	}
+	if l.maxSize > 0 {
+		if info, statErr := os.Stat(l.current); statErr == nil && info.Size() >= l.maxSize {
+			l.sequence++
+			l.current = filepath.Join(l.dir, fmt.Sprintf("audit_%s_%d.log", today, l.sequence))
+		}
+	}
+
+	f, err := os.OpenFile(l.current, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("opening audit file: %w", err)
 	}
 	defer f.Close()
-
-	info, _ := f.Stat()
-	if info.Size() >= l.maxSize {
-		f.Close()
-		filename = filepath.Join(l.dir, fmt.Sprintf("audit_%s_%d.log", time.Now().UTC().Format("20060102"), l.sequence))
-		l.sequence++
-		f, err = os.Create(filename)
-		if err != nil {
-			return fmt.Errorf("creating audit file: %w", err)
-		}
-	}
 
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("writing audit record: %w", err)
@@ -121,12 +133,32 @@ func (l *Logger) LogDeny(requestID, agentID, workspace, operation, rule, detail 
 	})
 }
 
+// sensitiveParamKeys are parameter names whose values are credentials or other
+// secrets supplied inline by a caller (e.g. basic-auth `password`). Their values
+// are replaced with a placeholder before the params map is written to the audit
+// log, which is stored in cleartext.
+var sensitiveParamKeys = map[string]bool{
+	"password":      true,
+	"passwd":        true,
+	"secret":        true,
+	"token":         true,
+	"value":         true,
+	"apikey":        true,
+	"api_key":       true,
+	"authorization": true,
+	"cookie":        true,
+}
+
 func sanitizeParams(params map[string]interface{}) map[string]interface{} {
 	if params == nil {
 		return nil
 	}
 	sanitized := make(map[string]interface{})
 	for k, v := range params {
+		if sensitiveParamKeys[strings.ToLower(k)] {
+			sanitized[k] = "***"
+			continue
+		}
 		sanitized[k] = v
 	}
 	return sanitized

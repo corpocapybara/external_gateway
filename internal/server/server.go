@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -41,10 +43,11 @@ type Server struct {
 	mux           *http.ServeMux
 	auditLog      *audit.Logger
 	httpClient    *httprest.Connector
-	pgConn        *postgres.Connector
 	emailConn     *email.Connector
 	configChecksum atomic.Value
 	opsPath       string
+	oauthRefreshMu sync.Mutex
+	tunnelCheckerFactory func(*config.Config) policy.TunnelChecker
 }
 
 func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logger zerolog.Logger) *Server {
@@ -55,7 +58,6 @@ func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logg
 		mux:      http.NewServeMux(),
 		auditLog: audit.GetLogger(),
 		httpClient: httprest.NewConnector(),
-		pgConn:   postgres.NewConnector(),
 		emailConn: email.NewConnector(),
 		opsPath:  opsPath,
 	}
@@ -63,6 +65,26 @@ func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logg
 	s.configChecksum.Store(checksum)
 	s.setupRoutes()
 	return s
+}
+
+// SetTunnelCheckerFactory registers how to build a TunnelChecker from a config so
+// a hot-reload can re-attach one to the rebuilt registry.
+func (s *Server) SetTunnelCheckerFactory(f func(*config.Config) policy.TunnelChecker) {
+	s.tunnelCheckerFactory = f
+}
+
+// writeRedactedJSON marshals obj and, as an outbound backstop, replaces any known
+// secret value (tainted at resolution time) before writing it to the caller — so
+// a credential never reaches the agent even if response shaping is disabled or an
+// upstream echoes it back.
+func (s *Server) writeRedactedJSON(w http.ResponseWriter, obj interface{}) {
+	buf, err := json.Marshal(obj)
+	if err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+	buf = secrets.GetTaintRegistry().Redact(buf)
+	_, _ = w.Write(buf)
 }
 
 func (s *Server) cfg() *config.Config {
@@ -421,6 +443,11 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 		return
 	}
 
+	if err := s.checkParamScopes(ws, op, params); err != nil {
+		s.writeDeny(w, r, agentID, workspace, opID, "scope", err.Error())
+		return
+	}
+
 	if err := s.checkTunnelAccess(ws, op, params); err != nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "tunnel", err.Error())
 		return
@@ -452,26 +479,25 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 	w.Header().Set("X-Request-ID", requestID)
 
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"request_id":  requestID,
-			"status":      "error",
-			"operation":   opID,
-			"workspace":   workspace,
-			"error":       err.Error(),
+		s.writeRedactedJSON(w, map[string]interface{}{
+			"request_id": requestID,
+			"status":     "error",
+			"operation":  opID,
+			"workspace":  workspace,
+			"error":      err.Error(),
 		})
 		return
 	}
 
 	var result map[string]interface{}
 	if err := json.Unmarshal(responseBody, &result); err != nil {
-		result = map[string]interface{}{
-			"request_id": requestID,
-			"operation":  opID,
-			"workspace":  workspace,
+		s.writeRedactedJSON(w, map[string]interface{}{
+			"request_id":      requestID,
+			"operation":       opID,
+			"workspace":       workspace,
 			"upstream_status": upstreamStatus,
-			"upstream_body":    string(responseBody),
-		}
-		json.NewEncoder(w).Encode(result)
+			"upstream_body":   string(responseBody),
+		})
 		return
 	}
 
@@ -482,7 +508,45 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 	// essential for write ops whose success body is empty (e.g. a Jira transition
 	// returns 204 No Content). Without this, success and failure look identical.
 	result["upstream_status"] = upstreamStatus
-	json.NewEncoder(w).Encode(result)
+	s.writeRedactedJSON(w, result)
+}
+
+// checkParamScopes enforces workspace allow-lists for free-form params that are
+// not enum-validated in the policy layer. Today that is the Slack channel param:
+// when slack_channels is configured, any op that takes a `channel` must name an
+// allowed channel. Enforced only when the list is set (unset = no restriction).
+func (s *Server) checkParamScopes(ws *config.Workspace, op *policy.Operation, params map[string]interface{}) error {
+	if len(ws.Policy.SlackChannels) > 0 {
+		if _, hasChannel := op.Params["channel"]; hasChannel {
+			if ch, _ := params["channel"].(string); ch != "" {
+				allowed := false
+				for _, c := range ws.Policy.SlackChannels {
+					if c == ch {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					return fmt.Errorf("channel %q is not in slack_channels", ch)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// hasPathInjection reports whether a raw path-parameter value would break out of
+// its path segment or inject a query/fragment when substituted unescaped.
+func hasPathInjection(s string) bool {
+	if strings.Contains(s, "..") || strings.ContainsAny(s, "?#\\") {
+		return true
+	}
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) agentHasOp(agent *config.Agent, workspace, opID string) bool {
@@ -617,6 +681,11 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 
 		if strings.Contains(op.Path, "?path={"+key+"}") || strings.Contains(op.Path, "&path={"+key+"}") {
 			strVal = url.QueryEscape(strVal)
+		} else if strings.Contains(op.Path, "{"+key+"}") && hasPathInjection(strVal) {
+			// Raw path substitution: reject values that would traverse out of the
+			// path segment (../) or inject a query/fragment (?, #). Values routed
+			// through {key|urlencode} or ?path={key} are already escaped above.
+			return 0, nil, fmt.Errorf("parameter %q contains characters not allowed in a path value", key)
 		}
 		path = strings.Replace(path, "{"+key+"}", strVal, -1)
 	}
@@ -753,24 +822,24 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 			}
 		}
 	} else if env.Auth.Type == "trello" && env.SecretRef != "" {
+		// Trello key/token go in the Authorization header (OAuth scheme), never the
+		// URL query — credentials in the URL leak to request logs and back to the
+		// agent via upstream error strings.
 		wsName, secretName := parseSecretRef(env.SecretRef)
 		secret, err := secrets.ResolveWithWorkspaceCheck(wsName, secretName, workspace)
 		if err != nil {
 			s.logger.Error().Err(err).Str("secret_ref", env.SecretRef).Msg("failed to resolve trello key")
 		} else {
-			sep := "?"
-			if strings.Contains(urlStr, "?") {
-				sep = "&"
-			}
-			urlStr += fmt.Sprintf("%skey=%s", sep, url.QueryEscape(strings.TrimSpace(string(secret))))
+			token := ""
 			if env.CookieSecretRef != "" {
 				tWs, tName := parseSecretRef(env.CookieSecretRef)
-				if token, err := secrets.ResolveWithWorkspaceCheck(tWs, tName, workspace); err == nil {
-					urlStr += "&token=" + url.QueryEscape(strings.TrimSpace(string(token)))
+				if tok, err := secrets.ResolveWithWorkspaceCheck(tWs, tName, workspace); err == nil {
+					token = strings.TrimSpace(string(tok))
 				} else {
 					s.logger.Error().Err(err).Str("cookie_secret_ref", env.CookieSecretRef).Msg("failed to resolve trello token")
 				}
 			}
+			headers["Authorization"] = fmt.Sprintf(`OAuth oauth_consumer_key="%s", oauth_token="%s"`, strings.TrimSpace(string(secret)), token)
 		}
 	}
 
@@ -838,7 +907,7 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		Str("url", urlStr).
 		Int("status", resp.StatusCode).
 		Int("body_len", len(resp.Body)).
-		Str("body_preview", string(resp.Body[:min(200, len(resp.Body))])).
+		Str("body_preview", string(secrets.GetTaintRegistry().Redact(resp.Body[:min(200, len(resp.Body))]))).
 		Msg("upstream response")
 
 	resp.Body = shapeResponse(resp.StatusCode, resp.Body, op.Response.AllowFields)
@@ -1091,28 +1160,42 @@ func (s *Server) executePostgresConnector(ws *config.Workspace, op *policy.Opera
 		return 0, nil, fmt.Errorf("resolving secret: %w", err)
 	}
 
-	if err := s.pgConn.Connect(host, port, env.User, string(secret), db.DB, db.Schema); err != nil {
+	// One connection per request: a single shared connector was overwritten by
+	// concurrent requests, letting one tenant's query run on another tenant's
+	// connection.
+	pgConn := postgres.NewConnector()
+	if err := pgConn.Connect(host, port, env.User, string(secret), db.DB, db.Schema); err != nil {
 		return 0, nil, fmt.Errorf("connecting to postgres: %w", err)
 	}
-	defer s.pgConn.Close()
+	defer pgConn.Close()
+
+	// Dispatch on the action suffix (postgres.query, pg.query, warehouse.query …),
+	// not the full op ID — the op is already routed here by op.Connector, so a DB
+	// site named anything other than "postgres" must still work.
+	action := op.ID
+	if i := strings.LastIndex(op.ID, "."); i >= 0 {
+		action = op.ID[i+1:]
+	}
 
 	var result *postgres.QueryResult
-	switch op.ID {
-	case "postgres.query":
+	switch action {
+	case "query":
 		sqlQuery, _ := params["sql"].(string)
 		if sqlQuery == "" {
 			return 0, nil, fmt.Errorf("sql parameter required")
 		}
-		result, err = s.pgConn.ExecuteQuery(context.Background(), sqlQuery)
-	case "postgres.tables":
-		result, err = s.pgConn.ExecuteQuery(context.Background(),
+		// Restrict agent-supplied SQL to the workspace's allowed tables (if set).
+		pgConn.SetAllowedTables(ws.Policy.PgAllowedTables)
+		result, err = pgConn.ExecuteQuery(context.Background(), sqlQuery)
+	case "tables":
+		result, err = pgConn.ExecuteQuery(context.Background(),
 			"SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = "+postgres.QuoteLiteral(db.Schema)+" ORDER BY table_name")
-	case "postgres.schema":
+	case "schema":
 		tableName, _ := params["table"].(string)
 		if tableName == "" {
 			return 0, nil, fmt.Errorf("table parameter required")
 		}
-		result, err = s.pgConn.ExecuteQuery(context.Background(),
+		result, err = pgConn.ExecuteQuery(context.Background(),
 			"SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema = "+postgres.QuoteLiteral(db.Schema)+" AND table_name = "+postgres.QuoteLiteral(tableName)+" ORDER BY ordinal_position")
 	default:
 		return 0, nil, fmt.Errorf("unknown postgres operation: %s", op.ID)
@@ -1205,6 +1288,11 @@ func parseSecretRef(ref string) (workspace, name string) {
 }
 
 func (s *Server) refreshOAuthToken(env *config.Environment, workspace string) bool {
+	// Serialize refreshes so two concurrent 401s don't each spend (and race on
+	// storing) a rotating refresh token.
+	s.oauthRefreshMu.Lock()
+	defer s.oauthRefreshMu.Unlock()
+
 	refWs, refName := parseSecretRef(env.OAuth.RefreshSecretRef)
 	refreshToken, err := secrets.ResolveWithWorkspaceCheck(refWs, refName, workspace)
 	if err != nil {
@@ -1225,7 +1313,16 @@ func (s *Server) refreshOAuthToken(env *config.Environment, workspace string) bo
 	if clientSecret != "" {
 		form.Set("client_secret", clientSecret)
 	}
-	tokenResp, err := http.PostForm(env.OAuth.TokenURL, form)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	tokenReq, err := http.NewRequestWithContext(ctx, http.MethodPost, env.OAuth.TokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		s.logger.Error().Err(err).Msg("building OAuth token refresh request")
+		return false
+	}
+	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	oauthClient := &http.Client{Timeout: 30 * time.Second}
+	tokenResp, err := oauthClient.Do(tokenReq)
 	if err != nil {
 		s.logger.Error().Err(err).Str("token_url", env.OAuth.TokenURL).Msg("OAuth token refresh request failed")
 		return false
@@ -1237,7 +1334,8 @@ func (s *Server) refreshOAuthToken(env *config.Environment, workspace string) bo
 		return false
 	}
 	var tokenData struct {
-		AccessToken string `json:"access_token"`
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
 	}
 	if err := json.NewDecoder(tokenResp.Body).Decode(&tokenData); err != nil {
 		s.logger.Error().Err(err).Msg("failed to decode OAuth token response")
@@ -1252,6 +1350,13 @@ func (s *Server) refreshOAuthToken(env *config.Environment, workspace string) bo
 	if err := resolver.Set(wsName, secretName, []byte(strings.TrimSpace(tokenData.AccessToken))); err != nil {
 		s.logger.Error().Err(err).Msg("failed to store refreshed OAuth access token")
 		return false
+	}
+	// Persist a rotated refresh token (Atlassian 3LO, Google offline invalidate the
+	// old one on use) so the next refresh doesn't present a dead token and wedge.
+	if rt := strings.TrimSpace(tokenData.RefreshToken); rt != "" && env.OAuth.RefreshSecretRef != "" {
+		if err := resolver.Set(refWs, refName, []byte(rt)); err != nil {
+			s.logger.Error().Err(err).Msg("failed to store rotated OAuth refresh token")
+		}
 	}
 	resolver.FlushCache()
 	s.logger.Info().Str("secret_ref", env.SecretRef).Msg("OAuth access token refreshed and stored")
@@ -1812,6 +1917,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("ops reload failed: %v", err), http.StatusInternalServerError)
 			return
 		}
+		// Re-attach a tunnel checker built from the freshly-loaded config; without
+		// this the reloaded registry has a nil checker and every tunnel-gated op is
+		// denied until the process restarts.
+		if s.tunnelCheckerFactory != nil {
+			newReg.TunnelChecker = s.tunnelCheckerFactory(cfg)
+		}
 		checksum := computeChecksum(cfg.ConfigPath)
 		s.cfgPtr.Store(cfg)
 		s.reg = newReg
@@ -1852,8 +1963,12 @@ func (s *Server) authenticate(r *http.Request) string {
 }
 
 func (s *Server) authenticateAdmin(r *http.Request) bool {
-	if s.cfg().AdminTokenSHA == "" {
-		return true
+	adminSHA := s.cfg().AdminTokenSHA
+	if adminSHA == "" {
+		// Fail closed: admin endpoints stay disabled until an admin token is
+		// configured. Previously this returned true, leaving /admin/* — secret
+		// set/delete, diag, reload — open to any caller when the token was unset.
+		return false
 	}
 	auth := r.Header.Get("Authorization")
 	if !strings.HasPrefix(auth, "Bearer ") {
@@ -1861,7 +1976,8 @@ func (s *Server) authenticateAdmin(r *http.Request) bool {
 	}
 	token := strings.TrimPrefix(auth, "Bearer ")
 	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:]) == s.cfg().AdminTokenSHA
+	got := hex.EncodeToString(h[:])
+	return subtle.ConstantTimeCompare([]byte(got), []byte(adminSHA)) == 1
 }
 
 func (s *Server) executeEmailConnector(ws *config.Workspace, op *policy.Operation, params map[string]interface{}, workspace string) (int, []byte, error) {

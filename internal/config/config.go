@@ -106,6 +106,35 @@ type WorkspacePolicy struct {
 	TrelloAllowedLists    []string `yaml:"trello_allowed_lists"`
 }
 
+// List returns the workspace allow-list named by a `$workspace.<name>` operation
+// reference (e.g. "github_repos"), and whether that name is a known allow-list.
+// A known-but-empty list means "not configured" and is treated by callers as
+// "no restriction" rather than "deny everything".
+func (p *WorkspacePolicy) List(name string) ([]string, bool) {
+	switch name {
+	case "jira_projects":
+		return p.JiraProjects, true
+	case "bitbucket_repos":
+		return p.BitbucketRepos, true
+	case "gitlab_projects":
+		return p.GitlabProjects, true
+	case "github_repos":
+		return p.GithubRepos, true
+	case "pg_allowed_tables":
+		return p.PgAllowedTables, true
+	case "slack_channels":
+		return p.SlackChannels, true
+	case "kibana_clusters":
+		return p.KibanaClusters, true
+	case "kibana_indices":
+		return p.KibanaIndices, true
+	case "clockify_projects":
+		return p.ClockifyProjects, true
+	default:
+		return nil, false
+	}
+}
+
 type Role struct {
 	Operations []string `yaml:"operations"`
 }
