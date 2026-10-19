@@ -75,3 +75,50 @@ func TestJQLScopeNoProjectsNoop(t *testing.T) {
 		t.Fatalf("jql should be unchanged when no projects configured, got %q", got)
 	}
 }
+
+func TestJQLScopeKeepsTrailingOrderBy(t *testing.T) {
+	c := &JQLScopeConstraint{}
+	w := ws(config.WorkspacePolicy{JiraProjects: []string{"MD", "PROJ"}})
+	cases := []struct{ name, jql, want string }{
+		{"desc", `status = Open ORDER BY updated DESC`, `(status = Open) AND project in (MD,PROJ) ORDER BY updated DESC`},
+		{"lowercase multi", `status = Open order by priority desc, created`, `(status = Open) AND project in (MD,PROJ) order by priority desc, created`},
+		{"custom field", `status = Open ORDER BY cf[10117] ASC, "Story Points" DESC`, `(status = Open) AND project in (MD,PROJ) ORDER BY cf[10117] ASC, "Story Points" DESC`},
+		{"only order by", `ORDER BY created DESC`, `project in (MD,PROJ) ORDER BY created DESC`},
+		{"order by in string", `summary ~ "x ORDER BY y"`, `(summary ~ "x ORDER BY y") AND project in (MD,PROJ)`},
+		{"word ending in or", `labels = color ORDER BY key`, `(labels = color) AND project in (MD,PROJ) ORDER BY key`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			params := map[string]interface{}{"jql": tc.jql}
+			if err := c.Check(nil, params, w); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := params["jql"].(string); got != tc.want {
+				t.Fatalf("jql = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestJQLScopeRejectsScopeEscapes(t *testing.T) {
+	c := &JQLScopeConstraint{}
+	w := ws(config.WorkspacePolicy{JiraProjects: []string{"MD"}})
+	for name, jql := range map[string]string{
+		"stray close paren":   `project = SECRET) OR (project = SECRET`,
+		"unclosed paren":      `(project = MD`,
+		"unclosed quote":      `summary ~ "abc`,
+		"paren in order by":   `status = Open ORDER BY created) OR (project = SECRET`,
+		"predicate in order":  `status = Open ORDER BY created, project = SECRET`,
+		"function in order":   `status = Open ORDER BY now()`,
+		"second order by":     `status = Open ORDER BY created ORDER BY key`,
+		"order by no field":   `status = Open ORDER BY`,
+		"order by then query": `status = Open ORDER BY created DESC OR project = SECRET`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			params := map[string]interface{}{"jql": jql}
+			if err := c.Check(nil, params, w); err == nil {
+				t.Fatalf("expected %q to be rejected, got jql %q", jql, params["jql"])
+			}
+		})
+	}
+}

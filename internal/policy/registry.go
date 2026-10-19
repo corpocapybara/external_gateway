@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/external_gateway/internal/config"
@@ -69,8 +70,78 @@ func (c *JQLScopeConstraint) Check(op *Operation, params map[string]interface{},
 	//   (<jql>) AND project in (A,B)
 	// Project keys are simple identifiers, so they are emitted unquoted (quotes
 	// would be JSON-escaped when jql is placed into a request body or query).
-	params["jql"] = fmt.Sprintf("(%s) AND project in (%s)", jql, strings.Join(projects, ","))
+	// A trailing ORDER BY is not part of the filter: it is split off first and
+	// re-appended after the scope, since JQL rejects it inside parentheses.
+	filter, order, err := splitJQLOrderBy(jql)
+	if err != nil {
+		return err
+	}
+	scoped := fmt.Sprintf("project in (%s)", strings.Join(projects, ","))
+	if filter != "" {
+		scoped = fmt.Sprintf("(%s) AND %s", filter, scoped)
+	}
+	if order != "" {
+		scoped += " " + order
+	}
+	params["jql"] = scoped
 	return nil
+}
+
+var (
+	orderByStart  = regexp.MustCompile(`(?i)^order\s+by\b`)
+	orderField    = `(?:"[^"]*"|'[^']*'|cf\[\d+\]|[A-Za-z_][A-Za-z0-9_.]*)(?:\s+(?:asc|desc))?`
+	orderByClause = regexp.MustCompile(`(?i)^order\s+by\s+` + orderField + `(?:\s*,\s*` + orderField + `)*$`)
+)
+
+// splitJQLOrderBy separates the filter from a top-level trailing ORDER BY clause.
+// Quotes and parentheses must balance, so a stray ")" in the filter cannot close
+// the scope wrapper early (`x) OR (project = OTHER`), and the ORDER BY clause may
+// only list sort fields, so it cannot smuggle in a predicate.
+func splitJQLOrderBy(jql string) (filter, order string, err error) {
+	var quote byte
+	depth := 0
+	orderAt := -1
+	for i := 0; i < len(jql); i++ {
+		c := jql[i]
+		if quote != 0 {
+			if c == '\\' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			quote = c
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth < 0 {
+				return "", "", fmt.Errorf("jql has an unbalanced parenthesis")
+			}
+		case 'o', 'O':
+			if depth == 0 && orderAt < 0 && (i == 0 || !isJQLWordByte(jql[i-1])) && orderByStart.MatchString(jql[i:]) {
+				orderAt = i
+			}
+		}
+	}
+	if quote != 0 || depth != 0 {
+		return "", "", fmt.Errorf("jql has an unbalanced quote or parenthesis")
+	}
+	if orderAt < 0 {
+		return strings.TrimSpace(jql), "", nil
+	}
+	order = strings.TrimSpace(jql[orderAt:])
+	if !orderByClause.MatchString(order) {
+		return "", "", fmt.Errorf("jql ORDER BY clause must list only sort fields, each optionally ASC or DESC")
+	}
+	return strings.TrimSpace(jql[:orderAt]), order, nil
+}
+
+func isJQLWordByte(b byte) bool {
+	return b == '_' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }
 
 type PostgresReadOnlyConstraint struct{}

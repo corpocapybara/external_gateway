@@ -87,7 +87,9 @@ body_template: |
 Marks an operation as read-only. Write operations must NOT have this constraint.
 
 ### jql_scope
-For Jira JQL operations. Validates that the JQL string contains at least one project from the workspace's `jira_projects` policy list.
+For Jira JQL operations. Rewrites the `jql` param to `(<jql>) AND project in (<jira_projects>)`, so a query can never leave the workspace's `jira_projects` policy list.
+
+A trailing `ORDER BY` is split off first and re-appended after the scope (JQL rejects it inside parentheses): `status = Open ORDER BY updated DESC` becomes `(status = Open) AND project in (A,B) ORDER BY updated DESC`. The clause may only list sort fields (`created`, `"Story Points" DESC`, `cf[10117] ASC`, comma-separated). Anything else after `ORDER BY`, and unbalanced parentheses or quotes anywhere in the JQL, are denied with rule `constraint` — a stray `)` would otherwise close the wrapper early and let an `OR (...)` branch escape the scope.
 
 ```yaml
 constraints:
