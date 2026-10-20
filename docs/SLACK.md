@@ -110,6 +110,11 @@ $xoxd | .\egw-admin.exe -workspace acme -name slack-xoxd -admin http://127.0.0.1
 Each shapes its response via `allow_fields` (e.g. `messages[].ts/user/text`,
 `response_metadata.next_cursor` for pagination).
 
+`slack.messages`/`slack.replies` also surface **file/image attachment metadata**
+(`messages[].files[].{id,name,title,mimetype,filetype,size,url_private,permalink}`).
+This is metadata only — the file *bytes* are not returned; `url_private` requires a
+separate authenticated fetch (Slack bearer token), which the gateway does not yet proxy.
+
 **`slack.send` design:** it deliberately has **no** `body_template`. The server's
 `buildBody` does raw `{{key}}` substitution with no JSON escaping, so a `text` containing
 `"`/newlines would produce invalid JSON. Instead, `channel`/`text` are auto-appended as
