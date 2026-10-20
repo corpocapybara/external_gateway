@@ -56,6 +56,16 @@ The resolver now treats `len(secret) <= 1` as "secret not set". This catches bot
 
 **Fix**: `splitPath` now preserves `[]` as a segment; a recursive `project` maps the remaining path over every array element (index-aligned) and `deepMerge` collects multiple `allow_fields` onto the same elements. Covered by `internal/redact/hook_test.go`. Numeric indices (`[0]`) remain unsupported (no operation uses them).
 
+### `allow_fields` ignored for top-level array responses (fixed 2026-10-15)
+
+**Location**: `internal/server/server.go`, `shapeResponse()`
+
+**Symptom**: List endpoints (`gitlab.projects`, any GitLab `/merge_requests` or `/discussions` list) returned every upstream field despite `allow_fields`.
+
+**Root cause**: `shapeResponse` unmarshalled only into `map[string]interface{}`; an array body failed that and passed through unshaped.
+
+**Fix**: arrays are now shaped element by element (covered by `shape_response_test.go`). The envelope is unchanged: a non-object body is still returned as a string in `upstream_body`, which callers must parse.
+
 ## Design gotchas
 
 ### `env` and `cluster` params are routing-only
@@ -144,6 +154,14 @@ Port 587 uses plain TCP + `STARTTLS` command. Port 465 uses direct TLS (`tls.Dia
 
 When a `body_template` includes `{{optional_param}}` and the param is not in the request, the literal `{{optional_param}}` stays in the body. Clockify rejects `"projectId":"{{project_id}}"` as an invalid project ID. Fix: post-loop sanitization that strips remaining `{{...}}` placeholders.
 
+### `body_template` params were also sent as query parameters (fixed 2026-10-19)
+
+`executeHttpConnector` used to add every param that is not in the path to the query string, including those the `body_template` already uses. The query copy was JSON-escaped (a newline arrived as a literal `\n`, `<` as `<`), and a long write body (`gitlab.mr_note` body, `gitlab.mr_update` description, `jira.edit` fields) inflated the URL toward a 414. GitLab tolerated it only because Rack's `params` is `GET.merge(POST)`, so the JSON body won. Since 2026-10-19 a param that appears as `{{key}}` in the op's `body_template` is not copied to the query; a param in neither the path nor the body still is (e.g. `kibana.search` `index`, `clockify.projects` `active_only`). No op in `operations.*.yaml` or `config.example/` relied on the copy. Covered by `internal/server/query_params_test.go`, and checked against a mock upstream: `gitlab.mr_note`, `gitlab.mr_update` (20 KB description) and `gitlab.mr_create` arrive with no query string and a valid JSON body.
+
+### `bool` params were not type-checked (fixed 2026-10-19)
+
+`ValidateParams` had no `bool` case, so a string like `"yes"` passed and landed unquoted in a body such as `"remove_source_branch": {{remove_source_branch}}`, giving invalid JSON. A `bool` param now must be a JSON `true`/`false`; anything else is denied `parameter <name> must be a boolean` (`internal/policy/enforcement_test.go`).
+
 ### Admin handler: missing `case "reload":` after adding `diag`
 
 When inserting a new `case "diag":` between `secrets` and `reload` in the admin switch, the `case "reload":` label was eaten (it was at the boundary of the replaced string). The reload code ran as dead code inside the diag case body. Symptom: `POST /admin/reload` returned `"unknown admin endpoint"` even though the root help page listed it. Fix: always verify all `case` labels remain after editing switch statements.
@@ -158,7 +176,7 @@ The path resolver only handled `{site.workspace_id}`, `{site.user_id}`, `{site.w
 
 ### Jenkins CSRF crumb required for POST operations
 
-Jenkins with CSRF protection rejects POST requests without a `Jenkins-Crumb` header. GET ops work fine. Fix: fetch `/crumbIssuer/api/json` with the same auth headers, then include the crumb in the main request header.
+Jenkins with CSRF protection rejects POST requests without a `Jenkins-Crumb` header. GET ops work fine. Fix: fetch `/crumbIssuer/api/json` with the same auth headers, then include the crumb in the main request header **and send back the session cookie the crumb response set**: since Jenkins 2.176.2 `DefaultCrumbIssuer` hashes the session id into the crumb, so a crumb without its `JSESSIONID.*` cookie still answers 403 "No valid crumb was included in the request" (fixed 2026-10-19, `jenkins_crumb_test.go`). The crumb path only runs for password auth: a Jenkins API token as the secret skips CSRF entirely (`ApiCrumbExclusion`).
 
 ### Port conflicts from `deploy/update.ps1`
 

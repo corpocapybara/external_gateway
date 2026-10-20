@@ -44,6 +44,23 @@ func TestShapeResponse(t *testing.T) {
 		}
 	})
 
+	t.Run("top-level array is shaped per element", func(t *testing.T) {
+		body := []byte(`[{"id":1,"status":"a","secret":"x"},{"id":2,"secret":"y"}]`)
+		got := shapeResponse(200, body, allow)
+		var arr []map[string]interface{}
+		if err := json.Unmarshal(got, &arr); err != nil {
+			t.Fatalf("shaped body not a JSON array: %v (%s)", err, got)
+		}
+		if len(arr) != 2 || arr[1]["id"] != float64(2) {
+			t.Fatalf("elements lost or wrong: %s", got)
+		}
+		for _, m := range arr {
+			if _, ok := m["secret"]; ok {
+				t.Fatalf("non-allowed field survived shaping: %s", got)
+			}
+		}
+	})
+
 	t.Run("no allow_fields is a no-op", func(t *testing.T) {
 		body := []byte(`{"a":1,"b":2}`)
 		if got := shapeResponse(200, body, nil); string(got) != string(body) {

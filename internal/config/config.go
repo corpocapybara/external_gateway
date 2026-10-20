@@ -44,6 +44,8 @@ type Workspace struct {
 
 type Site struct {
 	Environments map[string]Environment `yaml:"environments"`
+	// Disabled keeps the site's configuration but refuses its operations (soft delete).
+	Disabled bool `yaml:"disabled"`
 }
 
 type Environment struct {

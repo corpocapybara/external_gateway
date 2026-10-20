@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/danieljoos/wincred"
 )
@@ -36,4 +37,12 @@ func (s *WinCredStore) Delete(workspace, name string) error {
 		return err
 	}
 	return cred.Delete()
+}
+
+func (s *WinCredStore) LastWritten(workspace, name string) (time.Time, bool) {
+	cred, err := wincred.GetGenericCredential(fmt.Sprintf("egw/%s/%s", workspace, name))
+	if err != nil || len(cred.CredentialBlob) <= 1 {
+		return time.Time{}, false
+	}
+	return cred.LastWritten, true
 }
