@@ -47,13 +47,15 @@ param(
   [switch]$Diagnose,
   [switch]$Rebuild,
   [string]$AgentToken,
-  [string]$Repo         = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
+  [string]$Repo         = $(if ($PSScriptRoot) { try { (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) } catch { $PSScriptRoot } } else { (Get-Location).Path }),
   [string]$SlackAppData = (Join-Path $env:APPDATA 'Slack'),
   [string]$GoExe        = 'C:\Program Files\Go\bin\go.exe',
   [string]$PythonExe    = ''
 )
 $ErrorActionPreference = 'Stop'
-$toolDir = $PSScriptRoot
+$toolDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not $toolDir -or -not (Test-Path $toolDir)) { $toolDir = $PSScriptRoot; if (-not $toolDir) { $toolDir = Split-Path -Parent $PSCommandPath } }
+if (-not $toolDir -or -not (Test-Path $toolDir)) { $toolDir = "C:\dev\playground\external_gateway\tools\slack-provision" }
 $work    = Join-Path ([IO.Path]::GetTempPath()) ("slackprov_" + [Guid]::NewGuid().ToString('N').Substring(0,8))
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 
@@ -174,6 +176,31 @@ $ls = Get-Content (Join-Path $SlackAppData 'Local State') -Raw -Encoding utf8 | 
 $encKey = [Convert]::FromBase64String($ls.os_crypt.encrypted_key)
 $aesKey = [DP]::Unprotect([byte[]]($encKey[5..($encKey.Length-1)]))
 
+try { $null = [Security.Cryptography.AesGcm]; $hasAesGcm = $true } catch { $hasAesGcm = $false }
+if (-not $hasAesGcm) {
+  $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
+  if ($pwshCmd) {
+    Warn "  Windows PowerShell 5.1 lacks [AesGcm] - re-invoking via pwsh ($($pwshCmd.Source))..."
+    $scriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Path }
+    if (-not $scriptPath -or -not (Test-Path $scriptPath)) { $scriptPath = Join-Path $toolDir 'Provision-Slack.ps1' }
+    # Build explicit argument list and pass Repo to avoid $PSScriptRoot default failure in child
+    $repoArg = if ($Repo) { $Repo } else { (Split-Path -Parent (Split-Path -Parent $toolDir)) }
+    $argList = @('-NoProfile','-File', $scriptPath, '-Workspace', $Workspace, '-Port', "$Port", '-SlackDomain', $SlackDomain, '-Repo', $repoArg)
+    if ($Prefix -ne 'slack') { $argList += @('-Prefix', $Prefix) }
+    if ($Deploy)      { $argList += '-Deploy' }
+    if ($Verify)      { $argList += '-Verify' }
+    if ($Diagnose)    { $argList += '-Diagnose' }
+    if ($Rebuild)     { $argList += '-Rebuild' }
+    if ($TokenOnly)   { $argList += '-TokenOnly' }
+    if ($AgentToken)  { $argList += @('-AgentToken', $AgentToken) }
+    # Use Start-Process-safe invocation via pwsh.exe from PATH
+    $psi = Start-Process -FilePath $pwshCmd.Source -ArgumentList $argList -Wait -NoNewWindow -PassThru
+    exit $psi.ExitCode
+  } else {
+    throw "AesGcm missing in Windows PowerShell 5.1 - run with PowerShell 7: pwsh -File `"$PSCommandPath`" -Workspace $Workspace -Port $Port -SlackDomain $SlackDomain"
+  }
+}
+
 function Decrypt-V10([byte[]]$blob,[byte[]]$key){
   $pfx=[Text.Encoding]::ASCII.GetString($blob[0..2])
   if($pfx -ne 'v10' -and $pfx -ne 'v11'){ throw "bad cookie prefix '$pfx'" }
@@ -282,25 +309,51 @@ if ($Verify) {
   if (-not $AgentToken) {
     $keys = Join-Path $Repo 'agent-keys.txt'
     if (Test-Path $keys) {
-      $label = "$Workspace Full Access"
       $txt = Get-Content $keys -Raw
-      $m = [regex]::Match($txt, [regex]::Escape("[$label]") + '.*?Token:\s*(\S+)', 'Singleline')
+      # case-insensitive: workspace param is lowercase (thp) but file has THP
+      $m = [regex]::Match($txt, [regex]::Escape("[$Workspace Full Access]") + '.*?Token:\s*(\S+)', [Text.RegularExpressions.RegexOptions]::Singleline -bor [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+      if (-not $m.Success) {
+        # fallback: try uppercase variant
+        $m = [regex]::Match($txt, [regex]::Escape("[$($Workspace.ToUpper()) Full Access]") + '.*?Token:\s*(\S+)', [Text.RegularExpressions.RegexOptions]::Singleline -bor [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+      }
       if ($m.Success) { $AgentToken = $m.Groups[1].Value }
     }
   }
   if (-not $AgentToken) { Warn "  no agent token (pass -AgentToken); skipping verify"; }
   else {
-    Start-Sleep -Seconds 1
+    # secret resolver has 30s cache (internal/secrets/resolver.go) - immediate verify may hit stale invalid_auth
     $hdr = @{ Authorization = "Bearer $AgentToken" }
-    try {
-      $at = Invoke-RestMethod -Uri "$base/v1/workspaces/$Workspace/op/slack.auth_test" -Method Post -Headers $hdr -ContentType 'application/json' -Body '{}'
-      Ok ("  auth.test => " + ($at | ConvertTo-Json -Compress))
-      $ch = Invoke-RestMethod -Uri "$base/v1/workspaces/$Workspace/op/slack.channels" -Method Post -Headers $hdr -ContentType 'application/json' -Body '{"limit":3}'
-      Write-Host ("  channels  => " + ($ch | ConvertTo-Json -Compress -Depth 6))
-    } catch {
-      Warn ("  verify FAILED: " + $_.Exception.Message)
-      if($_.ErrorDetails){ Warn ("  detail: " + $_.ErrorDetails.Message) }
+    $attempts = @(
+      @{wait=2; label="verify (cache may be stale)"},
+      @{wait=33; label="retry after 30s secret cache expiry"}
+    )
+    $verified = $false
+    foreach ($a in $attempts) {
+      Start-Sleep -Seconds $a.wait
+      Info ("  $($a.label): slack.auth_test")
+      try {
+        $at = Invoke-RestMethod -Uri "$base/v1/workspaces/$Workspace/op/slack.auth_test" -Method Post -Headers $hdr -ContentType 'application/json' -Body '{}' -TimeoutSec 10
+        Ok ("  auth.test => " + ($at | ConvertTo-Json -Compress))
+        if ($at.ok -eq $true) {
+          $ch = Invoke-RestMethod -Uri "$base/v1/workspaces/$Workspace/op/slack.channels" -Method Post -Headers $hdr -ContentType 'application/json' -Body '{"limit":3}' -TimeoutSec 10
+          Write-Host ("  channels  => " + ($ch | ConvertTo-Json -Compress -Depth 6))
+          $verified = $true
+          break
+        } elseif ($at.error -eq "invalid_auth" -and -not $verified -and $a.wait -lt 30) {
+          Warn "  invalid_auth - likely stale 30s cache, will retry after expiry..."
+          continue
+        } else {
+          Warn ("  verify returned: " + ($at | ConvertTo-Json -Compress))
+          break
+        }
+      } catch {
+        Warn ("  verify FAILED: " + $_.Exception.Message)
+        if($_.ErrorDetails){ Warn ("  detail: " + $_.ErrorDetails.Message) }
+        if ($a.wait -lt 30) { Warn "  will retry after cache expiry..."; continue }
+        break
+      }
     }
+    if (-not $verified) { Warn "  verify did not succeed - wait 35s and test manually: Invoke-RestMethod $base/v1/workspaces/$Workspace/op/slack.auth_test" }
   }
 }
 
