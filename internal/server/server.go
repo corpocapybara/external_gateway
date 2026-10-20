@@ -227,7 +227,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, opID := range role.Operations {
-			if op, ok := s.reg.Get(opID); ok {
+			if op, ok := s.reg.Get(opID); ok && !ws.Sites[op.Site].Disabled {
 				wsOps[opID] = op
 			}
 		}
@@ -282,7 +282,7 @@ func (s *Server) getWorkspaceOperations(ws *config.Workspace) map[string]*policy
 		if op.Site == "" {
 			continue
 		}
-		if _, ok := ws.Sites[op.Site]; ok {
+		if site, ok := ws.Sites[op.Site]; ok && !site.Disabled {
 			ops[id] = op
 		}
 	}
@@ -369,6 +369,11 @@ func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, agentID, w
 		return
 	}
 
+	if site, ok := ws.Sites[op.Site]; ok && site.Disabled {
+		s.writeDeny(w, r, agentID, workspace, opID, "disabled", "integration "+op.Site+" is disabled in this workspace")
+		return
+	}
+
 	var params map[string]interface{}
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
@@ -418,6 +423,11 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 
 	if !s.agentHasOp(agent, workspace, opID) {
 		s.writeDeny(w, r, agentID, workspace, opID, "grant", "operation not allowed for this agent")
+		return
+	}
+
+	if site, ok := ws.Sites[op.Site]; ok && site.Disabled {
+		s.writeDeny(w, r, agentID, workspace, opID, "disabled", "integration "+op.Site+" is disabled in this workspace")
 		return
 	}
 
@@ -698,6 +708,9 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		if strings.Contains(op.Path, "{"+key+"}") || strings.Contains(op.Path, "{"+key+"|urlencode}") {
 			continue
 		}
+		if strings.Contains(op.BodyTemplate, "{{"+key+"}}") {
+			continue
+		}
 		queryParams.Add(key, formatParamValue(val))
 	}
 
@@ -735,7 +748,8 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 	}
 
 	// Jenkins CSRF crumb: POST requests need a valid crumb. Fetch it before the main
-	// request by calling the crumbIssuer endpoint with the same auth headers.
+	// request by calling the crumbIssuer endpoint with the same auth headers. Jenkins
+	// binds the crumb to the web session, so the session cookie it sets goes along too.
 	if op.Site == "jenkins" && (op.Method == "POST" || op.Method == "PUT") && env.SecretRef != "" {
 		crumbURL := strings.TrimSuffix(baseURL, "/") + "/crumbIssuer/api/json"
 		crumbHeaders := map[string]string{"Accept": "application/json"}
@@ -756,6 +770,9 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 			}
 			if json.Unmarshal(crumbResp.Body, &crumbData) == nil && crumbData.Crumb != "" {
 				headers[crumbData.CrumbRequestField] = crumbData.Crumb
+				if cookie := crumbResp.Headers["Set-Cookie"]; cookie != "" {
+					headers["Cookie"] = strings.SplitN(cookie, ";", 2)[0]
+				}
 				s.logger.Info().Str("crumb_field", crumbData.CrumbRequestField).Msg("Jenkins CSRF crumb fetched")
 			}
 		} else {
@@ -919,15 +936,31 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 // error detail survives — otherwise allow_fields strips a rejected write (e.g. an
 // invalid Jira transition, HTTP 400) down to an empty envelope that looks
 // identical to a success. Non-JSON bodies (e.g. an empty 204) also pass through.
+// A top-level array (e.g. a GitLab list endpoint) is shaped element by element.
 func shapeResponse(status int, body []byte, allowFields []string) []byte {
 	if len(allowFields) == 0 || status >= 400 {
 		return body
 	}
-	var jsonData map[string]interface{}
+	var jsonData interface{}
 	if err := json.Unmarshal(body, &jsonData); err != nil {
 		return body
 	}
-	filtered := redact.NewResponseShaper(allowFields).Shape(jsonData)
+	shaper := redact.NewResponseShaper(allowFields)
+	var filtered interface{}
+	switch v := jsonData.(type) {
+	case map[string]interface{}:
+		filtered = shaper.Shape(v)
+	case []interface{}:
+		items := make([]interface{}, 0, len(v))
+		for _, item := range v {
+			if m, ok := item.(map[string]interface{}); ok {
+				items = append(items, shaper.Shape(m))
+			}
+		}
+		filtered = items
+	default:
+		return body
+	}
 	if filteredBody, err := json.Marshal(filtered); err == nil {
 		return filteredBody
 	}
@@ -1720,7 +1753,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 0 || parts[0] == "" {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"endpoints": "POST /admin/secrets, POST /admin/reload, POST /admin/diag",
+			"endpoints": "POST /admin/secrets, GET /admin/secrets/status?workspace=, POST /admin/reload, POST /admin/diag",
 		})
 		return
 	}
@@ -1729,6 +1762,10 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	case "secrets":
 		if !s.authenticateAdmin(r) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "status" {
+			s.handleSecretStatus(w, r)
 			return
 		}
 		if r.Method == http.MethodDelete {

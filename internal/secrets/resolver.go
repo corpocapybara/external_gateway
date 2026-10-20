@@ -103,11 +103,27 @@ func checkEmpty(secret []byte) ([]byte, error) {
 }
 
 func (r *Resolver) Set(workspace, name string, value []byte) error {
+	defer r.forget(workspace, name)
 	return r.store.Set(workspace, name, value)
 }
 
 func (r *Resolver) Delete(workspace, name string) error {
+	defer r.forget(workspace, name)
 	return r.store.Delete(workspace, name)
+}
+
+func (r *Resolver) forget(workspace, name string) {
+	r.mu.Lock()
+	delete(r.cache, fmt.Sprintf("%s/%s", workspace, name))
+	r.mu.Unlock()
+}
+
+// LastWritten reports when the secret was last written, if the store tracks it.
+func (r *Resolver) LastWritten(workspace, name string) (time.Time, bool) {
+	if s, ok := r.store.(InfoStore); ok {
+		return s.LastWritten(workspace, name)
+	}
+	return time.Time{}, false
 }
 
 func (r *Resolver) FlushCache() {

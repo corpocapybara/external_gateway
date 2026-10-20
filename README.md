@@ -34,6 +34,7 @@ Invoke-RestMethod http://127.0.0.1:8443/healthz
 & "C:\Program Files\Go\bin\go.exe" build -o egw.exe      ./cmd/egw/
 & "C:\Program Files\Go\bin\go.exe" build -o egw-admin.exe ./cmd/egw-admin/
 & "C:\Program Files\Go\bin\go.exe" build -o egwctl.exe    ./cmd/egwctl/
+& "C:\Program Files\Go\bin\go.exe" build -ldflags -H=windowsgui -o ExternalGateway.exe ./cmd/egw-desktop/
 ```
 
 Produces three binaries in the project root. Pass `-v` for verbose logging.
@@ -88,7 +89,10 @@ roles:
       - gitlab.branches
 ```
 
-### Configuring admin auth (optional)
+### Configuring admin auth (required for `/admin/*`)
+
+Without `admin_token_sha256` every admin call returns `401` (fail-closed). `ExternalGateway.exe` can set this up for you
+(**Enable admin API**); to do it by hand:
 
 ```powershell
 # Generate an admin token
@@ -103,6 +107,37 @@ Set `admin_token_sha256: <hash>` in the config, deploy, restart. All `/admin/*` 
 ## Set secrets
 
 Secrets are stored in the **SYSTEM account's** Windows Credential Manager. The gateway (running as `LocalSystem`) resolves them at runtime.
+
+### Via ExternalGateway.exe (desktop app)
+
+`ExternalGateway.exe` (source `cmd/egw-desktop`) is a tray app with a local UI. Double-click it in this folder; it
+runs unelevated and asks for a UAC confirmation only for admin-only actions (publish to Program Files, deploy,
+service start/stop). Running it again just reopens the window. Quit it from the tray menu.
+
+- **To-do** tab: every problem across workspaces with a fix button - missing/rejected/expired secrets, tokens
+  expiring within N days, service stopped or gateway down, admin API locked, unpublished config changes, an
+  `egw.exe` build newer than the deployed one. Unreachable checks (VPN/tunnel down) are listed as info.
+- **Background checks** every N minutes (default 30) with a Windows notification when a new problem appears; the
+  tray icon turns amber/red. Tray menu: Open, Check now, Start with Windows, Notifications, Quit.
+- Per workspace tab:
+  - **Secrets**: stored state, last written, live check (identity, expiry and scopes for GitLab/GitHub), and a
+    guided **Change/Set** with creation links, format hints and a **Test** against the provider before saving.
+  - **Capabilities**: every operation with the roles that grant it (tick to grant), remove, and **Add capability**
+    from a catalog of the operation definitions in all `operations*.yaml` files, or a custom HTTP operation.
+  - **Services**: sites and environments, **Disable/Enable** per site (soft delete: `disabled: true` on the site keeps
+    its config, secrets and capabilities; the gateway refuses its operations with rule `disabled`, leaves them out of
+    `/capabilities`, and status checks, to-dos and notifications skip it), and **Add service** from templates (GitLab, GitHub, Jira/Confluence
+    Cloud, Jenkins, Bitbucket, Slack session, Clockify, Kibana, PostgreSQL, generic REST) with catalog capabilities
+    and the site variables they need (`org`, `group`, `workspace`).
+  - **Agents & tokens**: regenerate an agent token, create a new agent token, regenerate the admin token.
+- Every config edit shows a diff first, touches only the changed lines (comments and blank lines kept), is
+  validated with the gateway's own loaders and backed up to `%APPDATA%\ExternalGateway\backups` before writing
+  to the source `config.<ws>.yaml` / `operations.<ws>.yaml`. **Publish & reload** then copies them to Program Files
+  (UAC) and hot-reloads the gateway (`POST /admin/reload`), falling back to a service restart.
+- New tokens are written to `agent-keys.txt` (hash in the config) and shown once.
+
+Settings (interval, notifications, expiry warning, start with Windows) live in `%APPDATA%\ExternalGateway`.
+The live status needs a gateway build with `GET /admin/secrets/status`.
 
 ### Via egw-admin.exe (gateway must be running)
 
@@ -318,6 +353,7 @@ Agent ──Bearer token──> AuthN ──> Policy (grants) ──> Operation 
 | Response shaping | ✓ | [`.ai/OPERATIONS.md`](.ai/OPERATIONS.md) — `allow_fields` with dot-notation + array projection |
 | PostgreSQL read-only | ✓ | [AST-based validation](.ai/PITFALLS.md#postgresql-sql-guard-uses-regex-not-ast) via pgparser; multi-statement + FOR UPDATE detection |
 | Slack | ✓ | [Session token auth](docs/SLACK.md) — `xoxc` + `xoxd` cookie; [provision tool](docs/SLACK.md#provisioning--rotation-tool) |
+| GitLab | ✓ | Bearer PAT; reads need `read_api`, the writes `gitlab.mr_update` / `gitlab.mr_create` / `gitlab.mr_note` need `api` (one secret serves both). See [`.ai/OPERATIONS.md`](.ai/OPERATIONS.md) |
 | GitHub | ✓ | [Bearer PAT](docs/GITHUB.md), 13 read/write ops, repo scoping via `github_repos` |
 | Trello | ✓ | [API key + token](docs/TRELLO.md), [list-scoping policy](docs/TRELLO.md#list-scoping-policy-trello_allowed_lists) |
 | Email (IMAP/SMTP) | ✓ | [Gmail app password](docs/GMAIL.md), [whitelist/blacklist policy](docs/GMAIL.md#email-policy-whitelistblacklist) |

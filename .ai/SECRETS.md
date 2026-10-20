@@ -36,7 +36,13 @@ Bearer token injected into upstream request
 
 ## Setting secrets
 
-### Via egw-admin.exe (recommended)
+### Via ExternalGateway.exe (recommended)
+
+Tray app + UI over the admin API (`cmd/egw-desktop`): per-workspace tabs, stored/last-written state, live validity check
+(`internal/tokencheck`, served by `GET /admin/secrets/status?workspace=<ws>[&check=0]`), guided replace with a
+pre-save test. Also edits services, capabilities and agent tokens. See README → "Via ExternalGateway.exe".
+
+### Via egw-admin.exe
 
 ```powershell
 .\egw-admin.exe -workspace acme -name gitlab -value "glpat-xxx"
@@ -83,7 +89,7 @@ With `egw-admin.exe`, pass the same token via `-token` (it sets the `Authorizati
 .\egw-admin.exe -workspace acme -name gitlab -value "glpat-xxx" -admin http://127.0.0.1:8444/admin -token $adminToken
 ```
 
-If `admin_token_sha256` is empty or unset, admin auth is bypassed (backwards compatible).
+If `admin_token_sha256` is empty or unset, every admin call fails with `401 unauthorized` (fail-closed since commit `cf41f75`, `authenticateAdmin` in `internal/server/server.go`). Set it before using `egw-admin`.
 
 ## Deleting secrets
 

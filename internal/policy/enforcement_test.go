@@ -51,6 +51,21 @@ func TestValidateParamsIntMax(t *testing.T) {
 	}
 }
 
+func TestValidateParamsBoolRequiresJSONBoolean(t *testing.T) {
+	r := &OperationRegistry{}
+	op := &Operation{Params: map[string]ParamDef{"flag": {Type: "bool"}}}
+	for _, val := range []interface{}{true, false} {
+		if err := r.ValidateParams(op, map[string]interface{}{"flag": val}, ws(config.WorkspacePolicy{})); err != nil {
+			t.Fatalf("boolean %v rejected: %v", val, err)
+		}
+	}
+	for _, val := range []interface{}{"yes", "true", float64(1), nil} {
+		if err := r.ValidateParams(op, map[string]interface{}{"flag": val}, ws(config.WorkspacePolicy{})); err == nil {
+			t.Fatalf("expected non-boolean %#v to be rejected", val)
+		}
+	}
+}
+
 func TestJQLScopeInjectsFilter(t *testing.T) {
 	c := &JQLScopeConstraint{}
 	w := ws(config.WorkspacePolicy{JiraProjects: []string{"MD", "PROJ"}})

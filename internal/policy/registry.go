@@ -320,6 +320,10 @@ func (r *OperationRegistry) ValidateParams(op *Operation, params map[string]inte
 			if def.Max > 0 && f > float64(def.Max) {
 				return fmt.Errorf("parameter %s exceeds max %d", name, def.Max)
 			}
+		case "bool":
+			if _, ok := val.(bool); !ok {
+				return fmt.Errorf("parameter %s must be a boolean", name)
+			}
 		case "enum":
 			s, ok := val.(string)
 			if !ok {

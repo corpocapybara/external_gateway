@@ -193,6 +193,9 @@ Fields not listed are stripped from the response before returning to the agent. 
 | gitlab.mr | http-rest | gitlab | Get merge request — **metadata only** (no diff) |
 | gitlab.mr_changes | http-rest | gitlab | Get MR **diff**: changed files + unified diff (the code). Use this, not `gitlab.mr`, when you need the changes. |
 | gitlab.mr_comments | http-rest | gitlab | Get MR comments |
+| gitlab.mr_update | http-rest | gitlab | Replace an MR's description (**write**) |
+| gitlab.mr_create | http-rest | gitlab | Open an MR for a pushed branch: `project_id`, `source_branch`, `target_branch`, `title`, `remove_source_branch` (bool, default true); no description (**write**, 201) |
+| gitlab.mr_note | http-rest | gitlab | Reply on an existing MR thread: `project_id`, `mr_iid` (int), `discussion_id` (from `gitlab.mr_discussions`), `body` (**write**, 201) |
 | gitlab.commits | http-rest | gitlab | List commits |
 | gitlab.branches | http-rest | gitlab | List branches |
 | gitlab.projects | http-rest | gitlab | List/search projects |
@@ -202,6 +205,7 @@ Fields not listed are stripped from the response before returning to the agent. 
 | jenkins.build | http-rest | jenkins | Get build result/duration/culprits |
 | jenkins.console | http-rest | jenkins | Get build console log (plain text) |
 | jenkins.build_trigger | http-rest | jenkins | Start a build (**write**) |
+| jenkins.build_with_params | http-rest | jenkins | Start a parameterized build, `PUBLISH` pinned to `false` (**write**) |
 | kibana.login | http-rest | kibana | Get ES API key |
 | kibana.search | http-rest | kibana | Search logs |
 | postgres.query | postgres | postgres | Run SELECT (read-only enforced) |
