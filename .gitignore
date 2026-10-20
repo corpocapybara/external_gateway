@@ -41,6 +41,7 @@ feedback.log
 /secrets.yaml
 /config.*.yaml
 /operations.*.yaml
+/config.*.yaml.*.bak
 
 # Local domain knowledge (workspace specifics, tokens, URLs)
 .ai/LOCAL.md

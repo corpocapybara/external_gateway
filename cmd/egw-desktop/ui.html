@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>External Gateway</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #1d2127; --muted: #626b77; --line: #dde1e6;
+  --accent: #2f6fdf; --accent-text: #ffffff; --ok: #1a7f4b; --ok-bg: #e3f4ea; --bad: #b42318; --bad-bg: #fde8e6;
+  --warn: #8a5a00; --warn-bg: #fff2d6; --idle: #4b5563; --idle-bg: #eceff2; --code: #f0f2f5;
+  --add: #e6f6ec; --del: #fdecea;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15181c; --panel: #1d2126; --text: #e6e8eb; --muted: #9aa3ad; --line: #30353c;
+    --accent: #5b8ff0; --accent-text: #0d1117; --ok: #5fd39a; --ok-bg: #173527; --bad: #ff8a80; --bad-bg: #3d1d1b;
+    --warn: #f3c25a; --warn-bg: #3a2e12; --idle: #b8c0ca; --idle-bg: #2a2f36; --code: #262b31;
+    --add: #17321f; --del: #3a1d1b;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+header { display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+.spacer { flex: 1; }
+nav.tabs { display: flex; gap: 2px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+nav.tabs button, nav.sub button { border: 0; background: none; color: var(--muted); padding: 10px 14px; font: inherit; cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+nav.tabs button.active, nav.sub button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+nav.sub { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 4px 0 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--idle-bg); display: inline-block; }
+.dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+.count { background: var(--bad); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 11px; font-weight: 700; }
+main { padding: 16px 20px 60px; max-width: 1240px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.muted { color: var(--muted); } .small { font-size: 12px; }
+code, .mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12.5px; }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
+button.btn, a.btn { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 5px 11px; font: inherit; cursor: pointer; text-decoration: none; display: inline-block; white-space: nowrap; }
+button.btn:hover, a.btn:hover { border-color: var(--accent); }
+.primary { background: var(--accent) !important; border-color: var(--accent) !important; color: var(--accent-text) !important; }
+.danger { color: var(--bad) !important; }
+button:disabled { opacity: .55; cursor: default; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.b-ok { background: var(--ok-bg); color: var(--ok); } .b-bad { background: var(--bad-bg); color: var(--bad); }
+.b-warn { background: var(--warn-bg); color: var(--warn); } .b-idle { background: var(--idle-bg); color: var(--idle); }
+.chip { display: inline-block; padding: 0 7px; border-radius: 4px; background: var(--code); font-size: 12px; margin: 1px 2px 1px 0; }
+.banner { border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+.banner.bad { background: var(--bad-bg); color: var(--bad); } .banner.warn { background: var(--warn-bg); color: var(--warn); } .banner.info { background: var(--idle-bg); color: var(--text); }
+.banner .btn { margin-left: 6px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+.detail { font-size: 12px; color: var(--muted); margin-top: 3px; word-break: break-word; }
+input[type=text], input[type=password], input[type=number], select, textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: 13px "Segoe UI", system-ui, sans-serif; }
+input.mono, textarea.mono { font: 13px Consolas, monospace; }
+label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+label.inline { display: inline-flex; gap: 5px; align-items: center; margin: 2px 12px 2px 0; color: var(--text); font-size: 13px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.drawer-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100%); background: var(--panel); border-left: 1px solid var(--line); padding: 18px 20px 40px; overflow: auto; display: none; }
+.open .drawer-bg, .open .drawer { display: block; }
+.drawer h2 { margin: 0 0 4px; font-size: 17px; }
+.drawer ol { padding-left: 20px; margin: 8px 0; } .drawer ol li { margin-bottom: 6px; }
+ul.notes { padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+.hint { font-size: 12px; margin-top: 4px; } .hint.ok { color: var(--ok); } .hint.bad { color: var(--warn); }
+.result { margin-top: 12px; }
+pre.out { white-space: pre-wrap; max-height: 300px; overflow: auto; background: var(--code); padding: 8px; border-radius: 6px; font-size: 12px; margin: 6px 0; }
+.diff { font: 12px Consolas, monospace; background: var(--code); border-radius: 6px; overflow: auto; max-height: 420px; margin: 6px 0 12px; }
+.diff div { white-space: pre; padding: 0 8px; }
+.diff .a { background: var(--add); } .diff .d { background: var(--del); } .diff .h { color: var(--muted); padding-top: 4px; }
+.list { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.list .item { padding: 6px 9px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.list .item:last-child { border-bottom: 0; }
+.list .item.sel { background: var(--idle-bg); }
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: s .8s linear infinite; vertical-align: -2px; }
+@keyframes s { to { transform: rotate(360deg); } }
+.todo { display: flex; gap: 12px; align-items: flex-start; padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.todo:last-child { border-bottom: 0; }
+.todo .body { flex: 1; min-width: 0; }
+@media (max-width: 760px) { .hide-sm { display: none; } main { padding: 12px 16px; } .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>External Gateway</h1>
+  <span id="lastCheck" class="small muted"></span>
+  <span class="spacer"></span>
+  <button class="btn" id="checkBtn" onclick="checkNow()">Check now</button>
+  <button class="btn" onclick="openSettings()">Settings</button>
+</header>
+<nav class="tabs" id="tabs"></nav>
+<main id="main"><p class="muted"><span class="spin"></span> Loading...</p></main>
+
+<div id="drawerWrap">
+  <div class="drawer-bg" onclick="closeDrawer()"></div>
+  <div class="drawer" id="drawer"></div>
+</div>
+
+<script>
+const S = new URLSearchParams(location.search).get('s');
+const state = { ov: null, active: 'todo', sub: {}, status: {}, caps: {}, agents: {} };
+
+async function api(path, body) {
+  const opt = { headers: { 'X-Session': S, 'Content-Type': 'application/json' } };
+  if (body !== undefined) { opt.method = 'POST'; opt.body = JSON.stringify(body); }
+  let r;
+  try { r = await fetch(path, opt); } catch (e) { stale('External Gateway is not running. Start it from the Start menu or ExternalGateway.exe, then open this window again from the tray.'); throw e; }
+  if (r.status === 403) { stale('This window belongs to an earlier run of External Gateway. Close it and use Open in the tray menu.'); throw new Error('window out of date'); }
+  const data = await r.json().catch(() => ({ error: 'HTTP ' + r.status }));
+  if (!r.ok || data.error && !data.output) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
+}
+function stale(msg) {
+  if (q('staleBanner')) return;
+  document.body.insertAdjacentHTML('afterbegin', `<div id="staleBanner" class="banner bad" style="margin:0;border-radius:0"><strong>${esc(msg)}</strong></div>`);
+}
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const q = id => document.getElementById(id);
+function ago(iso) {
+  if (!iso) return '';
+  const m = (Date.now() - new Date(iso).getTime()) / 60000;
+  if (m < 1) return 'just now';
+  if (m < 60) return Math.round(m) + ' min ago';
+  if (m < 1440) return Math.round(m / 60) + ' h ago';
+  return Math.round(m / 1440) + ' days ago';
+}
+function daysLeft(d) { return Math.floor((new Date(d.length <= 10 ? d + 'T23:59:59Z' : d).getTime() - Date.now()) / 86400000); }
+function busy(btn, text) { if (!btn) return () => {}; const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> ' + esc(text || ''); return () => { btn.disabled = false; btn.innerHTML = old; }; }
+function toast(msg, cls = 'info') {
+  const el = document.createElement('div');
+  el.className = 'banner ' + cls; el.style.cssText = 'position:fixed;left:20px;bottom:12px;max-width:560px;z-index:9;box-shadow:0 4px 18px rgba(0,0,0,.2)';
+  el.textContent = msg; document.body.appendChild(el); setTimeout(() => el.remove(), 6000);
+}
+
+async function loadOverview() {
+  state.ov = await api('/api/overview');
+  const ov = state.ov;
+  q('lastCheck').textContent = ov.checking ? 'Checking all gateways...' : ov.last_check ? 'Last check ' + ago(ov.last_check) : 'Not checked yet';
+  q('checkBtn').disabled = ov.checking;
+  renderTabs();
+  if (state.active === 'todo') render();
+}
+setInterval(() => loadOverview().catch(() => {}), 5000);
+
+function wsDot(name) {
+  const t = (state.ov?.todos || []).filter(x => x.ws === name);
+  if (t.some(x => x.severity === 'bad')) return 'bad';
+  if (t.some(x => x.severity === 'warn')) return 'warn';
+  return state.ov?.last_check ? 'ok' : '';
+}
+function renderTabs() {
+  const todos = (state.ov?.todos || []).filter(t => t.severity !== 'info').length;
+  const tabs = [`<button class="${state.active === 'todo' ? 'active' : ''}" onclick="selectTab('todo')">To-do ${todos ? `<span class="count">${todos}</span>` : ''}</button>`];
+  for (const w of state.ov?.workspaces || []) {
+    tabs.push(`<button class="${state.active === w.name ? 'active' : ''}" onclick="selectTab('${esc(w.name)}')"><span class="dot ${wsDot(w.name)}"></span>${esc(w.name)}</button>`);
+  }
+  q('tabs').innerHTML = tabs.join('');
+}
+function selectTab(name) {
+  state.active = name;
+  try { localStorage.setItem('eg-tab', name); } catch (e) {}
+  renderTabs(); render();
+  if (name !== 'todo') loadSub(name);
+}
+function selectSub(ws, sub) { state.sub[ws] = sub; render(); loadSub(ws); }
+async function loadSub(ws) {
+  const sub = state.sub[ws] || 'secrets';
+  try {
+    if (sub === 'secrets' && !state.status[ws]) state.status[ws] = await api('/api/status?ws=' + ws + '&cached=1');
+    if ((sub === 'capabilities' || sub === 'services') && !state.caps[ws]) state.caps[ws] = await api('/api/capabilities?ws=' + ws);
+    if (sub === 'agents' && !state.agents[ws]) state.agents[ws] = await api('/api/agents?ws=' + ws);
+  } catch (e) { toast(e.message, 'bad'); }
+  if (state.active === ws) render();
+}
+function invalidate(ws) { delete state.status[ws]; delete state.caps[ws]; delete state.agents[ws]; }
+
+function render() {
+  const m = q('main');
+  if (!state.ov) return;
+  if (state.active === 'todo') { m.innerHTML = renderTodo(); return; }
+  const w = state.ov.workspaces.find(x => x.name === state.active);
+  if (!w) { state.active = 'todo'; return render(); }
+  const sub = state.sub[w.name] || 'secrets';
+  const subs = [['secrets', 'Secrets'], ['capabilities', 'Capabilities'], ['services', 'Services'], ['agents', 'Agents & tokens']];
+  m.innerHTML = gatewayCard(w) + adminCard(w) + driftBanner(w) +
+    `<nav class="sub">${subs.map(([k, l]) => `<button class="${sub === k ? 'active' : ''}" onclick="selectSub('${esc(w.name)}','${k}')">${l}</button>`).join('')}</nav>` +
+    ({ secrets: renderSecrets, capabilities: renderCaps, services: renderServices, agents: renderAgents }[sub])(w);
+}
+
+const sevBadge = { bad: ['b-bad', 'Problem'], warn: ['b-warn', 'Attention'], info: ['b-idle', 'Info'] };
+const actionLabel = { secret: 'Fix secret', service: 'Start service', 'enable-admin': 'Enable admin API', publish: 'Publish', deploy: 'Deploy build', open: 'Open' };
+function renderTodo() {
+  const ov = state.ov, todos = ov.todos || [];
+  let html = '';
+  if (ov.checking) html += `<div class="banner info"><span class="spin"></span> Checking every gateway and secret...</div>`;
+  if (!ov.last_check && !ov.checking) html += `<div class="banner info">Not checked yet. <button class="btn" onclick="checkNow()">Check now</button></div>`;
+  if (!todos.length && ov.last_check) html += `<div class="card"><span class="badge b-ok">All clear</span> <span class="muted">Every gateway is up and every checked secret is valid.</span></div>`;
+  if (todos.length) {
+    html += `<div class="card">` + todos.map((t, i) => {
+      const [cls, txt] = sevBadge[t.severity];
+      const label = t.action.kind === 'service' && t.action.arg === 'restart' ? 'Restart service' : t.action.kind === 'publish' && t.action.arg === 'restart' ? 'Publish & restart' : actionLabel[t.action.kind] || 'Open';
+      return `<div class="todo"><span class="badge ${cls}">${txt}</span>
+        <div class="body">${t.ws ? `<span class="chip">${esc(t.ws)}</span> ` : ''}<strong>${esc(t.title)}</strong>${t.detail ? `<div class="detail">${esc(t.detail)}</div>` : ''}</div>
+        <button class="btn ${t.severity === 'bad' ? 'primary' : ''}" onclick="doTodo(${i}, this)">${esc(label)}</button></div>`;
+    }).join('') + `</div>`;
+  }
+  html += `<p class="small muted">Checks run every ${ov.settings.check_interval_min} min in the background${ov.settings.notify ? ' and raise a Windows notification when a new problem appears' : ''}.
+    Actions marked for administrators ask for a UAC confirmation. Config: <code>${esc(ov.build_dir)}</code>.</p>`;
+  return html;
+}
+async function doTodo(i, btn) {
+  const t = state.ov.todos[i], a = t.action;
+  switch (a.kind) {
+    case 'secret':
+      state.sub[a.ws] = 'secrets'; selectTab(a.ws);
+      await waitFor(() => state.status[a.ws]);
+      const idx = (state.status[a.ws].secrets || []).findIndex(s => s.name === a.secret);
+      if (idx >= 0) openSecret(a.ws, idx);
+      return;
+    case 'service': return service(a.ws, a.arg || 'start', btn);
+    case 'enable-admin': return regenerateAdmin(a.ws, btn);
+    case 'publish': return publish(a.ws, a.arg === 'restart', btn);
+    case 'deploy': return deploy(btn);
+    default: selectTab(a.ws || 'todo');
+  }
+}
+function waitFor(fn) { return new Promise(res => { const t = setInterval(() => { if (fn()) { clearInterval(t); res(); } }, 100); }); }
+
+function gatewayCard(w) {
+  const svcCls = w.service_state === 'running' ? 'b-ok' : w.service_installed ? 'b-bad' : 'b-idle';
+  return `<div class="card"><div class="row">
+      <strong>${esc(w.name)}</strong><span class="muted">${esc(w.description)}</span><span class="spacer"></span>
+      <span class="badge ${svcCls}">${esc(w.service)}: ${esc(w.service_state || '?')}</span>
+      <span class="badge ${w.gateway_up ? 'b-ok' : 'b-bad'}">port ${w.port}: ${w.gateway_up ? 'up' : 'down'}</span>
+      ${w.service_installed ? `<button class="btn" onclick="service('${esc(w.name)}','${w.service_state === 'running' ? 'restart' : 'start'}',this)">${w.service_state === 'running' ? 'Restart' : 'Start'}</button>` : ''}
+    </div>
+    <div class="small muted" style="margin-top:6px">source <code>${esc(w.repo_config)}</code>${w.deployed ? ` &middot; running <code>${esc(w.deployed_config)}</code>` : ''}</div></div>`;
+}
+function adminCard(w) {
+  if (!w.admin_configured) {
+    return `<div class="banner bad"><strong>Admin API locked.</strong> No <code>admin_token_sha256</code> in the config, so secrets can't be checked or changed.
+      <button class="btn primary" onclick="regenerateAdmin('${esc(w.name)}',this)">Enable admin API</button>
+      <div class="small" style="margin-top:4px">Creates an admin token, saves it to agent-keys.txt as [${esc(w.name.toUpperCase())} Admin], writes its hash into the config, publishes and restarts ${esc(w.service)} (UAC prompt).</div></div>`;
+  }
+  if (!w.admin_token_ok) {
+    return `<div class="banner warn"><strong>Admin token needed.</strong> ${w.admin_token_source ? 'The token from ' + esc(w.admin_token_source) + ' does not match the running config.' : 'No admin token in agent-keys.txt.'}
+      <div class="row" style="margin-top:8px"><input type="password" id="adm-${esc(w.name)}" placeholder="paste the admin token" style="max-width:360px">
+        <label class="inline"><input type="checkbox" id="rem-${esc(w.name)}" checked> save to agent-keys.txt</label>
+        <button class="btn primary" onclick="useAdminToken('${esc(w.name)}')">Use token</button><span class="muted">or</span>
+        <button class="btn" onclick="regenerateAdmin('${esc(w.name)}',this)">Generate a new one</button></div></div>`;
+  }
+  return '';
+}
+function driftBanner(w) {
+  if (!w.config_drift) return '';
+  return `<div class="banner warn"><strong>Unpublished changes.</strong> The source config differs from what the gateway runs.
+    <button class="btn primary" onclick="publish('${esc(w.name)}',false,this)">Publish &amp; reload</button></div>`;
+}
+
+function verdict(s) {
+  if (s.disabled) return { cls: 'b-idle', text: 'Integration disabled', level: 'idle' };
+  if (!s.stored) return { cls: 'b-bad', text: 'Not set', level: 'bad' };
+  const c = s.check;
+  if (!c) return { cls: 'b-idle', text: 'Not checked yet', level: 'idle' };
+  if (c.state === 'ok') {
+    if (c.expires_at) {
+      const n = daysLeft(c.expires_at);
+      if (n < 0) return { cls: 'b-bad', text: 'Expired', level: 'bad' };
+      if (n <= state.ov.settings.expiry_warn_days) return { cls: 'b-warn', text: 'Valid, expires in ' + n + ' d', level: 'warn' };
+      return { cls: 'b-ok', text: 'Valid, ' + n + ' d left', level: 'ok' };
+    }
+    return { cls: 'b-ok', text: 'Valid', level: 'ok' };
+  }
+  if (c.state === 'rejected') return { cls: 'b-bad', text: 'Rejected', level: 'bad' };
+  if (c.state === 'unreachable') return { cls: 'b-warn', text: 'Unreachable', level: 'warn' };
+  return { cls: 'b-idle', text: 'Not checked', level: 'idle' };
+}
+function renderSecrets(w) {
+  const st = state.status[w.name];
+  if (!st) return `<div class="card muted"><span class="spin"></span> Loading secrets...</div>`;
+  const problems = { gateway_down: 'Gateway not reachable: ' + esc(st.detail), gateway_outdated: 'The running gateway build has no secret status endpoint. <button class="btn" onclick="deploy(this)">Deploy build</button>', gateway_error: esc(st.detail), config_error: esc(st.detail) };
+  if (st.problem && problems[st.problem]) return `<div class="banner bad">${problems[st.problem]}</div>`;
+  if (!st.secrets) return '';
+  const rows = st.secrets.map((s, i) => {
+    const v = verdict(s), c = s.check || {}, bits = [];
+    if (c.identity) bits.push('as <strong>' + esc(c.identity) + '</strong>');
+    if (c.expires_at) bits.push('expires ' + esc(c.expires_at.slice(0, 10)));
+    if (c.scopes && c.scopes.length) bits.push('scopes ' + esc(c.scopes.join(', ')));
+    if (c.detail) bits.push(esc(c.detail));
+    return `<tr><td><span class="mono">${esc(s.name)}</span><div class="detail">${esc(s.help.title)}${s.role !== 'primary' ? ' &middot; ' + esc(s.role) : ''}</div></td>
+      <td class="hide-sm small">${s.used_by.map(u => esc(u.site + '/' + u.env)).join(', ')}</td>
+      <td class="small">${s.stored ? 'set ' + esc(ago(s.last_written)) : '<span class="danger">missing</span>'}</td>
+      <td><span class="badge ${v.cls}">${esc(v.text)}</span>${bits.length ? `<div class="detail">${bits.join(' &middot; ')}</div>` : ''}</td>
+      <td style="text-align:right"><button class="btn ${v.level === 'bad' ? 'primary' : ''}" onclick="openSecret('${esc(w.name)}',${i})">${s.stored ? 'Change' : 'Set'}</button></td></tr>`;
+  }).join('');
+  return `<div class="row" style="margin-bottom:8px"><span class="small muted">${st.live ? 'Checked ' + esc(ago(st.checked_at)) : 'Stored state only - not checked against the services yet.'}</span><span class="spacer"></span>
+      <button class="btn" onclick="recheck('${esc(w.name)}',this)">Re-check ${esc(w.name)}</button></div>
+    <div class="card" style="padding:4px 6px"><table><thead><tr><th>Secret</th><th class="hide-sm">Used by</th><th>Stored</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="small muted">Valid = accepted by the service at the last check. Rejected = 401/403 (expired, revoked or wrong user). Unreachable = network, VPN or tunnel problem.</p>`;
+}
+async function recheck(ws, btn) {
+  const done = busy(btn, 'Checking');
+  try { state.status[ws] = await api('/api/status?ws=' + ws); } catch (e) { toast(e.message, 'bad'); }
+  done(); loadOverview(); render();
+}
+
+let cur = null;
+function openDrawer(html) { q('drawer').innerHTML = html; q('drawerWrap').className = 'open'; }
+function closeDrawer() { q('drawerWrap').className = ''; cur = null; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+const drawerHead = title => `<div class="row"><h2>${esc(title)}</h2><span class="spacer"></span><button class="btn" onclick="closeDrawer()">Close</button></div>`;
+
+function openSecret(ws, idx) {
+  const s = state.status[ws].secrets[idx], h = s.help;
+  cur = { ws, s, tested: null };
+  const used = s.used_by.map(u => `${esc(u.site)}/${esc(u.env)}${u.user ? ' as <code>' + esc(u.user) + '</code>' : ''}`).join(', ');
+  openDrawer(drawerHead(h.title) + `
+    <div class="small muted">secret <code>${esc(ws)}/${esc(s.name)}</code> &middot; used by ${used}</div>
+    <p>${esc(h.what)}</p>
+    ${h.create_url ? `<p><a class="btn primary" href="${esc(h.create_url)}" target="_blank" rel="noopener">${esc(h.create_label || 'Open')}</a></p>` : ''}
+    <ol>${(h.steps || []).map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+    ${(h.notes || []).length ? `<ul class="notes">${h.notes.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    <label for="val">New value</label>
+    <div class="row" style="flex-wrap:nowrap"><input class="mono" type="password" id="val" autocomplete="off" spellcheck="false" oninput="validateSecret()"><button class="btn" onclick="q('val').type = q('val').type === 'password' ? 'text' : 'password'">Show</button></div>
+    <div class="hint" id="hint">${h.pattern_hint ? 'Expected: ' + esc(h.pattern_hint) : ''}</div>
+    ${h.pair_label ? `<label for="pair">${esc(h.pair_label)}</label><input class="mono" type="password" id="pair" autocomplete="off" spellcheck="false">` : ''}
+    <div class="row" style="margin-top:14px"><button class="btn" id="testBtn" onclick="testSecret()">Test</button><button class="btn primary" id="saveBtn" onclick="saveSecret()">Save to gateway</button></div>
+    <div class="result" id="result"></div>`);
+  setTimeout(() => q('val').focus(), 50);
+}
+function secretValue() { let v = q('val').value.trim(); if (cur.s.help.strip_spaces) v = v.replace(/\s+/g, ''); return v; }
+function validateSecret() {
+  const h = cur.s.help, hint = q('hint'), v = secretValue();
+  cur.tested = null;
+  if (!h.pattern || !v) { hint.className = 'hint'; hint.textContent = h.pattern_hint ? 'Expected: ' + h.pattern_hint : ''; return; }
+  const good = new RegExp(h.pattern).test(v);
+  hint.className = 'hint ' + (good ? 'ok' : 'bad');
+  hint.textContent = good ? 'Format looks right.' : 'Unusual format - expected ' + h.pattern_hint + '. You can still test it.';
+}
+function resultHTML(r) {
+  const map = { ok: ['b-ok', 'Accepted'], rejected: ['b-bad', 'Rejected'], unreachable: ['b-warn', 'Unreachable'], unchecked: ['b-idle', 'Not checked'] };
+  const [cls, txt] = map[r.state] || ['b-idle', r.state], bits = [];
+  if (r.identity) bits.push('identity: <strong>' + esc(r.identity) + '</strong>');
+  if (r.expires_at) bits.push('expires: ' + esc(r.expires_at));
+  if (r.scopes && r.scopes.length) bits.push('scopes: ' + esc(r.scopes.join(', ')));
+  if (r.http_status) bits.push('HTTP ' + r.http_status);
+  if (r.detail) bits.push(esc(r.detail));
+  return `<div class="card"><span class="badge ${cls}">${txt}</span><div class="small" style="margin-top:6px">${bits.join('<br>')}</div></div>`;
+}
+async function testSecret() {
+  const v = secretValue(); if (!v) return;
+  const done = busy(q('testBtn'), 'Testing');
+  try {
+    const pair = q('pair');
+    cur.tested = await api('/api/test', { ws: cur.ws, name: cur.s.name, value: v, pair_value: pair ? pair.value.trim() : '' });
+    q('result').innerHTML = resultHTML(cur.tested);
+  } catch (e) { q('result').innerHTML = resultHTML({ state: 'unchecked', detail: e.message }); }
+  done();
+}
+async function saveSecret() {
+  const v = secretValue(); if (!v) return;
+  if (!cur.tested || cur.tested.state !== 'ok') {
+    if (!confirm((!cur.tested ? 'It has not been tested.' : 'The test result was: ' + cur.tested.state + '.') + ' Save it anyway?')) return;
+  }
+  const done = busy(q('saveBtn'), 'Saving');
+  try {
+    await api('/api/save', { ws: cur.ws, name: cur.s.name, value: v });
+    const ws = cur.ws, name = cur.s.name; closeDrawer(); toast('Saved ' + ws + '/' + name + ' - re-checking', 'info');
+    delete state.status[ws]; setTimeout(() => { loadSub(ws); loadOverview(); }, 2500);
+  } catch (e) { toast(e.message, 'bad'); done(); }
+}
+
+function lineDiff(a, b) {
+  const n = a.length, m = b.length, w = m + 1, L = new Int32Array((n + 1) * w);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    L[i * w + j] = a[i] === b[j] ? L[(i + 1) * w + j + 1] + 1 : Math.max(L[(i + 1) * w + j], L[i * w + j + 1]);
+  const ops = []; let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { ops.push([' ', a[i], i]); i++; j++; }
+    else if (L[(i + 1) * w + j] >= L[i * w + j + 1]) { ops.push(['-', a[i], i]); i++; }
+    else { ops.push(['+', b[j], i]); j++; }
+  }
+  while (i < n) { ops.push(['-', a[i], i]); i++; }
+  while (j < m) { ops.push(['+', b[j], i]); j++; }
+  return ops;
+}
+function diffHTML(changes) {
+  return changes.map(c => {
+    const ops = lineDiff(c.before.replace(/\r\n/g, '\n').split('\n'), c.after.replace(/\r\n/g, '\n').split('\n'));
+    const keep = new Set();
+    ops.forEach((o, k) => { if (o[0] !== ' ') for (let x = k - 3; x <= k + 3; x++) keep.add(x); });
+    let html = '', prev = -2;
+    ops.forEach((o, k) => {
+      if (!keep.has(k)) return;
+      if (k !== prev + 1) html += `<div class="h">@@ line ${o[2] + 1}</div>`;
+      html += `<div class="${o[0] === '+' ? 'a' : o[0] === '-' ? 'd' : ''}">${esc(o[0] + ' ' + o[1])}</div>`;
+      prev = k;
+    });
+    return `<div class="small"><code>${esc(c.path)}</code></div><div class="diff">${html}</div>`;
+  }).join('');
+}
+async function previewAndApply(path, body, btn, title, after) {
+  const done = busy(btn, 'Validating');
+  let res;
+  try { res = await api(path, { ...body, apply: false }); } catch (e) { done(); toast(e.message, 'bad'); return; }
+  done();
+  openDrawer(drawerHead(title) + `<p>Review the change to the source files. They are validated with the gateway's own loaders and backed up to <code>${esc(state.ov.data_dir)}\\backups</code> before writing.</p>
+    ${diffHTML(res.changes)}
+    <div class="row"><button class="btn primary" id="applyBtn">Apply to source config</button><button class="btn" onclick="closeDrawer()">Cancel</button></div>`);
+  q('applyBtn').onclick = async () => {
+    const d = busy(q('applyBtn'), 'Writing');
+    try { await api(path, { ...body, apply: true }); } catch (e) { d(); toast(e.message, 'bad'); return; }
+    closeDrawer(); invalidate(body.ws); await loadOverview(); await refreshInfo(body.ws);
+    loadSub(body.ws);
+    if (after) after();
+    openDrawer(drawerHead('Saved') + `<p>The source config is updated. The running gateway uses it after you publish.</p>
+      <div class="row"><button class="btn primary" onclick="publish('${esc(body.ws)}',false,this)">Publish &amp; reload now</button><button class="btn" onclick="closeDrawer()">Later</button></div>
+      <p class="small muted">Publishing copies the config into Program Files (UAC prompt) and hot-reloads the gateway.</p>`);
+  };
+}
+async function refreshInfo(ws) { state.status[ws] = await api('/api/status?ws=' + ws + '&check=0').catch(() => state.status[ws]); await loadOverview(); render(); }
+
+function renderCaps(w) {
+  const c = state.caps[w.name];
+  if (!c) return `<div class="card muted"><span class="spin"></span> Loading capabilities...</div>`;
+  const rows = c.ops.map(op => `<tr><td><span class="mono">${esc(op.id)}</span>${op.write ? ' <span class="badge b-warn">write</span>' : ''}${c.disabled[op.site] ? ' <span class="badge b-idle">site disabled</span>' : ''}<div class="detail">${esc(op.method)} ${esc(op.path)}${(op.params || []).length ? ' &middot; params ' + esc(op.params.join(', ')) : ''}</div></td>
+      <td>${c.roles.map(r => `<label class="inline"><input type="checkbox" ${op.roles?.includes(r) ? 'checked' : ''} onchange="toggleGrant('${esc(w.name)}','${esc(op.id)}',this)"> ${esc(r)}</label>`).join('')}</td>
+      <td style="text-align:right"><button class="btn danger" onclick="removeCap('${esc(w.name)}','${esc(op.id)}',this)">Remove</button></td></tr>`).join('');
+  return `<div class="row" style="margin-bottom:8px"><span class="small muted">${c.ops.length} operations; tick a role to grant it. Agents get operations through their role.</span><span class="spacer"></span>
+      <button class="btn primary" onclick="openAddCap('${esc(w.name)}')">Add capability</button></div>
+    <div class="card" style="padding:4px 6px"><table><thead><tr><th>Operation</th><th>Granted to roles</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+async function toggleGrant(ws, id, box) {
+  const op = state.caps[ws].ops.find(o => o.id === id);
+  const roles = new Set(op.roles || []);
+  box.checked ? roles.add(box.parentElement.textContent.trim()) : roles.delete(box.parentElement.textContent.trim());
+  box.checked = !box.checked;
+  previewAndApply('/api/capability/grants', { ws, id, roles: [...roles] }, null, 'Change grants of ' + id);
+}
+function removeCap(ws, id, btn) { previewAndApply('/api/capability/remove', { ws, id }, btn, 'Remove ' + id); }
+
+function openAddCap(ws) {
+  const c = state.caps[ws];
+  const cat = c.catalog.filter(o => c.sites.includes(o.site));
+  cur = { ws, mode: 'catalog', sel: null };
+  openDrawer(drawerHead('Add capability to ' + ws) + `
+    <nav class="sub"><button class="active" id="mCat" onclick="capMode('catalog')">From catalog (${cat.length})</button><button id="mCus" onclick="capMode('custom')">Custom operation</button></nav>
+    <div id="capCatalog">
+      <p class="small muted">Operation definitions already used by other workspaces or the examples, for sites this workspace has (${esc(c.sites.join(', '))}). Add a service first to get operations for a new site.</p>
+      <input type="text" id="capSearch" placeholder="filter, e.g. gitlab or search" oninput="renderCatList()">
+      <div class="list" id="capList" style="margin-top:6px"></div>
+      <div id="capYaml"></div>
+    </div>
+    <div id="capCustom" style="display:none">
+      <div class="grid2"><div><label>Site</label><select id="cSite">${c.sites.map(s => `<option>${esc(s)}</option>`).join('')}</select></div>
+        <div><label>Name (becomes &lt;site&gt;.&lt;name&gt;)</label><input type="text" id="cName" placeholder="list_issues"></div>
+        <div><label>Method</label><select id="cMethod"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select></div>
+        <div><label>Path (relative to the site's base_url)</label><input class="mono" type="text" id="cPath" placeholder="/projects/{project_id|urlencode}/issues"></div></div>
+      <label>Parameters - one per line: <code>name type [required] [default=value]</code>; types string, int, float</label>
+      <textarea class="mono" id="cParams" rows="4" placeholder="project_id string required&#10;per_page int default=50"></textarea>
+      <label>Response fields to return (optional, one per line; <code>items[].field</code> for lists). Leave empty to return everything.</label>
+      <textarea class="mono" id="cFields" rows="3"></textarea>
+      <label>Body template for POST/PUT (optional; <code>{{param}}</code> placeholders)</label>
+      <textarea class="mono" id="cBody" rows="3"></textarea>
+      <p class="small muted">Path placeholders: <code>{param}</code>, or <code>{param|urlencode}</code> for values containing <code>/</code>. Parameters not used in the path are sent as query string.</p>
+    </div>
+    <label>Grant to roles</label><div>${c.roles.map(r => `<label class="inline"><input type="checkbox" class="capRole" value="${esc(r)}"> ${esc(r)}</label>`).join('')}</div>
+    <div class="row" style="margin-top:14px"><button class="btn primary" id="capPreview" onclick="previewCap()">Preview change</button></div>`);
+  renderCatList();
+}
+function capMode(m) { cur.mode = m; q('mCat').className = m === 'catalog' ? 'active' : ''; q('mCus').className = m === 'custom' ? 'active' : ''; q('capCatalog').style.display = m === 'catalog' ? '' : 'none'; q('capCustom').style.display = m === 'custom' ? '' : 'none'; }
+function renderCatList() {
+  const c = state.caps[cur.ws], f = (q('capSearch').value || '').toLowerCase();
+  const items = c.catalog.filter(o => c.sites.includes(o.site) && (!f || (o.id + ' ' + o.path).toLowerCase().includes(f)));
+  q('capList').innerHTML = items.map(o => `<div class="item ${cur.sel === o.id ? 'sel' : ''}" onclick="selCat('${esc(o.id)}')"><span class="mono">${esc(o.id)}</span>${o.write ? ' <span class="badge b-warn">write</span>' : ''} <span class="small muted">${esc(o.method)} ${esc(o.path)} &middot; ${esc(o.source)}</span></div>`).join('') || '<div class="item muted">Nothing matches.</div>';
+}
+function selCat(id) {
+  cur.sel = id; renderCatList();
+  const o = state.caps[cur.ws].catalog.find(x => x.id === id);
+  q('capYaml').innerHTML = `<label>Definition (copied as-is)</label><pre class="out">${esc(o.yaml)}</pre>${o.write ? '<div class="banner warn small">This operation changes data upstream. Grant it only to roles that should write.</div>' : ''}`;
+}
+function parseParams(text) {
+  return text.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const parts = l.split(/\s+/), p = { name: parts[0], type: 'string', required: false, default: '' };
+    for (const x of parts.slice(1)) { if (x === 'required') p.required = true; else if (x.startsWith('default=')) p.default = x.slice(8); else p.type = x; }
+    return p;
+  });
+}
+function previewCap() {
+  const roles = [...document.querySelectorAll('.capRole:checked')].map(x => x.value);
+  if (cur.mode === 'catalog') {
+    if (!cur.sel) return toast('Pick an operation first', 'warn');
+    const o = state.caps[cur.ws].catalog.find(x => x.id === cur.sel);
+    return previewAndApply('/api/capability/add', { ws: cur.ws, id: o.id, source: o.source, roles }, q('capPreview'), 'Add ' + o.id);
+  }
+  const id = q('cSite').value + '.' + q('cName').value.trim();
+  const custom = { method: q('cMethod').value, path: q('cPath').value.trim(), params: parseParams(q('cParams').value),
+    allow_fields: q('cFields').value.split('\n').map(s => s.trim()).filter(Boolean), body_template: q('cBody').value };
+  previewAndApply('/api/capability/add', { ws: cur.ws, id, custom, roles }, q('capPreview'), 'Add ' + id);
+}
+
+function renderServices(w) {
+  const c = state.caps[w.name];
+  if (!c) return `<div class="card muted"><span class="spin"></span> Loading services...</div>`;
+  const rows = c.sites.map(site => (c.envs[site] || []).map((e, i) => `<tr${c.disabled[site] ? ' style="opacity:.6"' : ''}><td><strong>${esc(site)}</strong>/${esc(e.name)}${c.disabled[site] ? ' <span class="badge b-idle">disabled</span>' : ''}</td>
+      <td class="small"><code>${esc(e.base_url)}</code></td><td class="small">${esc(e.auth || (e.secret ? 'password' : ''))}${e.user ? ' as <code>' + esc(e.user) + '</code>' : ''}</td>
+      <td class="small">${e.secret ? '<code>' + esc(e.secret) + '</code>' : ''}${e.tunnel ? ' <span class="chip">tunnel ' + esc(e.tunnel) + '</span>' : ''}</td>
+      <td class="small">${c.ops.filter(o => o.site === site).length} ops</td>
+      <td style="text-align:right">${i === 0 ? `<button class="btn" onclick="toggleSite('${esc(w.name)}','${esc(site)}',${!c.disabled[site]},this)">${c.disabled[site] ? 'Enable' : 'Disable'}</button>` : ''}</td></tr>`).join('')).join('');
+  return `<div class="row" style="margin-bottom:8px"><span class="small muted">Sites the gateway can reach for ${esc(w.name)}.</span><span class="spacer"></span>
+      <button class="btn primary" onclick="openAddService('${esc(w.name)}')">Add service</button></div>
+    <p class="small muted">Disable is a soft delete: the site, its secrets and its capabilities stay in the config, the gateway refuses its operations and stops listing them, and checks and notifications skip it. Enable restores it.</p>
+    <div class="card" style="padding:4px 6px"><table><thead><tr><th>Site/env</th><th>URL</th><th>Auth</th><th>Secret</th><th>Capabilities</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function toggleSite(ws, site, disable, btn) {
+  previewAndApply('/api/service/disable', { ws, site, disabled: disable }, btn, (disable ? 'Disable ' : 'Enable ') + site);
+}
+function openAddService(ws) {
+  const c = state.caps[ws];
+  cur = { ws };
+  openDrawer(drawerHead('Add service to ' + ws) + `
+    <label>Service type</label><select id="sTpl" onchange="tplChanged()">${c.templates.map(t => `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('')}</select>
+    <div class="small muted" id="sHint"></div>
+    <div class="grid2"><div><label>Site name (prefix of its operations)</label><input type="text" id="sSite" oninput="renderSvcOps()"></div>
+      <div><label>Environment</label><input type="text" id="sEnv" value="prod"></div></div>
+    <div id="sHttp"><label>Base URL</label><input class="mono" type="text" id="sBase">
+      <div id="sHeaderRow" style="display:none"><label>API key header</label><input type="text" id="sHeader"></div>
+      <label class="inline" style="margin-top:8px"><input type="checkbox" id="sInsecure"> skip TLS verification (self-signed internal certificate)</label></div>
+    <div id="sPg" style="display:none" class="grid2"><div><label>Host</label><input type="text" id="sHost"></div><div><label>Port</label><input type="number" id="sPort" value="5432"></div>
+      <div><label>Database</label><input type="text" id="sDb"></div></div>
+    <div id="sUserRow"><label id="sUserLabel">User</label><input type="text" id="sUser"></div>
+    <div class="grid2"><div><label>Secret name (stored in Credential Manager)</label><input type="text" id="sSecret"></div>
+      <div id="sCookieRow"><label>Second secret (cookie)</label><input type="text" id="sCookie"></div></div>
+    <label>Requires tunnel / VPN</label><select id="sTunnel"><option value="">none</option>${c.tunnels.map(t => `<option>${esc(t)}</option>`).join('')}</select>
+    <label>Capabilities to add from the catalog</label><div class="list" id="sOps" onchange="renderSiteVars()"></div>
+    <div id="sVars"></div>
+    <label>Grant them to roles</label><div>${c.roles.map(r => `<label class="inline"><input type="checkbox" class="svcRole" value="${esc(r)}"> ${esc(r)}</label>`).join('')}</div>
+    <div class="row" style="margin-top:14px"><button class="btn primary" id="svcPreview" onclick="previewService()">Preview change</button></div>
+    <p class="small muted">After publishing, set the new secret on the Secrets tab - it will show as Not set with instructions.</p>`);
+  tplChanged();
+}
+function tplChanged() {
+  const t = state.caps[cur.ws].templates.find(x => x.id === q('sTpl').value);
+  cur.tpl = t;
+  q('sHint').textContent = t.hint;
+  const taken = state.caps[cur.ws].sites;
+  let site = t.site || 'api';
+  q('sSite').value = taken.includes(site) ? '' : site;
+  q('sBase').value = t.base_url || '';
+  q('sHeader').value = t.auth_header || '';
+  q('sHeaderRow').style.display = t.auth_type === 'api-key' ? '' : 'none';
+  q('sHttp').style.display = t.postgres ? 'none' : '';
+  q('sPg').style.display = t.postgres ? '' : 'none';
+  q('sUserRow').style.display = t.needs_user ? '' : 'none';
+  q('sUserLabel').textContent = 'User' + (t.user_hint ? ' (' + t.user_hint + ')' : '');
+  q('sSecret').value = t.secret || site;
+  q('sCookieRow').style.display = t.cookie_secret ? '' : 'none';
+  q('sCookie').value = t.cookie_secret || '';
+  renderSvcOps();
+}
+function renderSvcOps() {
+  const t = cur.tpl, c = state.caps[cur.ws], all = [...c.catalog, ...c.ops];
+  const seen = new Set(), ops = all.filter(o => (t.catalog_sites || []).includes(o.site) && !seen.has(o.id) && seen.add(o.id));
+  q('sOps').innerHTML = ops.length ? ops.map(o => `<div class="item"><label class="inline"><input type="checkbox" class="svcOp" value="${esc(o.id)}" ${o.write ? '' : 'checked'}> <span class="mono">${esc(o.id.replace(/^[^.]+/, q('sSite').value || o.site))}</span></label>${o.write ? ' <span class="badge b-warn">write</span>' : ''} <span class="small muted">${esc(o.method)} ${esc(o.path)}</span></div>`).join('')
+    : '<div class="item muted">No catalog operations for this type - add custom ones on the Capabilities tab after publishing.</div>';
+  renderSiteVars();
+}
+const siteVarHelp = { org: 'GitHub organisation (or user) owning the repos', group: 'GitLab group path', workspace: 'Bitbucket workspace slug', workspace_id: 'workspace id', user_id: 'user id' };
+function renderSiteVars() {
+  const c = state.caps[cur.ws], all = [...c.catalog, ...c.ops];
+  const ids = [...document.querySelectorAll('.svcOp:checked')].map(x => x.value);
+  const need = new Set();
+  for (const id of ids) { const o = all.find(x => x.id === id); for (const m of (o?.path || '').matchAll(/\{site\.([a-z_]+)\}/g)) need.add(m[1]); }
+  const old = {}; document.querySelectorAll('.svcVar').forEach(x => old[x.dataset.k] = x.value);
+  q('sVars').innerHTML = [...need].map(k => `<label>${esc(k)} - ${esc(siteVarHelp[k] || 'used in operation paths')}</label><input type="text" class="svcVar" data-k="${esc(k)}" value="${esc(old[k] || '')}">`).join('');
+}
+function previewService() {
+  const t = cur.tpl;
+  const body = { ws: cur.ws, template: t.id, site: q('sSite').value.trim(), env: q('sEnv').value.trim(), base_url: q('sBase').value.trim(),
+    auth_header: q('sHeader').value.trim(), user: q('sUser').value.trim(), secret: q('sSecret').value.trim(), cookie_secret: q('sCookie').value.trim(),
+    tunnel: q('sTunnel').value, insecure: q('sInsecure').checked, host: q('sHost').value.trim(), port: +q('sPort').value || 0, database: q('sDb').value.trim(),
+    ops: [...document.querySelectorAll('.svcOp:checked')].map(x => x.value), roles: [...document.querySelectorAll('.svcRole:checked')].map(x => x.value),
+    site_vars: Object.fromEntries([...document.querySelectorAll('.svcVar')].map(x => [x.dataset.k, x.value.trim()])) };
+  previewAndApply('/api/service/add', body, q('svcPreview'), 'Add ' + body.site + '/' + body.env);
+}
+
+function renderAgents(w) {
+  const d = state.agents[w.name];
+  if (!d) return `<div class="card muted"><span class="spin"></span> Loading agents...</div>`;
+  const rows = d.agents.map(a => `<tr><td><span class="mono">${esc(a.id)}</span><div class="detail">token sha ${esc(a.sha_prefix)}...</div></td>
+      <td>${a.roles.map(r => `<span class="chip">${esc(r)}</span>`).join('')}</td>
+      <td class="small">${a.key_label ? esc(a.key_label) + (a.token_known ? '' : ' (no token)') : '<span class="muted">not in agent-keys.txt</span>'}</td>
+      <td style="text-align:right"><button class="btn" onclick="regenAgent('${esc(w.name)}','${esc(a.id)}',this)">Regenerate token</button></td></tr>`).join('');
+  return `<div class="card" style="padding:4px 6px"><table><thead><tr><th>Agent</th><th>Roles in ${esc(w.name)}</th><th>agent-keys.txt</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="card"><strong>New agent token</strong>
+      <div class="grid2"><div><label>Agent id</label><input type="text" id="agId" placeholder="agent-reviewer"></div>
+        <div><label>Role</label><select id="agRole">${d.roles.map(r => `<option>${esc(r)}</option>`).join('')}</select></div></div>
+      <div class="row" style="margin-top:10px"><button class="btn primary" onclick="addAgent('${esc(w.name)}',this)">Create token</button></div></div>
+    <div class="card"><strong>Admin token</strong> <span class="small muted">used by this app and egw-admin for /admin/*</span>
+      <div class="row" style="margin-top:8px"><span class="small">${w.admin_token_ok ? 'In ' + esc(w.admin_token_source) : 'Not available'}</span><span class="spacer"></span>
+      <button class="btn" onclick="regenerateAdmin('${esc(w.name)}',this)">Regenerate admin token</button></div></div>
+    <p class="small muted">Tokens are written to the source config (hash) and to <code>agent-keys.txt</code>. Agents only see the change after you publish; anything still using the old token gets 401.</p>`;
+}
+function showToken(title, token, warning, ws) {
+  openDrawer(drawerHead(title) + `<p>Copy it now - it is also saved in <code>agent-keys.txt</code>, but nowhere else.</p>
+    <div class="row" style="flex-wrap:nowrap"><input class="mono" type="text" id="newTok" value="${esc(token)}" readonly><button class="btn" onclick="navigator.clipboard.writeText(q('newTok').value);this.textContent='Copied'">Copy</button></div>
+    ${warning ? `<div class="banner warn small" style="margin-top:10px">${esc(warning)}</div>` : ''}
+    <p>Update every place that uses the old token (e.g. <code>EGW_TOKEN</code>, agent configs), then publish:</p>
+    <button class="btn primary" onclick="publish('${esc(ws)}',false,this)">Publish &amp; reload</button>`);
+}
+async function regenAgent(ws, id, btn) {
+  if (!confirm(`Replace the token of ${id}? The old token stops working once you publish.`)) return;
+  const done = busy(btn, 'Generating');
+  try { const r = await api('/api/agent/regenerate', { ws, id }); invalidate(ws); await loadOverview(); showToken('New token for ' + id, r.token, r.warning, ws); loadSub(ws); }
+  catch (e) { toast(e.message, 'bad'); }
+  done();
+}
+async function addAgent(ws, btn) {
+  const id = q('agId').value.trim(), role = q('agRole').value;
+  if (!id) return toast('Enter an agent id', 'warn');
+  const done = busy(btn, 'Creating');
+  try { const r = await api('/api/agent/add', { ws, id, role }); invalidate(ws); await loadOverview(); showToken('Token for ' + id, r.token, r.warning, ws); loadSub(ws); }
+  catch (e) { toast(e.message, 'bad'); }
+  done();
+}
+
+async function regenerateAdmin(ws, btn) {
+  if (!confirm(`Create a new admin token for ${ws}, save it to agent-keys.txt, update the config, publish it and restart egw-${ws}? (UAC prompt)`)) return;
+  const done = busy(btn, 'Working');
+  try { const r = await api('/api/admin-regenerate', { ws }); toast(r.ok, 'info'); } catch (e) { toast(e.message, 'bad'); }
+  done(); invalidate(ws); await loadOverview(); render(); loadSub(ws);
+}
+async function useAdminToken(ws) {
+  try { await api('/api/admin-token', { ws, token: q('adm-' + ws).value, remember: q('rem-' + ws).checked }); } catch (e) { return toast(e.message, 'bad'); }
+  invalidate(ws); await loadOverview(); loadSub(ws);
+}
+async function service(ws, action, btn) {
+  const done = busy(btn, action === 'start' ? 'Starting' : 'Restarting');
+  try { await api('/api/service', { ws, action }); toast(`egw-${ws}: ${action} done`); } catch (e) { toast(e.message, 'bad'); }
+  done(); setTimeout(() => { invalidate(ws); loadOverview(); loadSub(ws); }, 1500);
+}
+async function publish(ws, restart, btn) {
+  const done = busy(btn, 'Publishing');
+  try { const r = await api('/api/publish', { ws, restart }); toast(ws + ': ' + r.ok); closeDrawer(); } catch (e) { toast(e.message, 'bad'); }
+  done(); setTimeout(() => { invalidate(ws); loadOverview(); loadSub(ws); }, 1500);
+}
+async function deploy(btn) {
+  if (!confirm('Run deploy\\update.ps1? It copies egw.exe and every workspace config into Program Files and restarts all gateways. (UAC prompt)')) return;
+  const done = busy(btn, 'Deploying');
+  try { const r = await api('/api/deploy', {}); openDrawer(drawerHead(r.error ? 'Deploy failed' : 'Deployed') + (r.error ? `<div class="banner bad">${esc(r.error)}</div>` : '') + `<pre class="out">${esc(r.output || '')}</pre>`); }
+  catch (e) { toast(e.message, 'bad'); }
+  done(); state.status = {}; state.caps = {}; state.agents = {}; loadOverview();
+}
+async function checkNow() {
+  try { await api('/api/check', {}); } catch (e) { return toast(e.message, 'bad'); }
+  state.status = {}; setTimeout(loadOverview, 300);
+  const t = setInterval(async () => { await loadOverview(); if (!state.ov.checking) { clearInterval(t); if (state.active !== 'todo') loadSub(state.active); } }, 2000);
+}
+function openSettings() {
+  const s = state.ov.settings;
+  openDrawer(drawerHead('Settings') + `
+    <label class="inline"><input type="checkbox" id="stAuto" ${state.ov.autostart ? 'checked' : ''}> Start with Windows (in the tray)</label><br>
+    <label class="inline"><input type="checkbox" id="stNotify" ${s.notify ? 'checked' : ''}> Windows notifications for new problems</label>
+    <div class="grid2"><div><label>Check every (minutes)</label><input type="number" id="stInt" min="5" max="1440" value="${s.check_interval_min}"></div>
+      <div><label>Warn this many days before a token expires</label><input type="number" id="stWarn" min="1" max="120" value="${s.expiry_warn_days}"></div></div>
+    <div class="row" style="margin-top:14px"><button class="btn primary" onclick="saveSettings(this)">Save</button></div>
+    <p class="small muted">Settings, state and config backups: <code>${esc(state.ov.data_dir)}</code><br>Gateway checkout: <code>${esc(state.ov.build_dir)}</code><br>Install dir: <code>${esc(state.ov.install_dir)}</code></p>
+    <p class="small muted">Closing this window keeps External Gateway running in the tray; quit it from the tray menu.</p>`);
+}
+async function saveSettings(btn) {
+  const done = busy(btn, 'Saving');
+  try { await api('/api/settings', { check_interval_min: +q('stInt').value, expiry_warn_days: +q('stWarn').value, notify: q('stNotify').checked, autostart: q('stAuto').checked }); closeDrawer(); toast('Settings saved'); }
+  catch (e) { toast(e.message, 'bad'); }
+  done(); loadOverview();
+}
+
+loadOverview().then(() => {
+  let saved = null; try { saved = localStorage.getItem('eg-tab'); } catch (e) {}
+  if (saved && (saved === 'todo' || state.ov.workspaces.some(w => w.name === saved))) selectTab(saved); else render();
+  if (!state.ov.last_check && !state.ov.checking) checkNow();
+}).catch(e => { q('main').innerHTML = '<div class="banner bad">' + esc(e.message) + '</div>'; });
+</script>
+</body>
+</html>
