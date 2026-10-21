@@ -66,6 +66,37 @@ func TestValidateParamsBoolRequiresJSONBoolean(t *testing.T) {
 	}
 }
 
+func TestValidateParamsStringPattern(t *testing.T) {
+	r := &OperationRegistry{}
+	op := &Operation{Params: map[string]ParamDef{"key": {Type: "string", Pattern: `^DESK-[0-9]+$`}}}
+	if err := r.ValidateParams(op, map[string]interface{}{"key": "DESK-145220"}, ws(config.WorkspacePolicy{})); err != nil {
+		t.Fatalf("matching key rejected: %v", err)
+	}
+	for _, val := range []string{"OTHER-1", "DESK-1/../OTHER-2", "desk-1", "DESK-", "xDESK-1", "DESK-1\n"} {
+		if err := r.ValidateParams(op, map[string]interface{}{"key": val}, ws(config.WorkspacePolicy{})); err == nil {
+			t.Fatalf("expected %q to be rejected", val)
+		}
+	}
+}
+
+func TestValidateParamsObjectKeys(t *testing.T) {
+	r := &OperationRegistry{}
+	op := &Operation{Params: map[string]ParamDef{"fields": {Type: "object", Keys: []string{"summary", "customfield_1"}}}}
+	allowed := map[string]interface{}{"summary": "s", "customfield_1": map[string]interface{}{"id": "7"}}
+	if err := r.ValidateParams(op, map[string]interface{}{"fields": allowed}, ws(config.WorkspacePolicy{})); err != nil {
+		t.Fatalf("allowed keys rejected: %v", err)
+	}
+	extra := map[string]interface{}{"summary": "s", "assignee": "root"}
+	if err := r.ValidateParams(op, map[string]interface{}{"fields": extra}, ws(config.WorkspacePolicy{})); err == nil {
+		t.Fatal("expected undeclared key to be rejected")
+	}
+	for _, val := range []interface{}{`{"summary":"s"}`, []interface{}{"summary"}, float64(1)} {
+		if err := r.ValidateParams(op, map[string]interface{}{"fields": val}, ws(config.WorkspacePolicy{})); err == nil {
+			t.Fatalf("expected non-object %#v to be rejected", val)
+		}
+	}
+}
+
 func TestJQLScopeInjectsFilter(t *testing.T) {
 	c := &JQLScopeConstraint{}
 	w := ws(config.WorkspacePolicy{JiraProjects: []string{"MD", "PROJ"}})
