@@ -39,6 +39,8 @@ type ParamDef struct {
 	Values   []string
 	Max      int    `yaml:"max"`
 	MaxLen   int    `yaml:"maxlen"`
+	Pattern  string `yaml:"pattern"`
+	Keys     []string `yaml:"keys"`
 	Default  interface{}
 }
 
@@ -200,6 +202,14 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 	}
 
 	for id, op := range cfg.Operations {
+		for name, def := range op.Params {
+			if def.Pattern == "" {
+				continue
+			}
+			if _, err := regexp.Compile(def.Pattern); err != nil {
+				return fmt.Errorf("operation %s param %s: invalid pattern: %w", id, name, err)
+			}
+		}
 		op.ID = id
 		r.Operations[id] = op
 	}
@@ -312,6 +322,27 @@ func (r *OperationRegistry) ValidateParams(op *Operation, params map[string]inte
 			if def.MaxLen > 0 && len(s) > def.MaxLen {
 				return fmt.Errorf("parameter %s exceeds max length %d", name, def.MaxLen)
 			}
+			if def.Pattern != "" {
+				re, err := regexp.Compile(def.Pattern)
+				if err != nil {
+					return fmt.Errorf("parameter %s has an invalid pattern: %w", name, err)
+				}
+				if !re.MatchString(s) {
+					return fmt.Errorf("parameter %s must match %s", name, def.Pattern)
+				}
+			}
+		case "object":
+			m, ok := val.(map[string]interface{})
+			if !ok {
+				return fmt.Errorf("parameter %s must be a JSON object", name)
+			}
+			if def.Keys != nil {
+				for k := range m {
+					if !containsString(def.Keys, k) {
+						return fmt.Errorf("parameter %s has key %q, allowed keys are %v", name, k, def.Keys)
+					}
+				}
+			}
 		case "int":
 			f, ok := val.(float64)
 			if !ok {
@@ -375,6 +406,15 @@ func (r *OperationRegistry) ValidateParams(op *Operation, params map[string]inte
 		}
 	}
 	return nil
+}
+
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *OperationRegistry) CheckConstraints(op *Operation, params map[string]interface{}, workspace *config.Workspace) error {

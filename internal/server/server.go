@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -246,6 +247,12 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 			if def.MaxLen > 0 {
 				params[name].(map[string]any)["maxlen"] = def.MaxLen
 			}
+			if def.Pattern != "" {
+				params[name].(map[string]any)["pattern"] = def.Pattern
+			}
+			if def.Keys != nil {
+				params[name].(map[string]any)["keys"] = def.Keys
+			}
 		}
 		ops = append(ops, OpCapability{
 			ID:     id,
@@ -305,6 +312,8 @@ func (s *Server) buildExample(workspace, opID string, params map[string]policy.P
 			val = "$true"
 		case "int":
 			val = "42"
+		case "object":
+			val = "@{}"
 		}
 		bodyParts = append(bodyParts, fmt.Sprintf(`%s=%s`, name, val))
 	}
@@ -700,6 +709,10 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		path = strings.Replace(path, "{"+key+"}", strVal, -1)
 	}
 
+	// Slack write methods ignore query-string arguments on a JSON POST
+	// (invalid_arguments), so their params travel as a form body instead.
+	slackForm := op.Site == "slack" && op.Method == "POST" && op.BodyTemplate == ""
+
 	queryParams := url.Values{}
 	for key, val := range params {
 		if key == "env" || key == "cluster" {
@@ -711,11 +724,15 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		if strings.Contains(op.BodyTemplate, "{{"+key+"}}") {
 			continue
 		}
+		if str, ok := val.(string); ok && slackForm {
+			queryParams.Add(key, str)
+			continue
+		}
 		queryParams.Add(key, formatParamValue(val))
 	}
 
 	urlStr := baseURL + path
-	if encoded := queryParams.Encode(); encoded != "" {
+	if encoded := queryParams.Encode(); encoded != "" && !slackForm {
 		if strings.Contains(path, "?") {
 			urlStr += "&" + encoded
 		} else {
@@ -731,6 +748,9 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 			return 0, nil, fmt.Errorf("building body: %w", err)
 		}
 	}
+	if slackForm {
+		body = []byte(queryParams.Encode())
+	}
 
 	s.logger.Info().
 		Str("url", urlStr).
@@ -741,6 +761,9 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 	headers := map[string]string{
 		"Accept": "application/json",
 		"Content-Type": "application/json",
+	}
+	if slackForm {
+		headers["Content-Type"] = "application/x-www-form-urlencoded"
 	}
 
 	if op.Site == "kibana" {
@@ -1397,24 +1420,23 @@ func (s *Server) refreshOAuthToken(env *config.Environment, workspace string) bo
 }
 
 func (s *Server) buildBody(template string, params map[string]interface{}) ([]byte, error) {
-	result := template
-	result = strings.Replace(result, "{{now}}", time.Now().UTC().Format("20060102150405"), -1)
-	for key, val := range params {
-		result = strings.Replace(result, "{{"+key+"}}", formatParamValue(val), -1)
-	}
-	for {
-		start := strings.Index(result, "{{")
-		if start == -1 {
-			break
+	now := time.Now().UTC().Format("20060102150405")
+	// One pass over the template only: substituted values are never rescanned, so
+	// "{{" or "{{other}}" inside an agent's value stays literal text.
+	result := bodyPlaceholder.ReplaceAllStringFunc(template, func(m string) string {
+		key := m[2 : len(m)-2]
+		if key == "now" {
+			return now
 		}
-		end := strings.Index(result[start:], "}}")
-		if end == -1 {
-			break
+		if val, ok := params[key]; ok {
+			return formatParamValue(val)
 		}
-		result = result[:start] + result[start+end+2:]
-	}
+		return ""
+	})
 	return []byte(result), nil
 }
+
+var bodyPlaceholder = regexp.MustCompile(`\{\{[A-Za-z0-9_]+\}\}`)
 
 // formatParamValue renders a param value as a string for template
 // substitution. JSON unmarshalling turns every number into a float64, so an
@@ -1427,6 +1449,9 @@ func formatParamValue(val interface{}) string {
 	case string:
 		escaped, _ := json.Marshal(v)
 		return string(escaped[1 : len(escaped)-1])
+	case map[string]interface{}, []interface{}:
+		raw, _ := json.Marshal(v)
+		return string(raw)
 	case float64:
 		if isIntegral(v) {
 			return strconv.FormatInt(int64(v), 10)
