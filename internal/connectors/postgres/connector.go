@@ -197,11 +197,16 @@ func validateQueryAST(query string) error {
 	}
 
 	for i, item := range stmts.Items {
+		if explain, ok := item.(*pgparsernodes.ExplainStmt); ok {
+			item = explain.Query
+		}
 		switch s := item.(type) {
 		case *pgparsernodes.SelectStmt:
 			if s.LockingClause != nil && s.LockingClause.Len() > 0 {
 				return fmt.Errorf("SELECT FOR UPDATE/SHARE is not allowed")
 			}
+		case nil:
+			return fmt.Errorf("only SELECT queries allowed (got empty EXPLAIN at stmt %d)", i+1)
 		default:
 			tag := item.Tag()
 			name := pgparsernodes.NodeTagName(tag)
@@ -267,6 +272,10 @@ func tableAllowed(ref tableRef, allowed []string) bool {
 				return true
 			}
 		}
+		if ref.schema == "" && strings.HasPrefix(ref.name, "pg_") &&
+			(a == "pg_catalog.*" || a == "pg_catalog."+ref.name) {
+			return true
+		}
 	}
 	return false
 }
@@ -282,6 +291,11 @@ func walkTables(n pgparsernodes.Node, cte map[string]bool, out *[]tableRef) {
 		for _, it := range v.Items {
 			walkTables(it, cte, out)
 		}
+	case *pgparsernodes.ExplainStmt:
+		if v == nil {
+			return
+		}
+		walkTables(v.Query, cte, out)
 	case *pgparsernodes.SelectStmt:
 		if v == nil {
 			return

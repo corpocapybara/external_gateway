@@ -31,6 +31,15 @@ func TestValidateQueryAST_Select(t *testing.T) {
 		{"copy", "COPY users TO '/tmp/out'", false},
 		{"multiple statements", "SELECT 1; DROP TABLE users", false},
 		{"for update", "SELECT * FROM users FOR UPDATE", false},
+		{"explain select", "EXPLAIN SELECT * FROM users WHERE id = 1", true},
+		{"explain analyze select", "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM users", true},
+		{"explain with clause", "EXPLAIN WITH cte AS (SELECT 1) SELECT * FROM cte", true},
+		{"explain delete", "EXPLAIN ANALYZE DELETE FROM users", false},
+		{"explain update", "EXPLAIN UPDATE users SET name = 'alice'", false},
+		{"explain insert", "EXPLAIN INSERT INTO users (name) VALUES ('bob')", false},
+		{"explain create table as", "EXPLAIN CREATE TABLE t AS SELECT 1", false},
+		{"explain for update", "EXPLAIN SELECT * FROM users FOR UPDATE", false},
+		{"explain then drop", "EXPLAIN SELECT 1; DROP TABLE users", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
