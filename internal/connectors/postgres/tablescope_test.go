@@ -19,6 +19,13 @@ func TestCheckTableScope(t *testing.T) {
 		{"cte name is not a table", []string{"public.users"}, "WITH x AS (SELECT * FROM public.users) SELECT * FROM x", false},
 		{"cte body still checked", []string{"public.users"}, "WITH x AS (SELECT * FROM secrets) SELECT * FROM x", true},
 		{"subquery disallowed", []string{"public.users"}, "SELECT * FROM (SELECT * FROM secrets) t", true},
+		{"explain checked", []string{"public.users"}, "EXPLAIN SELECT * FROM secrets", true},
+		{"explain allowed", []string{"public.users"}, "EXPLAIN ANALYZE SELECT * FROM public.users", false},
+		{"bare catalog view listed", []string{"pg_catalog.pg_indexes"}, "SELECT * FROM pg_indexes", false},
+		{"qualified catalog view listed", []string{"pg_catalog.pg_indexes"}, "SELECT * FROM pg_catalog.pg_indexes", false},
+		{"bare catalog view not listed", []string{"pg_catalog.pg_indexes"}, "SELECT * FROM pg_shadow", true},
+		{"public wildcard skips catalog", []string{"public.*"}, "SELECT * FROM pg_indexes", true},
+		{"catalog listing skips other schema", []string{"pg_catalog.pg_indexes"}, "SELECT * FROM other.pg_indexes", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
