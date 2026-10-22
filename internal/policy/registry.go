@@ -28,8 +28,18 @@ type Operation struct {
 	Path        string
 	Params      map[string]ParamDef
 	BodyTemplate string     `yaml:"body_template"`
+	Headers     map[string]string        `yaml:"headers"`
+	Multipart   *MultipartSpec           `yaml:"multipart"`
 	Constraints []map[string]interface{} `yaml:"constraints"`
 	Response    ResponsePolicy
+}
+
+// MultipartSpec sends the request as multipart/form-data with one file part,
+// built from a filename param and a base64 content param.
+type MultipartSpec struct {
+	Field         string `yaml:"field"`
+	FilenameParam string `yaml:"filename_param"`
+	ContentParam  string `yaml:"content_param"`
 }
 
 type ParamDef struct {
@@ -61,7 +71,10 @@ func (c *JQLScopeConstraint) Check(op *Operation, params map[string]interface{},
 	if !ok || strings.TrimSpace(jql) == "" {
 		return fmt.Errorf("jql parameter is required")
 	}
-	projects := workspace.Policy.JiraProjects
+	projects := c.Projects
+	if projects == nil {
+		projects = workspace.Policy.JiraProjects
+	}
 	if len(projects) == 0 {
 		// No configured project scope: nothing to enforce.
 		return nil
@@ -208,6 +221,13 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 			}
 			if _, err := regexp.Compile(def.Pattern); err != nil {
 				return fmt.Errorf("operation %s param %s: invalid pattern: %w", id, name, err)
+			}
+		}
+		if mp := op.Multipart; mp != nil {
+			_, hasName := op.Params[mp.FilenameParam]
+			_, hasContent := op.Params[mp.ContentParam]
+			if mp.Field == "" || !hasName || !hasContent || op.BodyTemplate != "" {
+				return fmt.Errorf("operation %s: multipart needs field plus declared filename_param and content_param, and no body_template", id)
 			}
 		}
 		op.ID = id
@@ -432,6 +452,18 @@ func (r *OperationRegistry) CheckConstraints(op *Operation, params map[string]in
 					projects = workspace.Policy.BitbucketRepos
 				case "$workspace.pg_allowed_tables":
 					projects = workspace.Policy.PgAllowedTables
+				}
+			} else if list, ok := projectsVal.([]interface{}); ok {
+				// A literal list pins the scope in the operation itself (a second Jira
+				// with its own projects); an empty one denies rather than unscopes.
+				projects = []string{}
+				for _, p := range list {
+					if s, ok := p.(string); ok && s != "" {
+						projects = append(projects, s)
+					}
+				}
+				if len(projects) == 0 {
+					return fmt.Errorf("jql_scope on %s lists no projects", op.ID)
 				}
 			}
 			c := &JQLScopeConstraint{Projects: projects}

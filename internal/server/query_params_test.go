@@ -75,3 +75,28 @@ func TestBodyTemplateParamsAreNotCopiedToQuery(t *testing.T) {
 		t.Errorf("body = %q, want %q", sent.Body, note)
 	}
 }
+
+func TestQueryStringValuesAreNotJSONEscaped(t *testing.T) {
+	var gotQuery url.Values
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Write([]byte(`{}`))
+	}))
+	defer upstream.Close()
+
+	ws := &config.Workspace{Sites: map[string]config.Site{"corp": {Environments: map[string]config.Environment{
+		"prod": {BaseURL: upstream.URL},
+	}}}}
+	op := &policy.Operation{ID: "corp.search", Connector: "http-rest", Site: "corp", Method: "GET", Path: "/rest/api/2/search"}
+	s := &Server{logger: zerolog.Nop(), httpClient: httprest.NewConnector()}
+	jql := `status = "Assigned to DEV" AND summary ~ "a\b"`
+	if _, _, err := s.executeHttpConnector(ws, op, map[string]interface{}{"jql": jql, "maxResults": float64(50)}, "querytest"); err != nil {
+		t.Fatal(err)
+	}
+	if got := gotQuery.Get("jql"); got != jql {
+		t.Errorf("jql = %q, want %q", got, jql)
+	}
+	if got := gotQuery.Get("maxResults"); got != "50" {
+		t.Errorf("maxResults = %q, want 50", got)
+	}
+}

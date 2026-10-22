@@ -91,7 +91,7 @@ func DetectKind(site string, env config.Environment) Kind {
 		return KindKibana
 	case site == "authentik":
 		return KindAuthentik
-	case site == "jira":
+	case strings.HasSuffix(site, "jira"):
 		return KindJira
 	}
 	return KindGeneric
@@ -122,7 +122,11 @@ func Check(ctx context.Context, kind Kind, env config.Environment, primary, seco
 		root := strings.TrimSuffix(strings.TrimRight(env.BaseURL, "/"), "/wiki")
 		return checkJSON(ctx, env, "GET", root+"/rest/api/3/myself", basic(env.User, primary), "displayName", "emailAddress")
 	case KindJira:
-		return checkJSON(ctx, env, "GET", strings.TrimRight(env.BaseURL, "/")+"/rest/api/2/myself", basic(env.User, primary), "displayName", "name")
+		auth := basic(env.User, primary)
+		if env.Auth.Type == "bearer" {
+			auth = bearer(primary)
+		}
+		return checkJSON(ctx, env, "GET", strings.TrimRight(env.BaseURL, "/")+"/rest/api/2/myself", auth, "displayName", "name")
 	case KindJenkins:
 		return checkJSON(ctx, env, "GET", strings.TrimRight(env.BaseURL, "/")+"/me/api/json", basic(env.User, primary), "fullName", "id")
 	case KindBitbucket:

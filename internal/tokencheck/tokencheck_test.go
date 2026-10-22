@@ -21,6 +21,7 @@ func TestDetectKind(t *testing.T) {
 		{"jira", config.Environment{BaseURL: "https://x.atlassian.net", Auth: config.AuthConfig{Type: "basic"}}, KindAtlassian},
 		{"confluence", config.Environment{BaseURL: "https://x.atlassian.net/wiki"}, KindAtlassian},
 		{"jira", config.Environment{BaseURL: "https://jiraops.corp-apps.com"}, KindJira},
+		{"corpjira", config.Environment{BaseURL: "https://jira.example.com", Auth: config.AuthConfig{Type: "bearer"}}, KindJira},
 		{"mcp", config.Environment{BaseURL: "https://mcp.atlassian.com/v1/mcp"}, KindMCP},
 		{"jenkins", config.Environment{BaseURL: "https://jenkins.dev.example"}, KindJenkins},
 		{"slack", config.Environment{Auth: config.AuthConfig{Type: "slack-session"}}, KindSlack},
@@ -62,6 +63,27 @@ func TestCheckGitLab(t *testing.T) {
 	bad := Check(context.Background(), KindGitLab, env, "old", "")
 	if bad.State != StateRejected || bad.HTTPStatus != 401 || bad.Detail != "Token is expired." {
 		t.Fatalf("expired token: %+v", bad)
+	}
+}
+
+func TestCheckJiraServerBearerPAT(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rest/api/2/myself" || r.Header.Get("Authorization") != "Bearer pat-1" {
+			w.WriteHeader(401)
+			w.Write([]byte(`{"message":"Client must be authenticated to access this resource."}`))
+			return
+		}
+		w.Write([]byte(`{"name":"kk","displayName":"K K"}`))
+	}))
+	defer srv.Close()
+
+	pat := Check(context.Background(), KindJira, config.Environment{BaseURL: srv.URL, Auth: config.AuthConfig{Type: "bearer"}}, "pat-1", "")
+	if pat.State != StateOK {
+		t.Fatalf("bearer PAT: %+v", pat)
+	}
+	asPassword := Check(context.Background(), KindJira, config.Environment{BaseURL: srv.URL, User: "kk", Auth: config.AuthConfig{Type: "basic"}}, "pat-1", "")
+	if asPassword.State != StateRejected {
+		t.Fatalf("PAT sent as a basic-auth password should be rejected: %+v", asPassword)
 	}
 }
 

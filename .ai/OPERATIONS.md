@@ -62,6 +62,26 @@ body_template: |
   {"query":{"bool":{"must":[{"query_string":{"query":"{{query}}"}}]}},"size":{{size}}}
 ```
 
+The template is filled in one pass: text inside a substituted value (even `{{other}}`) is never substituted again,
+and placeholders with no matching param render as empty.
+
+## Extra headers and file uploads
+
+`headers:` adds fixed request headers to one operation (e.g. `X-Atlassian-Token: no-check` for Jira uploads, or
+`X-ExperimentalApi: opt-in` for experimental Service Management endpoints). Auth headers are set after them.
+
+`multipart:` sends the body as `multipart/form-data` with one file part. The agent passes the file name and the
+file's bytes base64-encoded; the gateway never reads a path from disk. Both params must be declared (give the name a
+`pattern` and the content a `maxlen`), and the op cannot also have a `body_template`. The audit log records the
+content param as its length only. An op call's JSON body is capped at 20 MB (HTTP 413 above that).
+
+```yaml
+multipart:
+  field: file                 # form field name
+  filename_param: filename
+  content_param: content_base64
+```
+
 The `{{now}}` substitution is available for generating timestamps:
 ```yaml
 body_template: |
@@ -106,6 +126,14 @@ policy:
     - MD
     - SW
     - Acme
+```
+
+For a second Jira whose projects differ from `jira_projects`, pin the scope in the operation with a literal list.
+An empty literal list denies the request rather than leaving it unscoped:
+```yaml
+constraints:
+  - type: jql_scope
+    projects: [DESK]
 ```
 
 ### tunnel

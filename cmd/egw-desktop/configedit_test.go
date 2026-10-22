@@ -160,7 +160,7 @@ func TestDisableAndEnableSite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if changes[0].After != changes[0].Before && strings.Contains(changes[0].After, "disabled: true") {
+	if cfg, _ = loadConfig(a.repoConfigPath("thp")); cfg.Workspaces[workspaceKey("thp", cfg)].Sites["kibana"].Disabled {
 		t.Fatal("enable left the flag in place")
 	}
 	original, _ := os.ReadFile(filepath.Join("..", "..", "config.thp.yaml"))
