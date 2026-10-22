@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/external_gateway/internal/config"
@@ -108,6 +110,38 @@ func TestJQLScopeInjectsFilter(t *testing.T) {
 	want := "(project = SECRET OR status = Open) AND project in (MD,PROJ)"
 	if got != want {
 		t.Fatalf("jql = %q, want %q", got, want)
+	}
+}
+
+func TestJQLScopeLiteralProjectsOverrideWorkspace(t *testing.T) {
+	r := &OperationRegistry{}
+	w := ws(config.WorkspacePolicy{JiraProjects: []string{"MD"}})
+	op := &Operation{ID: "corp.search", Constraints: []map[string]interface{}{
+		{"type": "jql_scope", "projects": []interface{}{"DESK"}},
+	}}
+	params := map[string]interface{}{"jql": "status = Open ORDER BY created DESC"}
+	if err := r.CheckConstraints(op, params, w); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := params["jql"], "(status = Open) AND project in (DESK) ORDER BY created DESC"; got != want {
+		t.Fatalf("jql = %q, want %q", got, want)
+	}
+	empty := &Operation{ID: "corp.search", Constraints: []map[string]interface{}{
+		{"type": "jql_scope", "projects": []interface{}{}},
+	}}
+	if err := r.CheckConstraints(empty, map[string]interface{}{"jql": "status = Open"}, w); err == nil {
+		t.Fatal("expected an empty literal project list to deny, not unscope")
+	}
+}
+
+func TestLoadRejectsBadMultipartSpec(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ops.yaml")
+	ops := "operations:\n  x.attach:\n    site: x\n    method: POST\n    path: /a\n    multipart:\n      field: file\n      filename_param: filename\n      content_param: content\n    params:\n      filename:\n        type: string\n"
+	if err := os.WriteFile(path, []byte(ops), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewRegistry(path); err == nil {
+		t.Fatal("expected a multipart op without its content param to be rejected at load")
 	}
 }
 

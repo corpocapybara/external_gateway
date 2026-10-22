@@ -1,17 +1,22 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os"
 	"os/exec"
@@ -345,6 +350,7 @@ func (s *Server) handleWorkspaceOp(w http.ResponseWriter, r *http.Request) {
 
 	workspace := parts[0]
 	opID := parts[2]
+	r.Body = http.MaxBytesReader(w, r.Body, maxOpBodyBytes)
 
 	if r.URL.Query().Get("dry_run") == "true" {
 		s.handleDryRun(w, r, agentID, workspace, opID)
@@ -352,6 +358,28 @@ func (s *Server) handleWorkspaceOp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.executeOp(w, r, agentID, workspace, opID)
+}
+
+// maxOpBodyBytes caps an operation's JSON params, which for an upload carry the
+// whole file base64-encoded (a 10 MB file is about 14 MB of base64).
+const maxOpBodyBytes = 20 << 20
+
+// auditParams is what the audit log records for an op's params: an uploaded
+// file's base64 content is replaced by its length.
+func auditParams(op *policy.Operation, params map[string]interface{}) map[string]interface{} {
+	if op.Multipart == nil {
+		return params
+	}
+	content, ok := params[op.Multipart.ContentParam].(string)
+	if !ok {
+		return params
+	}
+	out := make(map[string]interface{}, len(params))
+	for k, v := range params {
+		out[k] = v
+	}
+	out[op.Multipart.ContentParam] = fmt.Sprintf("<%d base64 chars>", len(content))
+	return out
 }
 
 func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, agentID, workspace, opID string) {
@@ -443,13 +471,17 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 	var params map[string]interface{}
 	if r.Body != nil {
 		body, readErr := io.ReadAll(r.Body)
+		var tooLarge *http.MaxBytesError
+		if errors.As(readErr, &tooLarge) {
+			http.Error(w, fmt.Sprintf("request body exceeds %d bytes", tooLarge.Limit), http.StatusRequestEntityTooLarge)
+			return
+		}
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &params); err != nil {
 				http.Error(w, "invalid JSON body", http.StatusBadRequest)
 				return
 			}
 		}
-		_ = readErr
 	}
 
 	if err := s.reg.ValidateParams(op, params, ws); err != nil {
@@ -492,7 +524,7 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 	}
 
 	latency := time.Since(start).Milliseconds()
-	s.auditLog.LogAllow(requestID, agentID, workspace, opID, params, latency, upstreamStatus)
+	s.auditLog.LogAllow(requestID, agentID, workspace, opID, auditParams(op, params), latency, upstreamStatus)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Request-ID", requestID)
@@ -724,7 +756,12 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		if strings.Contains(op.BodyTemplate, "{{"+key+"}}") {
 			continue
 		}
-		if str, ok := val.(string); ok && slackForm {
+		if op.Multipart != nil && (key == op.Multipart.FilenameParam || key == op.Multipart.ContentParam) {
+			continue
+		}
+		// Strings go in raw: formatParamValue JSON-escapes them for body templates,
+		// which would turn a JQL `status = "Open"` into `status = \"Open\"` here.
+		if str, ok := val.(string); ok {
 			queryParams.Add(key, str)
 			continue
 		}
@@ -751,11 +788,22 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 	if slackForm {
 		body = []byte(queryParams.Encode())
 	}
+	multipartType := ""
+	if op.Multipart != nil {
+		body, multipartType, err = buildMultipart(op.Multipart, params)
+		if err != nil {
+			return 0, nil, fmt.Errorf("building multipart body: %w", err)
+		}
+	}
 
+	logBody := string(body)
+	if multipartType != "" {
+		logBody = fmt.Sprintf("<multipart, %d bytes>", len(body))
+	}
 	s.logger.Info().
 		Str("url", urlStr).
 		Str("method", op.Method).
-		Str("body", string(body)).
+		Str("body", logBody).
 		Msg("upstream request")
 
 	headers := map[string]string{
@@ -764,6 +812,12 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 	}
 	if slackForm {
 		headers["Content-Type"] = "application/x-www-form-urlencoded"
+	}
+	if multipartType != "" {
+		headers["Content-Type"] = multipartType
+	}
+	for k, v := range op.Headers {
+		headers[k] = v
 	}
 
 	if op.Site == "kibana" {
@@ -1437,6 +1491,46 @@ func (s *Server) buildBody(template string, params map[string]interface{}) ([]by
 }
 
 var bodyPlaceholder = regexp.MustCompile(`\{\{[A-Za-z0-9_]+\}\}`)
+
+var multipartQuote = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+
+// buildMultipart renders a multipart/form-data body with one file part whose
+// bytes arrive base64-encoded in a param, so an agent can upload a file without
+// the gateway (running as LocalSystem) ever reading a path from disk.
+func buildMultipart(spec *policy.MultipartSpec, params map[string]interface{}) ([]byte, string, error) {
+	filename, _ := params[spec.FilenameParam].(string)
+	encoded, _ := params[spec.ContentParam].(string)
+	if filename == "" || encoded == "" {
+		return nil, "", fmt.Errorf("%s and %s are required", spec.FilenameParam, spec.ContentParam)
+	}
+	if strings.IndexFunc(filename, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+		return nil, "", fmt.Errorf("%s contains control characters", spec.FilenameParam)
+	}
+	content, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, "", fmt.Errorf("%s is not valid base64: %w", spec.ContentParam, err)
+	}
+	contentType := mime.TypeByExtension(filepath.Ext(filename))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, multipartQuote.Replace(spec.Field), multipartQuote.Replace(filename)))
+	h.Set("Content-Type", contentType)
+	part, err := mw.CreatePart(h)
+	if err != nil {
+		return nil, "", fmt.Errorf("creating file part: %w", err)
+	}
+	if _, err := part.Write(content); err != nil {
+		return nil, "", fmt.Errorf("writing file part: %w", err)
+	}
+	if err := mw.Close(); err != nil {
+		return nil, "", fmt.Errorf("closing multipart body: %w", err)
+	}
+	return buf.Bytes(), mw.FormDataContentType(), nil
+}
 
 // formatParamValue renders a param value as a string for template
 // substitution. JSON unmarshalling turns every number into a float64, so an
