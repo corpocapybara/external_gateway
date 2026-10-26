@@ -138,9 +138,12 @@ func (a *app) apiStatus(r *http.Request) (interface{}, error) {
 	if r.URL.Query().Get("cached") == "1" {
 		a.mu.Lock()
 		res := a.results[ws]
+		rechecking := a.rechecking[ws] > 0
 		a.mu.Unlock()
 		if res != nil {
-			return res, nil
+			out := *res
+			out.Rechecking = rechecking
+			return &out, nil
 		}
 		live = false
 	}
@@ -260,7 +263,7 @@ func (a *app) apiPublish(r *http.Request) (interface{}, error) {
 			how = "restarted (reload was refused: " + err.Error() + ")"
 		}
 	}
-	go a.refresh(req.WS, true)
+	a.recheck(req.WS)
 	return map[string]string{"ok": "published and " + how}, nil
 }
 

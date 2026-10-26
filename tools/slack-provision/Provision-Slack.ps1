@@ -55,7 +55,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $toolDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 if (-not $toolDir -or -not (Test-Path $toolDir)) { $toolDir = $PSScriptRoot; if (-not $toolDir) { $toolDir = Split-Path -Parent $PSCommandPath } }
-if (-not $toolDir -or -not (Test-Path $toolDir)) { $toolDir = "C:\dev\playground\external_gateway\tools\slack-provision" }
+if (-not $toolDir -or -not (Test-Path $toolDir)) { $toolDir = "C:\dev\shared\external_gateway\tools\slack-provision" }
 $work    = Join-Path ([IO.Path]::GetTempPath()) ("slackprov_" + [Guid]::NewGuid().ToString('N').Substring(0,8))
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 

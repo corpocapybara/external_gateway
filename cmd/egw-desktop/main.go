@@ -40,6 +40,7 @@ type app struct {
 	lastCheck   time.Time
 	notified    map[string]bool
 	checking    bool
+	rechecking  map[string]int
 	onChange    func()
 }
 
@@ -68,6 +69,7 @@ func main() {
 	a := &app{
 		buildDir: *buildDir, installDir: *installDir, dataDir: *dataDir, elevated: isElevated(),
 		adminTokens: map[string]string{}, results: map[string]*wsResult{}, notified: map[string]bool{},
+		rechecking: map[string]int{},
 	}
 
 	if *helper != "" {
