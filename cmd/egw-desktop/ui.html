@@ -204,7 +204,7 @@ function renderTodo() {
       const label = t.action.kind === 'service' && t.action.arg === 'restart' ? 'Restart service' : t.action.kind === 'publish' && t.action.arg === 'restart' ? 'Publish & restart' : actionLabel[t.action.kind] || 'Open';
       return `<div class="todo"><span class="badge ${cls}">${txt}</span>
         <div class="body">${t.ws ? `<span class="chip">${esc(t.ws)}</span> ` : ''}<strong>${esc(t.title)}</strong>${t.detail ? `<div class="detail">${esc(t.detail)}</div>` : ''}</div>
-        <button class="btn ${t.severity === 'bad' ? 'primary' : ''}" onclick="doTodo(${i}, this)">${esc(label)}</button></div>`;
+        <button class="btn ${t.severity === 'bad' ? 'primary' : ''}" onclick="doTodo(${i}, this)">${esc(label)}</button>${disableButtons(t.ws, t.sites)}</div>`;
     }).join('') + `</div>`;
   }
   html += `<p class="small muted">Checks run every ${ov.settings.check_interval_min} min in the background${ov.settings.notify ? ' and raise a Windows notification when a new problem appears' : ''}.
@@ -294,12 +294,16 @@ function renderSecrets(w) {
       <td class="hide-sm small">${s.used_by.map(u => esc(u.site + '/' + u.env)).join(', ')}</td>
       <td class="small">${s.stored ? 'set ' + esc(ago(s.last_written)) : '<span class="danger">missing</span>'}</td>
       <td><span class="badge ${v.cls}">${esc(v.text)}</span>${bits.length ? `<div class="detail">${bits.join(' &middot; ')}</div>` : ''}</td>
-      <td style="text-align:right"><button class="btn ${v.level === 'bad' ? 'primary' : ''}" onclick="openSecret('${esc(w.name)}',${i})">${s.stored ? 'Change' : 'Set'}</button></td></tr>`;
+      <td style="text-align:right"><button class="btn ${v.level === 'bad' ? 'primary' : ''}" onclick="openSecret('${esc(w.name)}',${i})">${s.stored ? 'Change' : 'Set'}</button>${v.level === 'bad' || c.state === 'unreachable' ? disableButtons(w.name, activeSites(s)) : ''}</td></tr>`;
   }).join('');
-  return `<div class="row" style="margin-bottom:8px"><span class="small muted">${st.live ? 'Checked ' + esc(ago(st.checked_at)) : 'Stored state only - not checked against the services yet.'}</span><span class="spacer"></span>
+  return `<div class="row" style="margin-bottom:8px"><span class="small muted">${st.rechecking ? '<span class="spin"></span> Re-checking against the services... ' : ''}${st.live ? 'Checked ' + esc(ago(st.checked_at)) : 'Stored state only - not checked against the services yet.'}</span><span class="spacer"></span>
       <button class="btn" onclick="recheck('${esc(w.name)}',this)">Re-check ${esc(w.name)}</button></div>
     <div class="card" style="padding:4px 6px"><table><thead><tr><th>Secret</th><th class="hide-sm">Used by</th><th>Stored</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="small muted">Valid = accepted by the service at the last check. Rejected = 401/403 (expired, revoked or wrong user). Unreachable = network, VPN or tunnel problem.</p>`;
+}
+function activeSites(s) { return [...new Set(s.used_by.filter(u => !u.disabled).map(u => u.site))]; }
+function disableButtons(ws, sites) {
+  return (sites || []).map(site => ` <button class="btn" title="Disable the ${esc(site)} integration in ${esc(ws)}: the gateway refuses its operations and stops checking its secrets" onclick="toggleSite('${esc(ws)}','${esc(site)}',true,this)">Disable ${esc(site)}</button>`).join('');
 }
 async function recheck(ws, btn) {
   const done = busy(btn, 'Checking');
@@ -645,7 +649,14 @@ async function service(ws, action, btn) {
 async function publish(ws, restart, btn) {
   const done = busy(btn, 'Publishing');
   try { const r = await api('/api/publish', { ws, restart }); toast(ws + ': ' + r.ok); closeDrawer(); } catch (e) { toast(e.message, 'bad'); }
-  done(); setTimeout(() => { invalidate(ws); loadOverview(); loadSub(ws); }, 1500);
+  done(); invalidate(ws); await loadOverview(); await loadSub(ws); followRecheck(ws);
+}
+function followRecheck(ws) {
+  const t = setInterval(async () => {
+    const st = await api('/api/status?ws=' + ws + '&cached=1').catch(() => null);
+    if (st && st.rechecking) return;
+    clearInterval(t); if (st) state.status[ws] = st; else invalidate(ws); await loadOverview(); if (state.active === ws) { render(); if (!st) loadSub(ws); }
+  }, 2000);
 }
 async function deploy(btn) {
   if (!confirm('Run deploy\\update.ps1? It copies egw.exe and every workspace config into Program Files and restarts all gateways. (UAC prompt)')) return;

@@ -95,8 +95,8 @@ body_template: |
 | `type: string` | JQL query, project ID | String value |
 | `type: int` | `maxResults`, `per_page` | Integer (Go type conversion handled) |
 | `type: float` | Numeric thresholds | Float64 |
-| `type: object` | `requestFieldValues` | A JSON object, rendered into `{{name}}` as raw JSON (place it unquoted in the body template). Absent keys are simply not sent, so optional fields need no empty-string placeholder |
-| `keys: [a, b]` | `[summary, customfield_10001]` | For `type: object`: every key the agent sends must be listed, otherwise the request is denied |
+| `type: object` | `fields` | A JSON object, rendered into `{{name}}` as raw JSON (place it unquoted in the body template). Absent keys are simply not sent, so optional fields need no empty-string placeholder |
+| `keys: [a, b]` | `[resolution]` | For `type: object`: every key the agent sends must be listed, otherwise the request is denied |
 | `pattern: '^KEY-[0-9]+$'` | Issue key scoped to one project | For `type: string`: the value must match this Go regexp (anchor it with `^`/`$`) |
 | `required: true` | `project_id` | Request fails if missing |
 | `default: "value"` | `per_page: 100` | Used when param not provided |

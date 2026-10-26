@@ -6,21 +6,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/external_gateway/internal/config"
 	"github.com/external_gateway/internal/tokencheck"
 )
 
 type wsResult struct {
-	Info      workspaceInfo `json:"info"`
-	Problem   string        `json:"problem,omitempty"`
-	Detail    string        `json:"detail,omitempty"`
-	Secrets   []secretRow   `json:"secrets,omitempty"`
-	CheckedAt time.Time     `json:"checked_at"`
-	Live      bool          `json:"live"`
+	Info            workspaceInfo `json:"info"`
+	Problem         string        `json:"problem,omitempty"`
+	Detail          string        `json:"detail,omitempty"`
+	Secrets         []secretRow   `json:"secrets,omitempty"`
+	CheckedAt       time.Time     `json:"checked_at"`
+	Live            bool          `json:"live"`
+	IgnoredDisabled []string      `json:"ignored_disabled,omitempty"`
+	Rechecking      bool          `json:"rechecking,omitempty"`
 }
 
 type todoAction struct {
@@ -37,6 +41,7 @@ type todo struct {
 	Title    string     `json:"title"`
 	Detail   string     `json:"detail,omitempty"`
 	Action   todoAction `json:"action"`
+	Sites    []string   `json:"sites,omitempty"`
 	Notify   bool       `json:"-"`
 }
 
@@ -63,6 +68,7 @@ func (a *app) fetchStatus(ws string, live bool) *wsResult {
 		return res
 	case status == 405 || (status == 404 && strings.Contains(string(data), "unknown admin endpoint")):
 		res.Problem = "gateway_outdated"
+		res.IgnoredDisabled = disabledSites(cfg.Workspaces[key].Sites)
 		return res
 	case status != 200:
 		res.Problem, res.Detail = "gateway_error", fmt.Sprintf("HTTP %d: %s", status, strings.TrimSpace(string(data)))
@@ -76,6 +82,7 @@ func (a *app) fetchStatus(ws string, live bool) *wsResult {
 		return res
 	}
 	sites := cfg.Workspaces[key].Sites
+	res.IgnoredDisabled = ignoredDisabledSites(sites, out.Secrets)
 	for i := range out.Secrets {
 		s := &out.Secrets[i]
 		allDisabled := len(s.UsedBy) > 0
@@ -101,6 +108,40 @@ func (a *app) fetchStatus(ws string, live bool) *wsResult {
 	return res
 }
 
+func disabledSites(sites map[string]config.Site) []string {
+	var out []string
+	for _, site := range sortedKeys(sites) {
+		if sites[site].Disabled {
+			out = append(out, site)
+		}
+	}
+	return out
+}
+
+func activeSites(s secretRow) []string {
+	var out []string
+	for _, u := range s.UsedBy {
+		if !u.Disabled && !slices.Contains(out, u.Site) {
+			out = append(out, u.Site)
+		}
+	}
+	return out
+}
+
+// ignoredDisabledSites returns the disabled sites whose secret usages the gateway reports as active.
+func ignoredDisabledSites(sites map[string]config.Site, secrets []secretRow) []string {
+	var out []string
+	for _, s := range secrets {
+		for _, u := range s.UsedBy {
+			if sites[u.Site].Disabled && !u.Disabled && !slices.Contains(out, u.Site) {
+				out = append(out, u.Site)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (a *app) refresh(ws string, live bool) *wsResult {
 	res := a.fetchStatus(ws, live)
 	a.mu.Lock()
@@ -119,6 +160,21 @@ func (a *app) refresh(ws string, live bool) *wsResult {
 	a.mu.Unlock()
 	a.changed()
 	return res
+}
+
+// recheck stores the stored-state result at once and runs the slower live checks in the background.
+func (a *app) recheck(ws string) {
+	a.refresh(ws, false)
+	a.mu.Lock()
+	a.rechecking[ws]++
+	a.mu.Unlock()
+	go func() {
+		a.refresh(ws, true)
+		a.mu.Lock()
+		a.rechecking[ws]--
+		a.mu.Unlock()
+		a.notifyNew()
+	}()
 }
 
 func (a *app) checkAll() {
@@ -233,8 +289,9 @@ func (a *app) todos() []todo {
 			}
 			id := ws + "/secret/" + s.Name
 			act := todoAction{Kind: "secret", WS: ws, Secret: s.Name}
+			sites := activeSites(s)
 			if !s.Stored {
-				add(todo{Key: id + "/missing", WS: ws, Severity: "bad", Notify: true, Title: "Secret " + s.Name + " is not set", Detail: s.Help.Title, Action: act})
+				add(todo{Key: id + "/missing", WS: ws, Severity: "bad", Notify: true, Title: "Secret " + s.Name + " is not set", Detail: s.Help.Title, Action: act, Sites: sites})
 				continue
 			}
 			c := s.Check
@@ -243,16 +300,16 @@ func (a *app) todos() []todo {
 			}
 			switch c.State {
 			case tokencheck.StateRejected:
-				add(todo{Key: id + "/rejected", WS: ws, Severity: "bad", Notify: true, Title: "Secret " + s.Name + " rejected", Detail: c.Detail, Action: act})
+				add(todo{Key: id + "/rejected", WS: ws, Severity: "bad", Notify: true, Title: "Secret " + s.Name + " rejected", Detail: c.Detail, Action: act, Sites: sites})
 			case tokencheck.StateUnreachable:
-				add(todo{Key: id + "/unreachable", WS: ws, Severity: "info", Title: "Secret " + s.Name + " could not be checked", Detail: c.Detail, Action: act})
+				add(todo{Key: id + "/unreachable", WS: ws, Severity: "info", Title: "Secret " + s.Name + " could not be checked", Detail: c.Detail, Action: act, Sites: sites})
 			case tokencheck.StateOK:
 				if c.ExpiresAt == "" {
 					continue
 				}
 				if n, ok := daysUntil(c.ExpiresAt); ok {
 					if n < 0 {
-						add(todo{Key: id + "/expired", WS: ws, Severity: "bad", Notify: true, Title: "Secret " + s.Name + " expired", Detail: "expired " + c.ExpiresAt, Action: act})
+						add(todo{Key: id + "/expired", WS: ws, Severity: "bad", Notify: true, Title: "Secret " + s.Name + " expired", Detail: "expired " + c.ExpiresAt, Action: act, Sites: sites})
 					} else if n <= warnDays {
 						add(todo{Key: id + fmt.Sprintf("/expiring-%d", bucket(n)), WS: ws, Severity: "warn", Notify: true,
 							Title: fmt.Sprintf("Secret %s expires in %d days", s.Name, n), Detail: "expires " + c.ExpiresAt, Action: act})
@@ -265,21 +322,19 @@ func (a *app) todos() []todo {
 	built := filepath.Join(a.buildDir, "egw.exe")
 	installed := filepath.Join(a.installDir, "egw.exe")
 	if b, i := fileSHA(built), fileSHA(installed); b != "" && i != "" && b != i {
-		var disabledSites []string
+		var ignored []string
 		for _, ws := range a.workspaceNames() {
-			if cfg, err := a.effectiveConfig(ws); err == nil {
-				for _, site := range sortedKeys(cfg.Workspaces[workspaceKey(ws, cfg)].Sites) {
-					if cfg.Workspaces[workspaceKey(ws, cfg)].Sites[site].Disabled {
-						disabledSites = append(disabledSites, ws+"/"+site)
-					}
+			if r := results[ws]; r != nil {
+				for _, site := range r.IgnoredDisabled {
+					ignored = append(ignored, ws+"/"+site)
 				}
 			}
 		}
 		t := todo{Key: "binary", Severity: "warn", Title: "A newer egw.exe build is not deployed",
 			Detail: built + " differs from " + installed, Action: todoAction{Kind: "deploy"}}
-		if len(disabledSites) > 0 {
+		if len(ignored) > 0 {
 			t.Title = "Disabled integrations are still active - deploy the new egw.exe"
-			t.Detail = "The running gateway build ignores `disabled: true` (" + strings.Join(disabledSites, ", ") + ")."
+			t.Detail = "The running gateway ignores `disabled: true` (" + strings.Join(ignored, ", ") + ")."
 			t.Severity, t.Notify, t.Key = "bad", true, "binary-disabled"
 		}
 		add(t)

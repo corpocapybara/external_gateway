@@ -132,11 +132,27 @@ func TestCustomOperationValidation(t *testing.T) {
 
 func TestDisableAndEnableSite(t *testing.T) {
 	a := testApp(t)
+	// The test runs on the real config, so pick a site that is enabled there now.
+	cfg, err := loadConfig(a.repoConfigPath("thp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sites := cfg.Workspaces[workspaceKey("thp", cfg)].Sites
+	site := ""
+	for _, name := range sortedKeys(sites) {
+		if !sites[name].Disabled {
+			site = name
+			break
+		}
+	}
+	if site == "" {
+		t.Skip("every thp site is disabled")
+	}
 	e, err := a.openEdit("thp")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := e.setSiteDisabled("kibana", true); err != nil {
+	if err := e.setSiteDisabled(site, true); err != nil {
 		t.Fatal(err)
 	}
 	changes, err := e.commit(true)
@@ -147,20 +163,20 @@ func TestDisableAndEnableSite(t *testing.T) {
 	if len(changes) != 1 || len(removed) != 0 || len(added) != 1 || strings.TrimSpace(added[0]) != "disabled: true" {
 		t.Fatalf("disable should add one line, removed=%q added=%q", removed, added)
 	}
-	cfg, _ := loadConfig(a.repoConfigPath("thp"))
-	if !cfg.Workspaces[workspaceKey("thp", cfg)].Sites["kibana"].Disabled {
-		t.Fatal("kibana not disabled after apply")
+	cfg, _ = loadConfig(a.repoConfigPath("thp"))
+	if !cfg.Workspaces[workspaceKey("thp", cfg)].Sites[site].Disabled {
+		t.Fatalf("%s not disabled after apply", site)
 	}
 
 	e, _ = a.openEdit("thp")
-	if err := e.setSiteDisabled("kibana", false); err != nil {
+	if err := e.setSiteDisabled(site, false); err != nil {
 		t.Fatal(err)
 	}
 	changes, err = e.commit(true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg, _ = loadConfig(a.repoConfigPath("thp")); cfg.Workspaces[workspaceKey("thp", cfg)].Sites["kibana"].Disabled {
+	if cfg, _ = loadConfig(a.repoConfigPath("thp")); cfg.Workspaces[workspaceKey("thp", cfg)].Sites[site].Disabled {
 		t.Fatal("enable left the flag in place")
 	}
 	original, _ := os.ReadFile(filepath.Join("..", "..", "config.thp.yaml"))
