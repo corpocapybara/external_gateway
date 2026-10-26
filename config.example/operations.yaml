@@ -972,6 +972,44 @@ operations:
         - messages[].user
         - messages[].reply_count
 
+  slack.file:
+    connector: http-rest
+    site: slack
+    method: GET
+    path: /files.info
+    params:
+      file:
+        type: string
+        required: true
+        pattern: ^F[A-Z0-9]+$
+    response:
+      allow_fields:
+        - ok
+        - error
+        - file.id
+        - file.name
+        - file.title
+        - file.mimetype
+        - file.filetype
+        - file.mode
+        - file.size
+        - file.permalink
+        - file.preview
+        - file.lines
+        - file.lines_more
+
+  slack.file_content:
+    connector: http-rest
+    site: slack
+    method: GET
+    path: /files.info
+    slack_file_content: true
+    params:
+      file:
+        type: string
+        required: true
+        pattern: ^F[A-Z0-9]+$
+
   slack.send:
     connector: http-rest
     site: slack

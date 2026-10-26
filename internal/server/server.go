@@ -54,6 +54,7 @@ type Server struct {
 	opsPath       string
 	oauthRefreshMu sync.Mutex
 	tunnelCheckerFactory func(*config.Config) policy.TunnelChecker
+	slackFilesBase string
 }
 
 func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logger zerolog.Logger) *Server {
@@ -510,7 +511,9 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 	var responseBody []byte
 	var err error
 
-	if op.Connector == "http-rest" {
+	if op.Connector == "http-rest" && op.SlackFileContent {
+		upstreamStatus, responseBody, err = s.executeSlackFileContent(ws, op, params, workspace)
+	} else if op.Connector == "http-rest" {
 		upstreamStatus, responseBody, err = s.executeHttpConnector(ws, op, params, workspace)
 	} else if op.Connector == "postgres" {
 		upstreamStatus, responseBody, err = s.executePostgresConnector(ws, op, params, workspace)
@@ -901,20 +904,7 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		// Both resolved server-side from WinCred; the agent never sees either value.
 		// NOTE: pass `workspace` (the request workspace) — not ws.Site, which is empty
 		// for map-based workspaces and would trip the cross-tenant check.
-		tWs, tName := parseSecretRef(env.SecretRef)
-		if tok, err := secrets.ResolveWithWorkspaceCheck(tWs, tName, workspace); err == nil {
-			headers["Authorization"] = "Bearer " + strings.TrimSpace(string(tok))
-		} else {
-			s.logger.Error().Err(err).Str("secret_ref", env.SecretRef).Msg("failed to resolve slack token secret")
-		}
-		if env.CookieSecretRef != "" {
-			cWs, cName := parseSecretRef(env.CookieSecretRef)
-			if cook, err := secrets.ResolveWithWorkspaceCheck(cWs, cName, workspace); err == nil {
-				headers["Cookie"] = "d=" + strings.TrimSpace(string(cook))
-			} else {
-				s.logger.Error().Err(err).Str("cookie_secret_ref", env.CookieSecretRef).Msg("failed to resolve slack cookie secret")
-			}
-		}
+		s.addSlackSessionAuth(headers, env, workspace)
 	} else if env.Auth.Type == "trello" && env.SecretRef != "" {
 		// Trello key/token go in the Authorization header (OAuth scheme), never the
 		// URL query — credentials in the URL leak to request logs and back to the

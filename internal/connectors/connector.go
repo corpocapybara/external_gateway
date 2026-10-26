@@ -11,6 +11,7 @@ type Request struct {
 	Body        []byte
 	Credentials *Credentials
 	Insecure    bool // skip TLS verification for this request (internal self-signed hosts)
+	MaxBodyBytes int64 // when > 0, a response body larger than this fails the request
 }
 
 type Credentials struct {
