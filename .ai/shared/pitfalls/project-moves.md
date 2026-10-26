@@ -76,4 +76,16 @@ $out = $in | git credential fill       # username=..., password=<token>
 ```
 
 That token can drive the REST API (`POST /user/repos`, `POST /repos/x/y/forks`). Never echo it,
-never write it to
+never write it to a file, and prefer `git` commands over API calls when both work.
+
+## Storage: keep big payloads out of git, but not out of reach
+
+Junctions let a repo keep its expected layout while the bytes live elsewhere (e.g. OneDrive):
+
+```
+repo\incoming  ->  C:\Users\<you>\OneDrive\<proj>\incoming
+```
+
+`pokemon-assets\setup-links.ps1` is the reference implementation. Treat the sync folder as
+*sync*, not backup: a local delete propagates. Anything irreplaceable needs a second copy that
+is not the sync target.
