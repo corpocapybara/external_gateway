@@ -80,6 +80,8 @@ roles:
     operations:
       - slack.channels
       - slack.messages
+      - slack.file
+      - slack.file_content
       - slack.send
 
   wireguard-readonly:
@@ -173,6 +175,8 @@ roles:
       - clockify.edit_entry
       - slack.channels
       - slack.messages
+      - slack.file
+      - slack.file_content
       - slack.send
       - trello.boards
       - trello.board

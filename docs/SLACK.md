@@ -105,6 +105,8 @@ $xoxd | .\egw-admin.exe -workspace acme -name slack-xoxd -admin http://127.0.0.1
 | `slack.auth_test` | POST | `/auth.test` | health/identity check; returns team + user |
 | `slack.channels`  | GET  | `/conversations.list` | params: `types` (default `public_channel,private_channel`), `limit`, `cursor` |
 | `slack.messages`  | GET  | `/conversations.history` | params: `channel` (required), `limit`, `cursor`, `oldest`, `latest` |
+| `slack.file`      | GET  | `/files.info` | params: `file` (required, `^F[A-Z0-9]+$`); metadata + a short `preview` only |
+| `slack.file_content` | GET | `/files.info` + `url_private` | params: `file` (same pattern); returns the file's text, see below |
 | `slack.send`      | POST | `/chat.postMessage` | params: `channel`, `text` (≤4000) |
 
 Each shapes its response via `allow_fields` (e.g. `messages[].ts/user/text`,
@@ -112,8 +114,25 @@ Each shapes its response via `allow_fields` (e.g. `messages[].ts/user/text`,
 
 `slack.messages`/`slack.replies` also surface **file/image attachment metadata**
 (`messages[].files[].{id,name,title,mimetype,filetype,size,url_private,permalink}`).
-This is metadata only — the file *bytes* are not returned; `url_private` requires a
-separate authenticated fetch (Slack bearer token), which the gateway does not yet proxy.
+This is metadata only; to read a text file or snippet, pass its `id` to `slack.file_content`.
+
+`slack.file` (`GET /files.info?file=F…`) returns
+`file.{id,name,title,mimetype,filetype,mode,size,permalink,preview,lines,lines_more}`.
+`files.info` never returns the full text of a snippet (verified live: only a 5-line
+`preview`), hence `slack.file_content`.
+
+`slack.file_content` (op flag `slack_file_content: true`, handled in
+`internal/server/slack_file.go`) takes only a file id matching `^F[A-Z0-9]+$`, never a URL.
+It calls `files.info`, then downloads `url_private` with the site's session credentials
+(xoxc Bearer + xoxd cookie) and returns `{ok, file:{id,name,title,mimetype,filetype,size}, content}`.
+Guards: the `url_private` must be `https://files.slack.com/files-pri/<team>-<fileId>/<name>`
+for the requested id (other host, credentials, query or path = refused); the file's mimetype
+and the download's Content-Type must be text (`text/*` except `text/html`, plus
+`application/json`, `application/xml`, `application/yaml`); at most 1 MB (checked from the
+metadata and again while reading); redirects are not followed; a non-200 download fails.
+It takes a file id rather than a `channel`, so the `slack_channels` allow-list does not
+apply. Add `slack.file` and `slack.file_content` to the role that holds the other `slack.*`
+ops (op blocks: `config.example/operations.yaml`).
 
 **`slack.send` design:** it deliberately has **no** `body_template`. The server's
 `buildBody` does raw `{{key}}` substitution with no JSON escaping, so a `text` containing

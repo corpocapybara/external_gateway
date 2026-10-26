@@ -30,6 +30,7 @@ type Operation struct {
 	BodyTemplate string     `yaml:"body_template"`
 	Headers     map[string]string        `yaml:"headers"`
 	Multipart   *MultipartSpec           `yaml:"multipart"`
+	SlackFileContent bool                `yaml:"slack_file_content"`
 	Constraints []map[string]interface{} `yaml:"constraints"`
 	Response    ResponsePolicy
 }

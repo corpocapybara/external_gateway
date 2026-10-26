@@ -246,4 +246,6 @@ Fields not listed are stripped from the response before returning to the agent. 
 | slack.channels | http-rest | slack | List channels |
 | slack.messages | http-rest | slack | Read channel messages (top-level only) |
 | slack.replies | http-rest | slack | Read a message's thread replies |
+| slack.file | http-rest | slack | Slack file metadata + short preview (`files.info`, by file id `F…`) |
+| slack.file_content | http-rest | slack | Text content of a Slack snippet/text file by id (fetches `url_private` on files.slack.com, text only, ≤1 MB; op flag `slack_file_content`) |
 | slack.send | http-rest | slack | Post a message (**write**) |

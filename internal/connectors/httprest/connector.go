@@ -97,9 +97,16 @@ func (c *Connector) Execute(ctx context.Context, req *connectors.Request) (*conn
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	var bodyReader io.Reader = resp.Body
+	if req.MaxBodyBytes > 0 {
+		bodyReader = io.LimitReader(resp.Body, req.MaxBodyBytes+1)
+	}
+	respBody, err := io.ReadAll(bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
+	}
+	if req.MaxBodyBytes > 0 && int64(len(respBody)) > req.MaxBodyBytes {
+		return nil, fmt.Errorf("response exceeds %d bytes", req.MaxBodyBytes)
 	}
 
 	if req.Credentials != nil {
