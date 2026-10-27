@@ -102,7 +102,8 @@ Used for WireGuard tunnel checks and TCP connectivity tests.
 
 - `wireguard.status` — runs `sc query WireGuardTunnel$<name>` to check if tunnel is running
 - `wireguard.test` — TCP connect to `<host>:<port>` to verify connectivity through the tunnel
-- GlobalProtect check — runs `sc query PanGPS` for VPN status
+- GlobalProtect check — connected when the `PANGP Virtual Ethernet Adapter*` network adapter is up. Not the
+  `PanGPS` service: it keeps running while the VPN is disconnected.
 
 ## MCP Connector (`mcp`)
 

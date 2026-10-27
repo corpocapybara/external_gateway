@@ -44,6 +44,9 @@ type Workspace struct {
 
 type Site struct {
 	Environments map[string]Environment `yaml:"environments"`
+	// DefaultEnv is the environment a request without `env` targets. A site with
+	// several environments and no default refuses such requests.
+	DefaultEnv string `yaml:"default_env"`
 	// Disabled keeps the site's configuration but refuses its operations (soft delete).
 	Disabled bool `yaml:"disabled"`
 }
@@ -205,6 +208,13 @@ func (c *Config) Validate() error {
 				if !ws.HasOperation(op) {
 					return fmt.Errorf("role %s includes operation %s not available in workspace %s", grant.Role, op, grant.Workspace)
 				}
+			}
+		}
+	}
+	for wsName, ws := range c.Workspaces {
+		for siteName, site := range ws.Sites {
+			if _, ok := site.Environments[site.DefaultEnv]; site.DefaultEnv != "" && !ok {
+				return fmt.Errorf("workspace %s site %s: default_env %q is not one of its environments", wsName, siteName, site.DefaultEnv)
 			}
 		}
 	}

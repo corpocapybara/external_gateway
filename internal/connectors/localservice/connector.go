@@ -91,35 +91,49 @@ func (c *Connector) checkWireGuard(ctx context.Context, tunnelName string) (*Tun
 	}, nil
 }
 
-func (c *Connector) checkGlobalProtect(ctx context.Context, portal string) (*TunnelStatus, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+// pangpAdapterPrefix starts the description of GlobalProtect's virtual adapter
+// ("PANGP Virtual Ethernet Adapter Secure" on current clients).
+const pangpAdapterPrefix = "PANGP Virtual Ethernet Adapter"
 
-	cmd := exec.CommandContext(ctx, "sc", "query", "PanGPS")
-	output, err := cmd.Output()
+type netAdapter struct {
+	Name        string
+	Description string
+	Up          bool
+}
+
+// checkGlobalProtect reports the VPN connected when GlobalProtect's virtual
+// adapter is up. The PanGPS service is no signal: it runs while disconnected.
+func (c *Connector) checkGlobalProtect(ctx context.Context, portal string) (*TunnelStatus, error) {
+	adapters, err := netAdapters()
 	if err != nil {
 		return &TunnelStatus{
 			Name:      portal,
 			Type:      TunnelTypeGlobalProtect,
 			Connected: false,
-			Details:   fmt.Sprintf("PanGPS service not found: %v", err),
+			Details:   fmt.Sprintf("listing network adapters failed: %v", err),
 		}, nil
 	}
+	return globalProtectStatus(portal, adapters), nil
+}
 
-	outputStr := string(output)
-	connected := strings.Contains(outputStr, "RUNNING") && !strings.Contains(outputStr, "STOPPED")
-
-	details := "service stopped"
-	if connected {
-		details = "PanGPS running, GlobalProtect connected"
+func globalProtectStatus(portal string, adapters []netAdapter) *TunnelStatus {
+	status := &TunnelStatus{
+		Name:    portal,
+		Type:    TunnelTypeGlobalProtect,
+		Details: "PANGP adapter not found (disabled, or GlobalProtect not installed)",
 	}
-
-	return &TunnelStatus{
-		Name:      portal,
-		Type:      TunnelTypeGlobalProtect,
-		Connected: connected,
-		Details:   details,
-	}, nil
+	for _, a := range adapters {
+		if !strings.HasPrefix(a.Description, pangpAdapterPrefix) {
+			continue
+		}
+		if a.Up {
+			status.Connected = true
+			status.Details = fmt.Sprintf("PANGP adapter %q up, GlobalProtect connected", a.Name)
+			return status
+		}
+		status.Details = fmt.Sprintf("PANGP adapter %q not up, GlobalProtect disconnected", a.Name)
+	}
+	return status
 }
 
 func (c *Connector) checkTCP(ctx context.Context, host string, port int) (*TunnelStatus, error) {

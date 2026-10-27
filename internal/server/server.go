@@ -430,6 +430,15 @@ func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, agentID, w
 		return
 	}
 
+	if params == nil {
+		params = map[string]interface{}{}
+	}
+	s.reg.ApplyDefaults(op, params)
+	if err := checkEnvSelection(ws, op, params); err != nil {
+		s.writeDeny(w, r, agentID, workspace, opID, "validation", err.Error())
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"decision": "allow",
@@ -500,12 +509,22 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 		return
 	}
 
+	// Defaults first: an op-level `env` default selects the environment, and the
+	// env and tunnel checks must see the environment the request will use.
+	if params == nil {
+		params = map[string]interface{}{}
+	}
+	s.reg.ApplyDefaults(op, params)
+
+	if err := checkEnvSelection(ws, op, params); err != nil {
+		s.writeDeny(w, r, agentID, workspace, opID, "validation", err.Error())
+		return
+	}
+
 	if err := s.checkTunnelAccess(ws, op, params); err != nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "tunnel", err.Error())
 		return
 	}
-
-	s.reg.ApplyDefaults(op, params)
 
 	var upstreamStatus int
 	var responseBody []byte
@@ -621,25 +640,65 @@ func (s *Server) agentHasOp(agent *config.Agent, workspace, opID string) bool {
 	return false
 }
 
-func (s *Server) checkTunnelAccess(ws *config.Workspace, op *policy.Operation, params map[string]interface{}) error {
-	envName := ""
-	if val, ok := params["env"].(string); ok {
-		envName = val
-	} else if val, ok := params["cluster"].(string); ok {
-		envName = val
+// resolveEnv picks the site environment a request targets: the one named by
+// `env` (or `cluster`), else the site's default_env, else its only environment.
+// A site with several environments and neither is refused, never guessed: Go
+// randomises map order, so "the first one" sent calls to a random environment.
+func resolveEnv(site config.Site, siteName string, params map[string]interface{}) (string, *config.Environment, error) {
+	if len(site.Environments) == 0 {
+		return "", nil, fmt.Errorf("no environment found for site %s", siteName)
 	}
+	names := make([]string, 0, len(site.Environments))
+	for name := range site.Environments {
+		names = append(names, name)
+	}
+	sort.Strings(names)
 
+	envName, _ := params["env"].(string)
 	if envName == "" {
+		envName, _ = params["cluster"].(string)
+	}
+	if envName == "" {
+		envName = site.DefaultEnv
+	}
+	if envName == "" {
+		if len(names) > 1 {
+			return "", nil, fmt.Errorf("missing required parameter: env (site %s has environments %s)", siteName, strings.Join(names, ", "))
+		}
+		envName = names[0]
+	}
+	env, ok := site.Environments[envName]
+	if !ok {
+		return "", nil, fmt.Errorf("parameter env=%q is not an environment of site %s (one of %s)", envName, siteName, strings.Join(names, ", "))
+	}
+	return envName, &env, nil
+}
+
+// checkEnvSelection refuses a request whose environment is missing-but-ambiguous
+// or unknown, before anything is resolved or sent upstream. It covers the
+// connectors that pick their environment with resolveEnv.
+func checkEnvSelection(ws *config.Workspace, op *policy.Operation, params map[string]interface{}) error {
+	switch op.Connector {
+	case "http-rest", "mcp", "email":
+	default:
 		return nil
 	}
+	site, ok := ws.Sites[op.Site]
+	if !ok {
+		return nil
+	}
+	_, _, err := resolveEnv(site, op.Site, params)
+	return err
+}
 
+func (s *Server) checkTunnelAccess(ws *config.Workspace, op *policy.Operation, params map[string]interface{}) error {
 	site, ok := ws.Sites[op.Site]
 	if !ok {
 		return nil
 	}
 
-	env, ok := site.Environments[envName]
-	if !ok {
+	_, env, err := resolveEnv(site, op.Site, params)
+	if err != nil {
 		return nil
 	}
 
@@ -665,31 +724,9 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		return 0, nil, fmt.Errorf("site %s not found in workspace", op.Site)
 	}
 
-	envName := ""
-	if val, ok := params["env"].(string); ok {
-		envName = val
-	} else if val, ok := params["cluster"].(string); ok {
-		envName = val
-	}
-
-	var env *config.Environment
-	if envName != "" {
-		if e, ok := site.Environments[envName]; ok {
-			env = &e
-		}
-	}
-
-	if env == nil {
-		for name := range site.Environments {
-			if e, ok := site.Environments[name]; ok {
-				env = &e
-				break
-			}
-		}
-	}
-
-	if env == nil {
-		return 0, nil, fmt.Errorf("no environment found for site %s", op.Site)
+	envName, env, err := resolveEnv(site, op.Site, params)
+	if err != nil {
+		return 0, nil, err
 	}
 
 	baseURL := env.BaseURL
@@ -781,7 +818,6 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 	}
 
 	var body []byte
-	var err error
 	if op.BodyTemplate != "" {
 		body, err = s.buildBody(op.BodyTemplate, params)
 		if err != nil {
@@ -1050,21 +1086,9 @@ func (s *Server) executeMcpConnector(ws *config.Workspace, op *policy.Operation,
 		return 0, nil, fmt.Errorf("site %s not found in workspace", op.Site)
 	}
 
-	var env *config.Environment
-	if envName, ok := params["env"].(string); ok && envName != "" {
-		if e, ok := site.Environments[envName]; ok {
-			env = &e
-		}
-	}
-	if env == nil {
-		for name := range site.Environments {
-			e := site.Environments[name]
-			env = &e
-			break
-		}
-	}
-	if env == nil {
-		return 0, nil, fmt.Errorf("no environment found for site %s", op.Site)
+	_, env, err := resolveEnv(site, op.Site, params)
+	if err != nil {
+		return 0, nil, err
 	}
 	endpoint := env.BaseURL
 	if endpoint == "" || endpoint == "-" {
@@ -2132,21 +2156,9 @@ func (s *Server) executeEmailConnector(ws *config.Workspace, op *policy.Operatio
 		return 0, nil, fmt.Errorf("site %s not found", op.Site)
 	}
 
-	envName, _ := params["env"].(string)
-	var env *config.Environment
-	if envName != "" {
-		if e, ok := site.Environments[envName]; ok {
-			env = &e
-		}
-	}
-	if env == nil {
-		for _, e := range site.Environments {
-			env = &e
-			break
-		}
-	}
-	if env == nil {
-		return 0, nil, fmt.Errorf("no environment found for site %s", op.Site)
+	_, env, err := resolveEnv(site, op.Site, params)
+	if err != nil {
+		return 0, nil, err
 	}
 
 	wsName, secretName := parseSecretRef(env.SecretRef)
