@@ -93,20 +93,11 @@ func (s *Server) executeSlackFileContent(ws *config.Workspace, op *policy.Operat
 	if !ok {
 		return 0, nil, fmt.Errorf("site %s not found in workspace", op.Site)
 	}
-	var env *config.Environment
-	if name, ok := params["env"].(string); ok {
-		if e, ok := site.Environments[name]; ok {
-			env = &e
-		}
+	_, env, err := resolveEnv(site, op.Site, params)
+	if err != nil {
+		return 0, nil, err
 	}
-	if env == nil {
-		for name := range site.Environments {
-			e := site.Environments[name]
-			env = &e
-			break
-		}
-	}
-	if env == nil || env.BaseURL == "" {
+	if env.BaseURL == "" {
 		return 0, nil, fmt.Errorf("no environment found for site %s", op.Site)
 	}
 	if env.Auth.Type != "slack-session" {

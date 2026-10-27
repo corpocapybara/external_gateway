@@ -139,6 +139,21 @@ constraints:
 ### tunnel
 Ensures a required VPN/tunnel is up before executing. Referenced via `requires_tunnel` in the environment config (not in the operation definition).
 
+## Environment selection
+
+A request targets the environment named by `env` (or `cluster`, or an op param default), else the site's
+`default_env`, else the site's only environment. A site with several environments and no `default_env` denies
+an env-less request with `missing required parameter: env`; an unknown name is denied too. egw never guesses.
+Give a multi-environment site a default (checked at config load):
+```yaml
+sites:
+  jira:
+    default_env: prod      # never a VPN-only env
+    environments:
+      prod: { ... }
+      corpo: { ... }
+```
+
 ## Response field filtering
 
 The `allow_fields` list in an operation definition restricts which fields are returned from upstream. Supports nested dot-notation and array wildcards:
