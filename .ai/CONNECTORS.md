@@ -36,7 +36,7 @@ In `server.go`, the operation-execution path routes to the appropriate connector
 "local-service" → executeLocalServiceConnector → localservice.Connector
 "mcp"           → executeMcpConnector         (JSON-RPC 2.0 over Streamable HTTP)
 "email"         → executeEmailConnector       → email.Connector (IMAP/SMTP)
-"jira-worklog"  → executeJiraWorklog          (Jira Cloud worklogs + Polish working-hours norm)
+"jira-worklog"  → executeJiraWorklog          (Tempo API worklogs + Polish working-hours norm)
 ```
 
 `form-session`/`formsession.Connector` is implemented but **not** in the dispatch
@@ -121,10 +121,12 @@ IMAP read + SMTP send, implemented in `internal/connectors/email/` and dispatche
 
 ## Jira Worklog Connector (`jira-worklog`)
 
-Time tracking on Jira Cloud worklogs (the data Tempo shows), in `internal/server/jira_worklog.go`; the working-day
-calendar is `internal/workcal`. Several upstream calls per op, so it is not an `http-rest` op. The op's `path` names
-the action. Uses the site's default environment only (Cloud v3 API) and its basic/bearer auth. Issue keys must be
-in `jira_projects`; update/delete refuse worklogs by another author. See `docs/WORKLOG.md`.
+Time tracking on Tempo worklogs, in `internal/server/jira_worklog.go`; the working-day calendar is `internal/workcal`.
+Several upstream calls per op, so it is not an `http-rest` op. The op's `path` names the action. Worklogs are read and
+written through the Tempo REST API v4 on the workspace site `tempo` (bearer token), because Tempo writes them to Jira
+under its app user. The op's site (Jira Cloud v3, default environment only) supplies the account, issue keys and the
+scope check. Issue keys must be in `jira_projects`; update/delete refuse worklogs by another author. See
+`docs/WORKLOG.md`.
 
 ## Form Session Connector (`formsession`)
 

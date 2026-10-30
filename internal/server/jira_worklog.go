@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,18 +23,21 @@ import (
 	"github.com/external_gateway/internal/workcal"
 )
 
-// The jira-worklog connector serves time tracking on Jira Cloud worklogs (what Tempo
-// shows): period reports against the Polish working-hours norm, per-issue totals,
-// writes on the caller's own worklogs, and a map of non-ticket activities to issues.
-// The op's `path` names the action. Issue keys are scoped to the workspace's
-// jira_projects.
+// The jira-worklog connector serves time tracking on Tempo worklogs: period reports
+// against the Polish working-hours norm, per-issue totals, writes on the caller's own
+// worklogs, and a map of non-ticket activities to issues. Tempo Cloud writes every
+// worklog to Jira under its app user, so worklogs are read and written through the
+// Tempo API (workspace site `tempo`); Jira (the op's site) supplies the caller's
+// account, issue keys and summaries. The op's `path` names the action. Issue keys
+// are scoped to the workspace's jira_projects.
 
 const (
 	worklogTimezone     = "Europe/Warsaw"
-	worklogStartedFmt   = "2006-01-02T15:04:05.000-0700"
-	worklogFetchWorkers = 4
 	worklogMaxIssues    = 500
 	worklogDefaultStart = "09:00"
+	worklogTempoSite    = "tempo"
+	worklogTempoPage    = 1000
+	worklogSearchChunk  = 100
 )
 
 var (
@@ -57,11 +61,17 @@ func worklogLocation() *time.Location {
 	return worklogLocationValue
 }
 
-type jiraClient struct {
+type restClient struct {
 	s        *Server
+	api      string
 	baseURL  string
 	headers  map[string]string
 	insecure bool
+}
+
+type jiraClient struct {
+	*restClient
+	tempo *restClient
 }
 
 func (s *Server) newJiraClient(ws *config.Workspace, op *policy.Operation, params map[string]interface{}, workspace string) (*jiraClient, error) {
@@ -74,7 +84,23 @@ func (s *Server) newJiraClient(ws *config.Workspace, op *policy.Operation, param
 	if e, _ := params["env"].(string); e != "" && site.DefaultEnv != "" && e != site.DefaultEnv {
 		return nil, fmt.Errorf("worklog operations run on environment %q only", site.DefaultEnv)
 	}
-	envName, env, err := resolveEnv(site, op.Site, params)
+	jira, err := s.newRestClient("jira", op.Site, site, params, workspace)
+	if err != nil {
+		return nil, err
+	}
+	tempoSite, ok := ws.Sites[worklogTempoSite]
+	if !ok {
+		return nil, fmt.Errorf("site %s not found in workspace; worklogs are read and written through the Tempo API", worklogTempoSite)
+	}
+	tempo, err := s.newRestClient("tempo", worklogTempoSite, tempoSite, nil, workspace)
+	if err != nil {
+		return nil, err
+	}
+	return &jiraClient{restClient: jira, tempo: tempo}, nil
+}
+
+func (s *Server) newRestClient(api, siteName string, site config.Site, params map[string]interface{}, workspace string) (*restClient, error) {
+	envName, env, err := resolveEnv(site, siteName, params)
 	if err != nil {
 		return nil, err
 	}
@@ -93,12 +119,12 @@ func (s *Server) newJiraClient(ws *config.Workspace, op *policy.Operation, param
 			headers["Authorization"] = "Bearer " + strings.TrimSpace(string(secret))
 		}
 	}
-	return &jiraClient{s: s, baseURL: strings.TrimSuffix(env.BaseURL, "/"), headers: headers, insecure: env.InsecureSkipVerify}, nil
+	return &restClient{s: s, api: api, baseURL: strings.TrimSuffix(env.BaseURL, "/"), headers: headers, insecure: env.InsecureSkipVerify}, nil
 }
 
 // do sends one request and decodes a JSON reply into out. An upstream status of
 // 400 or more is an error carrying the start of the reply.
-func (c *jiraClient) do(method, path string, in, out interface{}) (int, error) {
+func (c *restClient) do(method, path string, in, out interface{}) (int, error) {
 	var body []byte
 	if in != nil {
 		var err error
@@ -106,7 +132,7 @@ func (c *jiraClient) do(method, path string, in, out interface{}) (int, error) {
 			return 0, err
 		}
 	}
-	c.s.logger.Info().Str("method", method).Str("url", c.baseURL+path).Msg("jira worklog request")
+	c.s.logger.Info().Str("method", method).Str("url", c.baseURL+path).Str("api", c.api).Msg("worklog request")
 	resp, err := c.s.httpClient.Execute(context.Background(), &connectors.Request{
 		Method: method, Path: c.baseURL + path, Headers: c.headers, Body: body, Insecure: c.insecure,
 	})
@@ -114,11 +140,11 @@ func (c *jiraClient) do(method, path string, in, out interface{}) (int, error) {
 		return 0, fmt.Errorf("upstream request failed: %w", err)
 	}
 	if resp.StatusCode >= 400 {
-		return resp.StatusCode, fmt.Errorf("jira %s %s returned %d: %s", method, strings.SplitN(path, "?", 2)[0], resp.StatusCode, string(resp.Body[:min(300, len(resp.Body))]))
+		return resp.StatusCode, fmt.Errorf("%s %s %s returned %d: %s", c.api, method, strings.SplitN(path, "?", 2)[0], resp.StatusCode, string(resp.Body[:min(300, len(resp.Body))]))
 	}
 	if out != nil && len(resp.Body) > 0 {
 		if err := json.Unmarshal(resp.Body, out); err != nil {
-			return resp.StatusCode, fmt.Errorf("jira %s returned an unreadable reply: %w", strings.SplitN(path, "?", 2)[0], err)
+			return resp.StatusCode, fmt.Errorf("%s %s returned an unreadable reply: %w", c.api, strings.SplitN(path, "?", 2)[0], err)
 		}
 	}
 	return resp.StatusCode, nil
@@ -129,13 +155,35 @@ type jiraUser struct {
 	DisplayName string `json:"displayName"`
 }
 
-type jiraWorklog struct {
-	ID               string          `json:"id"`
-	IssueID          string          `json:"issueId"`
-	Author           jiraUser        `json:"author"`
-	Started          string          `json:"started"`
-	TimeSpentSeconds int             `json:"timeSpentSeconds"`
-	Comment          json.RawMessage `json:"comment"`
+type tempoWorklog struct {
+	TempoWorklogID int64 `json:"tempoWorklogId"`
+	Issue          struct {
+		ID int64 `json:"id"`
+	} `json:"issue"`
+	Author struct {
+		AccountID string `json:"accountId"`
+	} `json:"author"`
+	StartDate        string `json:"startDate"`
+	StartTime        string `json:"startTime"`
+	TimeSpentSeconds int    `json:"timeSpentSeconds"`
+	BillableSeconds  int    `json:"billableSeconds"`
+	Description      string `json:"description"`
+	Attributes       struct {
+		Values []tempoAttribute `json:"values"`
+	} `json:"attributes"`
+}
+
+type tempoAttribute struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+func (w tempoWorklog) id() string {
+	return strconv.FormatInt(w.TempoWorklogID, 10)
+}
+
+func (w tempoWorklog) issueID() string {
+	return strconv.FormatInt(w.Issue.ID, 10)
 }
 
 type jiraIssueRef struct {
@@ -184,42 +232,72 @@ func (c *jiraClient) issue(key, fields string) (jiraIssueRef, error) {
 	return r, err
 }
 
-// worklogs returns every worklog of an issue, optionally limited to those started
-// in [after, before) (zero times leave that side open).
-func (c *jiraClient) worklogs(key string, after, before time.Time) ([]jiraWorklog, error) {
-	var all []jiraWorklog
-	for startAt := 0; ; {
-		q := url.Values{"startAt": {fmt.Sprint(startAt)}, "maxResults": {"5000"}}
-		if !after.IsZero() {
-			q.Set("startedAfter", fmt.Sprint(after.UnixMilli()))
-		}
-		if !before.IsZero() {
-			q.Set("startedBefore", fmt.Sprint(before.UnixMilli()))
-		}
+func (c *jiraClient) userName(accountID string) string {
+	var u jiraUser
+	if _, err := c.do("GET", "/rest/api/3/user?accountId="+url.QueryEscape(accountID), nil, &u); err != nil || u.DisplayName == "" {
+		return accountID
+	}
+	return u.DisplayName
+}
+
+// tempoWorklogs reads every page of a Tempo worklog listing.
+func (c *jiraClient) tempoWorklogs(path string, q url.Values) ([]tempoWorklog, error) {
+	if q == nil {
+		q = url.Values{}
+	}
+	var all []tempoWorklog
+	for offset := 0; ; {
+		q.Set("offset", fmt.Sprint(offset))
+		q.Set("limit", fmt.Sprint(worklogTempoPage))
 		var page struct {
-			Total    int           `json:"total"`
-			Worklogs []jiraWorklog `json:"worklogs"`
+			Metadata struct {
+				Next string `json:"next"`
+			} `json:"metadata"`
+			Results []tempoWorklog `json:"results"`
 		}
-		if _, err := c.do("GET", "/rest/api/3/issue/"+url.PathEscape(key)+"/worklog?"+q.Encode(), nil, &page); err != nil {
+		if _, err := c.tempo.do("GET", path+"?"+q.Encode(), nil, &page); err != nil {
 			return nil, err
 		}
-		all = append(all, page.Worklogs...)
-		startAt += len(page.Worklogs)
-		if len(page.Worklogs) == 0 || startAt >= page.Total {
+		all = append(all, page.Results...)
+		offset += len(page.Results)
+		if len(page.Results) == 0 || page.Metadata.Next == "" {
 			return all, nil
 		}
 	}
 }
 
-// worklogIssues finds the issues the caller logged time on between two calendar
-// dates. worklogDate is evaluated in the Jira user's time zone, so the range is
-// widened by a day each side and the worklogs are filtered exactly afterwards.
-func (c *jiraClient) worklogIssues(from, to time.Time, projects []string) ([]jiraIssueRef, error) {
-	jql := fmt.Sprintf(`worklogAuthor = currentUser() AND worklogDate >= "%s" AND worklogDate <= "%s"`,
-		from.AddDate(0, 0, -1).Format("2006-01-02"), to.AddDate(0, 0, 1).Format("2006-01-02"))
-	if len(projects) > 0 {
-		jql = fmt.Sprintf("(%s) AND project in (%s)", jql, strings.Join(projects, ","))
+// scopedIssues looks up the issues behind Tempo worklogs by id, keeping those in
+// the workspace's jira_projects.
+func (c *jiraClient) scopedIssues(ws *config.Workspace, wls []tempoWorklog) (map[string]jiraIssueRef, error) {
+	var ids []string
+	seen := map[string]bool{}
+	for _, w := range wls {
+		if id := w.issueID(); !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
 	}
+	if len(ids) > worklogMaxIssues {
+		return nil, fmt.Errorf("more than %d issues have worklogs in this range; ask for a shorter period", worklogMaxIssues)
+	}
+	issues := map[string]jiraIssueRef{}
+	for i := 0; i < len(ids); i += worklogSearchChunk {
+		jql := fmt.Sprintf("id in (%s)", strings.Join(ids[i:min(i+worklogSearchChunk, len(ids))], ","))
+		if projects := ws.Policy.JiraProjects; len(projects) > 0 {
+			jql = fmt.Sprintf("%s AND project in (%s)", jql, strings.Join(projects, ","))
+		}
+		found, err := c.searchIssues(jql)
+		if err != nil {
+			return nil, err
+		}
+		for _, iss := range found {
+			issues[iss.ID] = iss
+		}
+	}
+	return issues, nil
+}
+
+func (c *jiraClient) searchIssues(jql string) ([]jiraIssueRef, error) {
 	var issues []jiraIssueRef
 	token := ""
 	for {
@@ -236,9 +314,6 @@ func (c *jiraClient) worklogIssues(from, to time.Time, projects []string) ([]jir
 			return nil, err
 		}
 		issues = append(issues, page.Issues...)
-		if len(issues) > worklogMaxIssues {
-			return nil, fmt.Errorf("more than %d issues have worklogs in this range; ask for a shorter period", worklogMaxIssues)
-		}
 		if page.IsLast || page.NextPageToken == "" || len(page.Issues) == 0 {
 			return issues, nil
 		}
@@ -256,59 +331,12 @@ func roundHours(h float64) float64 {
 	return math.Round(h*100) / 100
 }
 
-func parseWorklogStarted(s string) (time.Time, error) {
-	t, err := time.Parse(worklogStartedFmt, s)
-	if err != nil {
-		return t, fmt.Errorf("unreadable worklog start %q", s)
-	}
-	return t.In(worklogLocation()), nil
-}
-
-// adfText flattens an Atlassian Document Format value to plain text.
-func adfText(raw json.RawMessage) string {
-	if len(raw) == 0 {
+// startHHMM is a Tempo start time (HH:MM:SS) cut to HH:MM.
+func (w tempoWorklog) startHHMM() string {
+	if len(w.StartTime) < 5 {
 		return ""
 	}
-	var s string
-	if json.Unmarshal(raw, &s) == nil {
-		return s
-	}
-	var node interface{}
-	if json.Unmarshal(raw, &node) != nil {
-		return ""
-	}
-	var b strings.Builder
-	var walk func(n interface{})
-	walk = func(n interface{}) {
-		m, ok := n.(map[string]interface{})
-		if !ok {
-			return
-		}
-		if t, _ := m["text"].(string); t != "" {
-			b.WriteString(t)
-		}
-		children, _ := m["content"].([]interface{})
-		for _, ch := range children {
-			walk(ch)
-		}
-		if typ, _ := m["type"].(string); typ == "paragraph" || typ == "hardBreak" {
-			b.WriteString("\n")
-		}
-	}
-	walk(node)
-	return strings.TrimSpace(b.String())
-}
-
-func adfDoc(text string) map[string]interface{} {
-	var paras []interface{}
-	for _, line := range strings.Split(text, "\n") {
-		p := map[string]interface{}{"type": "paragraph", "content": []interface{}{}}
-		if line != "" {
-			p["content"] = []interface{}{map[string]interface{}{"type": "text", "text": line}}
-		}
-		paras = append(paras, p)
-	}
-	return map[string]interface{}{"type": "doc", "version": 1, "content": paras}
+	return w.StartTime[:5]
 }
 
 type worklogEntry struct {
@@ -324,15 +352,17 @@ type worklogEntry struct {
 	seconds   int
 }
 
-func toEntry(w jiraWorklog, issue jiraIssueRef) (worklogEntry, error) {
-	t, err := parseWorklogStarted(w.Started)
+// toEntry shapes a Tempo worklog. Tempo's startDate is already the worker's
+// calendar date, so it is taken as is.
+func toEntry(w tempoWorklog, issue jiraIssueRef) (worklogEntry, error) {
+	d, err := time.Parse("2006-01-02", w.StartDate)
 	if err != nil {
-		return worklogEntry{}, err
+		return worklogEntry{}, fmt.Errorf("unreadable worklog date %q", w.StartDate)
 	}
 	return worklogEntry{
-		ID: w.ID, IssueKey: issue.Key, Summary: issue.Fields.Summary, ParentKey: issue.parentKey(),
-		Started: t.Format("2006-01-02 15:04"), Hours: hoursOf(w.TimeSpentSeconds),
-		Comment: adfText(w.Comment), date: workcal.Civil(t), seconds: w.TimeSpentSeconds,
+		ID: w.id(), IssueKey: issue.Key, Summary: issue.Fields.Summary, ParentKey: issue.parentKey(),
+		Started: strings.TrimSpace(w.StartDate + " " + w.startHHMM()), Hours: hoursOf(w.TimeSpentSeconds),
+		Comment: w.Description, date: d, seconds: w.TimeSpentSeconds,
 	}, nil
 }
 
@@ -589,54 +619,31 @@ func (c *jiraClient) report(ws *config.Workspace, params map[string]interface{})
 	}, nil
 }
 
-// myEntries returns the caller's worklogs started on calendar dates from..to
-// (Europe/Warsaw), on issues in the workspace's jira_projects.
+// myEntries returns the caller's Tempo worklogs on calendar dates from..to, on
+// issues in the workspace's jira_projects.
 func (c *jiraClient) myEntries(ws *config.Workspace, me jiraUser, from, to time.Time) ([]worklogEntry, error) {
-	issues, err := c.worklogIssues(from, to, ws.Policy.JiraProjects)
+	q := url.Values{"from": {from.Format("2006-01-02")}, "to": {to.Format("2006-01-02")}}
+	wls, err := c.tempoWorklogs("/4/worklogs/user/"+url.PathEscape(me.AccountID), q)
 	if err != nil {
 		return nil, err
 	}
-	loc := worklogLocation()
-	after := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, loc).Add(-time.Millisecond)
-	before := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
-
-	results := make([][]worklogEntry, len(issues))
-	errs := make([]error, len(issues))
-	sem := make(chan struct{}, worklogFetchWorkers)
-	var wg sync.WaitGroup
-	for i, iss := range issues {
-		wg.Add(1)
-		go func(i int, iss jiraIssueRef) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			wls, err := c.worklogs(iss.Key, after, before)
-			if err != nil {
-				errs[i] = err
-				return
-			}
-			for _, w := range wls {
-				if w.Author.AccountID != me.AccountID {
-					continue
-				}
-				e, err := toEntry(w, iss)
-				if err != nil {
-					errs[i] = err
-					return
-				}
-				if !e.date.Before(from) && !e.date.After(to) {
-					results[i] = append(results[i], e)
-				}
-			}
-		}(i, iss)
+	issues, err := c.scopedIssues(ws, wls)
+	if err != nil {
+		return nil, err
 	}
-	wg.Wait()
 	var entries []worklogEntry
-	for i := range issues {
-		if errs[i] != nil {
-			return nil, errs[i]
+	for _, w := range wls {
+		iss, ok := issues[w.issueID()]
+		if !ok || w.Author.AccountID != me.AccountID {
+			continue
 		}
-		entries = append(entries, results[i]...)
+		e, err := toEntry(w, iss)
+		if err != nil {
+			return nil, err
+		}
+		if !e.date.Before(from) && !e.date.After(to) {
+			entries = append(entries, e)
+		}
 	}
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Started < entries[j].Started })
 	return entries, nil
@@ -677,10 +684,11 @@ func (c *jiraClient) issueTime(ws *config.Workspace, params map[string]interface
 	if err != nil {
 		return nil, err
 	}
-	wls, err := c.worklogs(key, time.Time{}, time.Time{})
+	wls, err := c.tempoWorklogs("/4/worklogs/issue/"+url.PathEscape(iss.ID), nil)
 	if err != nil {
 		return nil, err
 	}
+	names := map[string]string{me.AccountID: me.DisplayName}
 	total, mine := 0, 0
 	byAuthor := map[string]int{}
 	entries := make([]worklogEntry, 0, len(wls))
@@ -689,11 +697,16 @@ func (c *jiraClient) issueTime(ws *config.Workspace, params map[string]interface
 		if err != nil {
 			return nil, err
 		}
+		name, ok := names[w.Author.AccountID]
+		if !ok {
+			name = c.userName(w.Author.AccountID)
+			names[w.Author.AccountID] = name
+		}
 		e.Summary, e.ParentKey = "", ""
-		e.Author = w.Author.DisplayName
+		e.Author = name
 		entries = append(entries, e)
 		total += w.TimeSpentSeconds
-		byAuthor[w.Author.DisplayName] += w.TimeSpentSeconds
+		byAuthor[name] += w.TimeSpentSeconds
 		if w.Author.AccountID == me.AccountID {
 			mine += w.TimeSpentSeconds
 		}
@@ -728,13 +741,19 @@ func (c *jiraClient) issueTime(ws *config.Workspace, params map[string]interface
 
 // --- writes ----------------------------------------------------------------
 
-func startedAt(d time.Time, hhmm string) (string, error) {
+func tempoStartTime(hhmm string) (string, error) {
 	if !worklogStartRe.MatchString(hhmm) {
 		return "", fmt.Errorf("parameter start must be a time HH:MM")
 	}
-	t, _ := time.Parse("15:04", hhmm)
-	at := time.Date(d.Year(), d.Month(), d.Day(), t.Hour(), t.Minute(), 0, 0, worklogLocation())
-	return at.Format(worklogStartedFmt), nil
+	return hhmm + ":00", nil
+}
+
+func issueIDNumber(iss jiraIssueRef) (int64, error) {
+	id, err := strconv.ParseInt(iss.ID, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("jira returned issue %s without a numeric id", iss.Key)
+	}
+	return id, nil
 }
 
 func dayNote(d time.Time) string {
@@ -782,19 +801,34 @@ func (c *jiraClient) addWorklog(s *Server, ws *config.Workspace, params map[stri
 	if start == "" {
 		start = worklogDefaultStart
 	}
-	started, err := startedAt(d, start)
+	startTime, err := tempoStartTime(start)
 	if err != nil {
 		return nil, err
 	}
-	req := map[string]interface{}{"started": started, "timeSpentSeconds": secs}
-	if comment, _ := params["comment"].(string); comment != "" {
-		req["comment"] = adfDoc(comment)
-	}
-	var created jiraWorklog
-	if _, err := c.do("POST", "/rest/api/3/issue/"+url.PathEscape(key)+"/worklog", req, &created); err != nil {
+	iss, err := c.issue(key, "summary")
+	if err != nil {
 		return nil, err
 	}
-	e, err := toEntry(created, jiraIssueRef{Key: key})
+	issueID, err := issueIDNumber(iss)
+	if err != nil {
+		return nil, err
+	}
+	me, err := c.myself()
+	if err != nil {
+		return nil, err
+	}
+	req := map[string]interface{}{
+		"issueId": issueID, "authorAccountId": me.AccountID,
+		"startDate": d.Format("2006-01-02"), "startTime": startTime, "timeSpentSeconds": secs,
+	}
+	if comment, _ := params["comment"].(string); comment != "" {
+		req["description"] = comment
+	}
+	var created tempoWorklog
+	if _, err := c.tempo.do("POST", "/4/worklogs", req, &created); err != nil {
+		return nil, err
+	}
+	e, err := toEntry(created, jiraIssueRef{Key: iss.Key})
 	if err != nil {
 		return nil, err
 	}
@@ -808,36 +842,44 @@ func (c *jiraClient) addWorklog(s *Server, ws *config.Workspace, params map[stri
 	return out, nil
 }
 
-// ownWorklog fetches a worklog and refuses it unless the caller wrote it.
-func (c *jiraClient) ownWorklog(ws *config.Workspace, params map[string]interface{}) (string, jiraWorklog, error) {
+// ownWorklog fetches a Tempo worklog and refuses it unless the caller wrote it and
+// it is on the issue named by key.
+func (c *jiraClient) ownWorklog(ws *config.Workspace, params map[string]interface{}) (jiraIssueRef, tempoWorklog, error) {
 	key, _ := params["key"].(string)
 	id, _ := params["worklog_id"].(string)
-	var w jiraWorklog
+	var iss jiraIssueRef
+	var w tempoWorklog
 	if err := scopedIssueKey(ws, key); err != nil {
-		return key, w, err
+		return iss, w, err
 	}
 	if !worklogIDRe.MatchString(id) {
-		return key, w, fmt.Errorf("parameter worklog_id must be a number")
+		return iss, w, fmt.Errorf("parameter worklog_id must be a number")
 	}
 	me, err := c.myself()
 	if err != nil {
-		return key, w, err
+		return iss, w, err
 	}
-	if _, err := c.do("GET", "/rest/api/3/issue/"+url.PathEscape(key)+"/worklog/"+id, nil, &w); err != nil {
-		return key, w, err
+	if _, err := c.tempo.do("GET", "/4/worklogs/"+id, nil, &w); err != nil {
+		return iss, w, err
+	}
+	if iss, err = c.issue(key, "summary"); err != nil {
+		return iss, w, err
+	}
+	if iss.ID != w.issueID() {
+		return iss, w, fmt.Errorf("worklog %s is not on %s", id, key)
 	}
 	if w.Author.AccountID != me.AccountID {
-		return key, w, fmt.Errorf("worklog %s on %s belongs to %s; only your own worklogs can be changed", id, key, w.Author.DisplayName)
+		return iss, w, fmt.Errorf("worklog %s belongs to %s; only your own worklogs can be changed", id, c.userName(w.Author.AccountID))
 	}
-	return key, w, nil
+	return iss, w, nil
 }
 
 func (c *jiraClient) updateWorklog(ws *config.Workspace, params map[string]interface{}) (interface{}, error) {
-	key, old, err := c.ownWorklog(ws, params)
+	iss, old, err := c.ownWorklog(ws, params)
 	if err != nil {
 		return nil, err
 	}
-	before, err := toEntry(old, jiraIssueRef{Key: key})
+	before, err := toEntry(old, iss)
 	if err != nil {
 		return nil, err
 	}
@@ -855,31 +897,41 @@ func (c *jiraClient) updateWorklog(ws *config.Workspace, params map[string]inter
 		return nil, fmt.Errorf("nothing to change: give hours, date, start or comment")
 	}
 
-	oldStart, _ := parseWorklogStarted(old.Started)
 	if !dateSet {
-		d = workcal.Civil(oldStart)
+		d = before.date
 	}
 	if start == "" {
-		start = oldStart.Format("15:04")
+		start = old.startHHMM()
 	}
-	started, err := startedAt(d, start)
+	if start == "" {
+		start = worklogDefaultStart
+	}
+	startTime, err := tempoStartTime(start)
 	if err != nil {
 		return nil, err
 	}
 	if !hoursSet {
 		secs = old.TimeSpentSeconds
 	}
-	req := map[string]interface{}{"started": started, "timeSpentSeconds": secs}
-	if commentSet {
-		req["comment"] = adfDoc(comment)
-	} else if len(old.Comment) > 0 && string(old.Comment) != "null" {
-		req["comment"] = old.Comment
+	billable := old.BillableSeconds
+	if billable == old.TimeSpentSeconds {
+		billable = secs
 	}
-	var updated jiraWorklog
-	if _, err := c.do("PUT", "/rest/api/3/issue/"+url.PathEscape(key)+"/worklog/"+old.ID, req, &updated); err != nil {
+	if !commentSet {
+		comment = old.Description
+	}
+	req := map[string]interface{}{
+		"authorAccountId": old.Author.AccountID, "startDate": d.Format("2006-01-02"), "startTime": startTime,
+		"timeSpentSeconds": secs, "billableSeconds": billable, "description": comment,
+	}
+	if len(old.Attributes.Values) > 0 {
+		req["attributes"] = old.Attributes.Values
+	}
+	var updated tempoWorklog
+	if _, err := c.tempo.do("PUT", "/4/worklogs/"+old.id(), req, &updated); err != nil {
 		return nil, err
 	}
-	after, err := toEntry(updated, jiraIssueRef{Key: key})
+	after, err := toEntry(updated, iss)
 	if err != nil {
 		return nil, err
 	}
@@ -891,15 +943,15 @@ func (c *jiraClient) updateWorklog(ws *config.Workspace, params map[string]inter
 }
 
 func (c *jiraClient) deleteWorklog(ws *config.Workspace, params map[string]interface{}) (interface{}, error) {
-	key, old, err := c.ownWorklog(ws, params)
+	iss, old, err := c.ownWorklog(ws, params)
 	if err != nil {
 		return nil, err
 	}
-	e, err := toEntry(old, jiraIssueRef{Key: key})
+	e, err := toEntry(old, iss)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := c.do("DELETE", "/rest/api/3/issue/"+url.PathEscape(key)+"/worklog/"+old.ID, nil, nil); err != nil {
+	if _, err := c.tempo.do("DELETE", "/4/worklogs/"+old.id(), nil, nil); err != nil {
 		return nil, err
 	}
 	return map[string]interface{}{"deleted": true, "worklog": e}, nil
