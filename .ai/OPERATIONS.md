@@ -249,6 +249,7 @@ Fields not listed are stripped from the response before returning to the agent. 
 | gitlab.mr_update | http-rest | gitlab | Replace an MR's description (**write**) |
 | gitlab.mr_create | http-rest | gitlab | Open an MR for a pushed branch: `project_id`, `source_branch`, `target_branch`, `title`, `remove_source_branch` (bool, default true); no description (**write**, 201) |
 | gitlab.mr_note | http-rest | gitlab | Reply on an existing MR thread: `project_id`, `mr_iid` (int), `discussion_id` (from `gitlab.mr_discussions`), `body` (**write**, 201) |
+| gitlab.mr_discussion_resolve | http-rest | gitlab | Resolve or unresolve a whole MR thread: `project_id`, `mr_iid` (int), `discussion_id` (40-hex), `resolved` (bool) (**write**); returns `id`, `notes[].resolved` |
 | gitlab.commits | http-rest | gitlab | List commits |
 | gitlab.branches | http-rest | gitlab | List branches |
 | gitlab.projects | http-rest | gitlab | List/search projects |

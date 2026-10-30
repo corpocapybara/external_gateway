@@ -1010,6 +1010,39 @@ operations:
         required: true
         pattern: ^F[A-Z0-9]+$
 
+  slack.presence:
+    connector: http-rest
+    site: slack
+    method: GET
+    path: /users.getPresence
+    params:
+      user:
+        type: string
+        required: true
+        pattern: ^[UW][A-Z0-9]+$
+    response:
+      allow_fields:
+        - ok
+        - error
+        - presence
+
+  slack.usergroups:
+    connector: http-rest
+    site: slack
+    method: GET
+    path: /usergroups.list
+    params:
+      include_users:
+        type: bool
+    response:
+      allow_fields:
+        - ok
+        - error
+        - usergroups[].id
+        - usergroups[].handle
+        - usergroups[].name
+        - usergroups[].users
+
   slack.send:
     connector: http-rest
     site: slack

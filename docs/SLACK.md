@@ -108,6 +108,8 @@ $xoxd | .\egw-admin.exe -workspace acme -name slack-xoxd -admin http://127.0.0.1
 | `slack.file`      | GET  | `/files.info` | params: `file` (required, `^F[A-Z0-9]+$`); metadata + a short `preview` only |
 | `slack.file_content` | GET | `/files.info` + `url_private` | params: `file` (same pattern); returns the file's text, see below |
 | `slack.send`      | POST | `/chat.postMessage` | params: `channel`, `text` (≤4000) |
+| `slack.presence`  | GET  | `/users.getPresence` | params: `user` (required, `^[UW][A-Z0-9]+$`); returns `presence` = `active`/`away` |
+| `slack.usergroups` | GET | `/usergroups.list` | param: `include_users` (optional bool); returns `usergroups[].id/handle/name/users` |
 
 Each shapes its response via `allow_fields` (e.g. `messages[].ts/user/text`,
 `response_metadata.next_cursor` for pagination).
@@ -139,6 +141,16 @@ ops (op blocks: `config.example/operations.yaml`).
 `"`/newlines would produce invalid JSON. Instead, `channel`/`text` are auto-appended as
 query params (the server appends any non-path param to the query string), which Slack
 accepts for `chat.postMessage`. This avoids the escaping hazard entirely.
+
+### Presence and user groups (thp, added 2026-10-30)
+
+`slack.presence` and `slack.usergroups` are read-only ops added for the thp `mr-worker` review-request flow
+(tag only reviewers whose presence is `active`; resolve `@testers` / `@backend-devs-<team>` by `handle`).
+Both are in `operations.thp.yaml` and `config.example/operations.yaml`, no Go change. In `config.thp.yaml` they are
+granted to `dev-bot` (next to `slack.users`) and to `mr-worker`, which also gets `slack.send` + `slack.users`.
+Scopes: the `xoxc` session token acts as the logged-in user's web client, not an OAuth app, so there is no
+`users:read`/`usergroups:read` list to grant or re-provision; a `missing_scope` error would only appear
+on the first live call. Slack rate-limits `users.getPresence` per user, so cache it for the one review page.
 
 ## Provisioning / rotation tool
 
