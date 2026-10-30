@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/external_gateway/internal/config"
@@ -326,10 +327,17 @@ func (r *OperationRegistry) ApplyDefaults(op *Operation, params map[string]inter
 }
 
 func (r *OperationRegistry) ValidateParams(op *Operation, params map[string]interface{}, workspace *config.Workspace) error {
-	for name, def := range op.Params {
+	// Sorted, so a request missing several required params is always told the same one.
+	names := make([]string, 0, len(op.Params))
+	for name := range op.Params {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		def := op.Params[name]
 		val, exists := params[name]
 		if def.Required && !exists {
-			return fmt.Errorf("missing required parameter: %s", name)
+			return fmt.Errorf("missing required parameter: %s%s", name, paramHint(op))
 		}
 		if !exists {
 			continue
@@ -423,10 +431,34 @@ func (r *OperationRegistry) ValidateParams(op *Operation, params map[string]inte
 			continue
 		}
 		if _, declared := op.Params[name]; !declared {
-			return fmt.Errorf("unknown parameter: %s", name)
+			return fmt.Errorf("unknown parameter: %s%s", name, paramHint(op))
 		}
 	}
 	return nil
+}
+
+// paramHint names the operation's parameters for a missing/unknown parameter
+// error, so an agent that guessed a name fixes the call in one retry. `env` is
+// listed even when undeclared because every operation accepts it (`cluster` is
+// its legacy alias and left out).
+func paramHint(op *Operation) string {
+	valid := []string{}
+	if _, declared := op.Params["env"]; !declared {
+		valid = append(valid, "env")
+	}
+	var required []string
+	for name, def := range op.Params {
+		valid = append(valid, name)
+		if def.Required {
+			required = append(required, name)
+		}
+	}
+	sort.Strings(valid)
+	if len(required) == 0 {
+		return fmt.Sprintf(" (valid: %s)", strings.Join(valid, ", "))
+	}
+	sort.Strings(required)
+	return fmt.Sprintf(" (valid: %s; required: %s)", strings.Join(valid, ", "), strings.Join(required, ", "))
 }
 
 func containsString(list []string, s string) bool {
