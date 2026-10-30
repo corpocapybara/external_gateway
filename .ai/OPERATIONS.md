@@ -104,6 +104,10 @@ body_template: |
 | `values: [a, b]` | Enum-like validation | Must be one of the listed values |
 | `from:` | (not currently used) | Reserved for future use |
 
+A parameter the operation does not declare is denied (`env`/`cluster` are always accepted). A missing or unknown
+parameter is denied with rule `validation` and a detail naming the operation's parameters (`env` always among them),
+so an agent's retry needs no guess: `unknown parameter: fields (valid: env, jql, maxResults, nextPageToken; required: jql)`.
+
 ## Constraints
 
 ### readonly
