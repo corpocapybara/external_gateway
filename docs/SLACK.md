@@ -107,7 +107,7 @@ $xoxd | .\egw-admin.exe -workspace acme -name slack-xoxd -admin http://127.0.0.1
 | `slack.messages`  | GET  | `/conversations.history` | params: `channel` (required), `limit`, `cursor`, `oldest`, `latest` |
 | `slack.file`      | GET  | `/files.info` | params: `file` (required, `^F[A-Z0-9]+$`); metadata + a short `preview` only |
 | `slack.file_content` | GET | `/files.info` + `url_private` | params: `file` (same pattern); returns the file's text, see below |
-| `slack.send`      | POST | `/chat.postMessage` | params: `channel`, `text` (≤4000) |
+| `slack.send`      | POST | `/chat.postMessage` | params: `channel`, `text` (≤4000), `thread_ts` (optional, `^[0-9]+\.[0-9]+$`: the parent's ts, to reply in its thread; thp only so far) |
 | `slack.presence`  | GET  | `/users.getPresence` | params: `user` (required, `^[UW][A-Z0-9]+$`); returns `presence` = `active`/`away` |
 | `slack.usergroups` | GET | `/usergroups.list` | param: `include_users` (optional bool); returns `usergroups[].id/handle/name/users` |
 

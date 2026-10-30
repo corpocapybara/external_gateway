@@ -38,7 +38,7 @@ func TestSlackPostSendsParamsAsFormBody(t *testing.T) {
 	}
 	s := &Server{logger: zerolog.Nop(), httpClient: httprest.NewConnector()}
 	text := "Hi — \"quoted\" <https://example.com|link>\n• second line"
-	params := map[string]interface{}{"env": "prod", "channel": "D0123", "text": text}
+	params := map[string]interface{}{"env": "prod", "channel": "D0123", "text": text, "thread_ts": "1793190338.544409"}
 
 	if _, _, err := s.executeHttpConnector(ws, op, params, "slacktest"); err != nil {
 		t.Fatal(err)
@@ -54,5 +54,9 @@ func TestSlackPostSendsParamsAsFormBody(t *testing.T) {
 	}
 	if got := gotForm.Get("text"); got != text {
 		t.Errorf("text = %q, want %q", got, text)
+	}
+	// A thread reply: chat.postMessage reads thread_ts from the same form body.
+	if got := gotForm.Get("thread_ts"); got != "1793190338.544409" {
+		t.Errorf("thread_ts = %q", got)
 	}
 }
