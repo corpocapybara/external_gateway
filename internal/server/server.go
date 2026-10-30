@@ -543,6 +543,8 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 		upstreamStatus, responseBody, err = s.executeMcpConnector(ws, op, params, workspace)
 	} else if op.Connector == "email" {
 		upstreamStatus, responseBody, err = s.executeEmailConnector(ws, op, params, workspace)
+	} else if op.Connector == "jira-worklog" {
+		upstreamStatus, responseBody, err = s.executeJiraWorklog(ws, op, params, workspace)
 	}
 
 	latency := time.Since(start).Milliseconds()
@@ -679,7 +681,7 @@ func resolveEnv(site config.Site, siteName string, params map[string]interface{}
 // connectors that pick their environment with resolveEnv.
 func checkEnvSelection(ws *config.Workspace, op *policy.Operation, params map[string]interface{}) error {
 	switch op.Connector {
-	case "http-rest", "mcp", "email":
+	case "http-rest", "mcp", "email", "jira-worklog":
 	default:
 		return nil
 	}

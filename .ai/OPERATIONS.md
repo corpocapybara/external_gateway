@@ -228,6 +228,13 @@ Fields not listed are stripped from the response before returning to the agent. 
 | jira.transitions | http-rest | jira | Get transitions |
 | jira.me | http-rest | jira | Get current user |
 | jira.edit | http-rest | jira | Edit issue fields (**write**) |
+| jira.worklog_report | jira-worklog | jira | Your worklogs for a day/week/month with week and month counters vs the Polish norm (`docs/WORKLOG.md`) |
+| jira.worklog_issue | jira-worklog | jira | Hours spent on one issue: estimate, by author, yours, every worklog |
+| jira.worklog_add | jira-worklog | jira | Log time on `key` or a mapped `activity` (**write**) |
+| jira.worklog_update | jira-worklog | jira | Change one of your worklogs (**write**) |
+| jira.worklog_delete | jira-worklog | jira | Delete one of your worklogs (**write**) |
+| jira.worklog_activities | jira-worklog | jira | Activity → issue map for non-ticket work |
+| jira.worklog_activity_set / _remove | jira-worklog | jira | Change the activity map (**write**) |
 | confluence.search | http-rest | confluence | CQL search |
 | confluence.page | http-rest | confluence | Get page (body.storage) |
 | confluence.comments | http-rest | confluence | Get page comments |
