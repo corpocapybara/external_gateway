@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -19,23 +20,77 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// fakeJira serves the Jira Cloud endpoints the worklog connector calls and
-// records every write.
+// fakeJira serves the Jira Cloud and Tempo endpoints the worklog connector calls
+// and records every search, Tempo listing and write.
 type fakeJira struct {
 	mu       sync.Mutex
 	jql      []string
+	listings []string // Tempo listing "path?query"
 	writes   []string // "METHOD path body"
-	worklogs map[string][]map[string]interface{}
-	paged    bool // one issue per search page, one worklog per worklog page
+	worklogs []map[string]interface{}
+	paged    bool // one result per search page and per Tempo page
 }
 
-func wl(id, author, started string, secs int) map[string]interface{} {
+var (
+	fakeIssueKeys  = map[string]string{"1": "THP-1", "2": "THP-2", "3": "OPS-3"}
+	fakeIssueIDsRe = regexp.MustCompile(`id in \(([^)]*)\)`)
+	fakeProjectsRe = regexp.MustCompile(`project in \(([^)]*)\)`)
+)
+
+func wl(id, issueID int, author, date, start string, secs int) map[string]interface{} {
 	return map[string]interface{}{
-		"id": id, "author": map[string]interface{}{"accountId": author, "displayName": "name-" + author},
-		"started": started, "timeSpentSeconds": secs,
-		"comment": map[string]interface{}{"type": "doc", "version": 1, "content": []interface{}{
-			map[string]interface{}{"type": "paragraph", "content": []interface{}{map[string]interface{}{"type": "text", "text": "c" + id}}},
-		}},
+		"tempoWorklogId": id, "issue": map[string]interface{}{"id": issueID},
+		"author": map[string]interface{}{"accountId": author}, "startDate": date, "startTime": start,
+		"timeSpentSeconds": secs, "billableSeconds": secs, "description": fmt.Sprint("c", id),
+		"attributes": map[string]interface{}{"values": []interface{}{map[string]interface{}{"key": "_Role_", "value": "dev"}}},
+	}
+}
+
+func fakeIssueID(key string) string {
+	for id, k := range fakeIssueKeys {
+		if k == key {
+			return id
+		}
+	}
+	return "5"
+}
+
+func (f *fakeJira) find(id string) map[string]interface{} {
+	for _, x := range f.worklogs {
+		if fmt.Sprint(x["tempoWorklogId"]) == id {
+			return x
+		}
+	}
+	return nil
+}
+
+// page serves Tempo results by offset and limit, one per page when paged.
+func (f *fakeJira) page(w http.ResponseWriter, r *http.Request, all []map[string]interface{}) {
+	f.listings = append(f.listings, r.URL.Path+"?"+r.URL.RawQuery)
+	offset, limit := 0, 50
+	fmt.Sscan(r.URL.Query().Get("offset"), &offset)
+	fmt.Sscan(r.URL.Query().Get("limit"), &limit)
+	if f.paged {
+		limit = 1
+	}
+	end := min(offset+limit, len(all))
+	results := all[min(offset, len(all)):end]
+	meta := map[string]interface{}{"count": len(results), "offset": offset, "limit": limit}
+	if end < len(all) {
+		meta["next"] = "more"
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"self": "x", "metadata": meta, "results": results})
+}
+
+// only serves the Tempo paths (/4/...) or the Jira ones, so a call sent to the
+// wrong API fails.
+func (f *fakeJira) only(tempo bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/4/") != tempo {
+			http.Error(w, "wrong api", http.StatusTeapot)
+			return
+		}
+		f.handler(w, r)
 	}
 }
 
@@ -47,6 +102,9 @@ func (f *fakeJira) handler(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case p == "/rest/api/3/myself":
 		w.Write([]byte(`{"accountId":"me","displayName":"Me"}`))
+	case p == "/rest/api/3/user":
+		id := r.URL.Query().Get("accountId")
+		fmt.Fprintf(w, `{"accountId":%q,"displayName":"name-%s"}`, id, id)
 	case p == "/rest/api/3/search/jql":
 		var req struct {
 			JQL           string `json:"jql"`
@@ -54,41 +112,64 @@ func (f *fakeJira) handler(w http.ResponseWriter, r *http.Request) {
 		}
 		json.Unmarshal(body, &req)
 		f.jql = append(f.jql, req.JQL)
-		issue1 := `{"id":"1","key":"THP-1","fields":{"summary":"Feature","issuetype":{"name":"Story"},"parent":{"key":"THP-100"}}}`
-		issue2 := `{"id":"2","key":"THP-2","fields":{"summary":"Reviews","issuetype":{"name":"Epic"}}}`
-		switch {
-		case !f.paged:
-			w.Write([]byte(`{"isLast":true,"issues":[` + issue1 + `,` + issue2 + `]}`))
-		case req.NextPageToken == "":
-			w.Write([]byte(`{"isLast":false,"nextPageToken":"p2","issues":[` + issue1 + `]}`))
-		default:
-			w.Write([]byte(`{"isLast":true,"issues":[` + issue2 + `]}`))
+		var projects []string
+		if m := fakeProjectsRe.FindStringSubmatch(req.JQL); m != nil {
+			projects = strings.Split(m[1], ",")
 		}
-	case strings.HasSuffix(p, "/worklog") && r.Method == "GET":
+		var issues []string
+		for _, id := range strings.Split(fakeIssueIDsRe.FindStringSubmatch(req.JQL)[1], ",") {
+			key, ok := fakeIssueKeys[id]
+			if !ok || (projects != nil && !containsStr(projects, strings.Split(key, "-")[0])) {
+				continue
+			}
+			parent := ""
+			if key == "THP-1" {
+				parent = `,"parent":{"key":"THP-100"}`
+			}
+			issues = append(issues, fmt.Sprintf(`{"id":%q,"key":%q,"fields":{"summary":"Summary of %s","issuetype":{"name":"Story"}%s}}`, id, key, key, parent))
+		}
+		if !f.paged {
+			w.Write([]byte(`{"isLast":true,"issues":[` + strings.Join(issues, ",") + `]}`))
+			return
+		}
+		i := 0
+		fmt.Sscan(req.NextPageToken, &i)
+		last := i+1 >= len(issues)
+		page := ""
+		if i < len(issues) {
+			page = issues[i]
+		}
+		fmt.Fprintf(w, `{"isLast":%t,"nextPageToken":"%d","issues":[%s]}`, last, i+1, page)
+	case strings.HasPrefix(p, "/rest/api/3/issue/"):
 		key := strings.Split(p, "/")[5]
-		all := f.worklogs[key]
-		page := all
-		if f.paged {
-			start := 0
-			fmt.Sscan(r.URL.Query().Get("startAt"), &start)
-			page = all[min(start, len(all)):min(start+1, len(all))]
+		fmt.Fprintf(w, `{"id":%q,"key":%q,"fields":{"summary":"Epic of %s","issuetype":{"name":"Epic"},"status":{"name":"Open"},
+			"timetracking":{"originalEstimateSeconds":36000,"remainingEstimateSeconds":7200,"timeSpentSeconds":30600}}}`, fakeIssueID(key), key, key)
+	case strings.HasPrefix(p, "/4/worklogs/user/"):
+		user, q := strings.TrimPrefix(p, "/4/worklogs/user/"), r.URL.Query()
+		var all []map[string]interface{}
+		for _, x := range f.worklogs {
+			d := x["startDate"].(string)
+			if user == "me" && d >= q.Get("from") && d <= q.Get("to") {
+				all = append(all, x)
+			}
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{"total": len(all), "worklogs": page})
-	case strings.HasSuffix(p, "/worklog") && r.Method == "POST":
+		f.page(w, r, all)
+	case strings.HasPrefix(p, "/4/worklogs/issue/"):
+		var all []map[string]interface{}
+		for _, x := range f.worklogs {
+			if fmt.Sprint(x["issue"].(map[string]interface{})["id"]) == strings.TrimPrefix(p, "/4/worklogs/issue/") {
+				all = append(all, x)
+			}
+		}
+		f.page(w, r, all)
+	case p == "/4/worklogs" && r.Method == "POST":
 		f.writes = append(f.writes, "POST "+p+" "+string(body))
 		var req map[string]interface{}
 		json.Unmarshal(body, &req)
-		out := wl("900", "me", req["started"].(string), int(req["timeSpentSeconds"].(float64)))
-		json.NewEncoder(w).Encode(out)
-	case strings.Contains(p, "/worklog/"):
-		parts := strings.Split(p, "/")
-		key, id := parts[5], parts[7]
-		var found map[string]interface{}
-		for _, x := range f.worklogs[key] {
-			if x["id"] == id {
-				found = x
-			}
-		}
+		json.NewEncoder(w).Encode(wl(900, int(req["issueId"].(float64)), req["authorAccountId"].(string),
+			req["startDate"].(string), req["startTime"].(string), int(req["timeSpentSeconds"].(float64))))
+	case strings.HasPrefix(p, "/4/worklogs/"):
+		found := f.find(strings.TrimPrefix(p, "/4/worklogs/"))
 		if found == nil {
 			http.NotFound(w, r)
 			return
@@ -100,15 +181,12 @@ func (f *fakeJira) handler(w http.ResponseWriter, r *http.Request) {
 			f.writes = append(f.writes, "PUT "+p+" "+string(body))
 			var req map[string]interface{}
 			json.Unmarshal(body, &req)
-			json.NewEncoder(w).Encode(wl(id, "me", req["started"].(string), int(req["timeSpentSeconds"].(float64))))
+			json.NewEncoder(w).Encode(wl(found["tempoWorklogId"].(int), found["issue"].(map[string]interface{})["id"].(int),
+				req["authorAccountId"].(string), req["startDate"].(string), req["startTime"].(string), int(req["timeSpentSeconds"].(float64))))
 		case "DELETE":
 			f.writes = append(f.writes, "DELETE "+p)
 			w.WriteHeader(http.StatusNoContent)
 		}
-	case strings.HasPrefix(p, "/rest/api/3/issue/"):
-		key := strings.Split(p, "/")[5]
-		fmt.Fprintf(w, `{"id":"5","key":%q,"fields":{"summary":"Epic of %s","issuetype":{"name":"Epic"},"status":{"name":"Open"},
-			"timetracking":{"originalEstimateSeconds":36000,"remainingEstimateSeconds":7200,"timeSpentSeconds":30600}}}`, key, key)
 	default:
 		http.NotFound(w, r)
 	}
@@ -116,25 +194,27 @@ func (f *fakeJira) handler(w http.ResponseWriter, r *http.Request) {
 
 func worklogFixture(t *testing.T) (*fakeJira, *Server, *config.Workspace, func(action string, params map[string]interface{}) (map[string]interface{}, error)) {
 	t.Helper()
-	f := &fakeJira{worklogs: map[string][]map[string]interface{}{
-		"THP-1": {
-			wl("11", "me", "2026-11-09T09:00:00.000+0100", 6*3600),    // Mon of the week
-			wl("12", "other", "2026-11-09T10:00:00.000+0100", 2*3600), // someone else's
-			wl("13", "me", "2026-11-12T00:30:00.000+0100", 1800),      // Thu, 00:30 Warsaw = 23:30 UTC the day before
-			wl("14", "me", "2026-11-03T08:00:00.000+0100", 8*3600),    // earlier in the month
-			wl("15", "me", "2026-10-30T08:00:00.000+0100", 8*3600),    // previous month
-		},
-		"THP-2": {
-			wl("21", "me", "2026-11-10T13:00:00.000+0100", 5400),
-		},
+	f := &fakeJira{worklogs: []map[string]interface{}{
+		wl(11, 1, "me", "2026-11-09", "09:00:00", 6*3600),    // Mon of the week
+		wl(12, 1, "other", "2026-11-09", "10:00:00", 2*3600), // someone else's
+		wl(13, 1, "me", "2026-11-12", "00:30:00", 1800),      // Thu, just after midnight
+		wl(14, 1, "me", "2026-11-03", "08:00:00", 8*3600),    // earlier in the month
+		wl(15, 1, "me", "2026-10-30", "08:00:00", 8*3600),    // previous month
+		wl(21, 2, "me", "2026-11-10", "13:00:00", 5400),
+		wl(31, 3, "me", "2026-11-10", "09:00:00", 3600), // OPS, outside jira_projects
 	}}
-	upstream := httptest.NewServer(http.HandlerFunc(f.handler))
-	t.Cleanup(upstream.Close)
+	jira := httptest.NewServer(f.only(false))
+	t.Cleanup(jira.Close)
+	tempo := httptest.NewServer(f.only(true))
+	t.Cleanup(tempo.Close)
 	ws := &config.Workspace{
-		Sites: map[string]config.Site{"jira": {DefaultEnv: "prod", Environments: map[string]config.Environment{
-			"prod":  {BaseURL: upstream.URL},
-			"corpo": {BaseURL: "http://corpo.invalid"},
-		}}},
+		Sites: map[string]config.Site{
+			"jira": {DefaultEnv: "prod", Environments: map[string]config.Environment{
+				"prod":  {BaseURL: jira.URL},
+				"corpo": {BaseURL: "http://corpo.invalid"},
+			}},
+			"tempo": {Environments: map[string]config.Environment{"prod": {BaseURL: tempo.URL}}},
+		},
 		Policy: config.WorkspacePolicy{JiraProjects: []string{"THP", "SUP"}},
 	}
 	s := &Server{logger: zerolog.Nop(), httpClient: httprest.NewConnector()}
@@ -177,7 +257,7 @@ func TestWorklogReportWeek(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Week 9-15 Nov 2026: 11 Nov is a holiday, so 4 working days = 32 h.
-	// Mine in that week: 6 h + 1.5 h + 0.5 h = 8 h; the other author's 2 h is ignored.
+	// Mine in that week: 6 h + 1.5 h + 0.5 h = 8 h; the other author's 2 h and the OPS hour are ignored.
 	if got := num(t, out, "week", "norm_hours"); got != 32 {
 		t.Errorf("week norm = %v", got)
 	}
@@ -213,22 +293,30 @@ func TestWorklogReportWeek(t *testing.T) {
 	if wed["date"] != "2026-11-11" || wed["holiday"] != "Narodowe Święto Niepodległości" || wed["working_day"] != false {
 		t.Errorf("11 Nov = %v", wed)
 	}
-	// The 00:30 Warsaw worklog belongs to Thursday 12 Nov, not Wednesday.
+	// Tempo's startDate is the day: the 00:30 worklog belongs to Thursday 12 Nov.
 	thu := days[3].(map[string]interface{})
 	if num(t, thu, "logged_hours") != 0.5 || num(t, wed, "logged_hours") != 0 {
 		t.Errorf("thu = %v, wed = %v", thu["logged_hours"], wed["logged_hours"])
 	}
+	entry := thu["worklogs"].([]interface{})[0].(map[string]interface{})
+	if entry["id"] != "13" || entry["issue_key"] != "THP-1" || entry["started"] != "2026-11-12 00:30" || entry["comment"] != "c13" {
+		t.Errorf("thu worklog = %v", entry)
+	}
 	byIssue := out["period"].(map[string]interface{})["by_issue"].([]interface{})
 	first := byIssue[0].(map[string]interface{})
-	if first["key"] != "THP-1" || first["hours"] != 6.5 || first["parent_key"] != "THP-100" {
-		t.Errorf("by_issue[0] = %v", first)
+	if len(byIssue) != 2 || first["key"] != "THP-1" || first["hours"] != 6.5 || first["parent_key"] != "THP-100" {
+		t.Errorf("by_issue = %v", byIssue)
 	}
-	if len(f.jql) != 1 || !strings.HasSuffix(f.jql[0], "AND project in (THP,SUP)") || !strings.Contains(f.jql[0], "worklogAuthor = currentUser()") {
+	if len(f.listings) != 1 || !strings.HasPrefix(f.listings[0], "/4/worklogs/user/me?") ||
+		!strings.Contains(f.listings[0], "from=2026-11-01") || !strings.Contains(f.listings[0], "to=2026-11-30") {
+		t.Errorf("tempo listings = %v", f.listings)
+	}
+	if len(f.jql) != 1 || f.jql[0] != "id in (1,2,3) AND project in (THP,SUP)" {
 		t.Errorf("jql = %v", f.jql)
 	}
 }
 
-// Every search page and worklog page is read: one issue and one worklog per page
+// Every search page and Tempo page is read: one issue and one worklog per page
 // must give the same totals as the unpaged report.
 func TestWorklogReportFollowsPages(t *testing.T) {
 	f, _, _, run := worklogFixture(t)
@@ -245,6 +333,9 @@ func TestWorklogReportFollowsPages(t *testing.T) {
 	}
 	if len(f.jql) != 2 {
 		t.Errorf("search pages read = %d, want 2", len(f.jql))
+	}
+	if len(f.listings) != 6 {
+		t.Errorf("tempo pages read = %d, want 6", len(f.listings))
 	}
 	out, err = run("issue", map[string]interface{}{"key": "THP-1"})
 	if err != nil {
@@ -270,6 +361,14 @@ func TestWorklogReportDayHasNoOtherDays(t *testing.T) {
 	}
 }
 
+func TestWorklogReportNeedsTempoSite(t *testing.T) {
+	_, _, ws, run := worklogFixture(t)
+	delete(ws.Sites, "tempo")
+	if _, err := run("report", nil); err == nil || !strings.Contains(err.Error(), "site tempo not found") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestWorklogAddByActivity(t *testing.T) {
 	f, _, _, run := worklogFixture(t)
 	if _, err := run("add", map[string]interface{}{"activity": "code-review", "hours": 1.5}); err == nil {
@@ -285,11 +384,13 @@ func TestWorklogAddByActivity(t *testing.T) {
 	if len(f.writes) != 1 {
 		t.Fatalf("writes = %v", f.writes)
 	}
-	w := f.writes[0]
-	if !strings.HasPrefix(w, "POST /rest/api/3/issue/THP-2/worklog ") ||
-		!strings.Contains(w, `"started":"2026-11-11T09:00:00.000+0100"`) ||
-		!strings.Contains(w, `"timeSpentSeconds":5400`) || !strings.Contains(w, `"text":"MR !12"`) {
-		t.Errorf("write = %s", w)
+	want := `POST /4/worklogs {"authorAccountId":"me","description":"MR !12","issueId":2,"startDate":"2026-11-11","startTime":"09:00:00","timeSpentSeconds":5400}`
+	if f.writes[0] != want {
+		t.Errorf("write = %s", f.writes[0])
+	}
+	worklog := out["worklog"].(map[string]interface{})
+	if worklog["id"] != "900" || worklog["issue_key"] != "THP-2" || worklog["started"] != "2026-11-11 09:00" {
+		t.Errorf("worklog = %v", worklog)
 	}
 	if out["note"] != "2026-11-11 is a public holiday (Narodowe Święto Niepodległości)" {
 		t.Errorf("note = %v", out["note"])
@@ -317,6 +418,23 @@ func TestWorklogAddRefusals(t *testing.T) {
 			}
 		})
 	}
+	changes := map[string]map[string]interface{}{
+		"update out of scope": {"key": "OPS-3", "worklog_id": "31", "hours": 1.0},
+		"delete out of scope": {"key": "OPS-3", "worklog_id": "31"},
+		"bad worklog id":      {"key": "THP-1", "worklog_id": "11/../x"},
+		"missing worklog":     {"key": "THP-1", "worklog_id": "99"},
+	}
+	for name, params := range changes {
+		t.Run(name, func(t *testing.T) {
+			action := "delete"
+			if _, ok := params["hours"]; ok {
+				action = "update"
+			}
+			if _, err := run(action, params); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
 	if len(f.writes) != 0 {
 		t.Errorf("refused requests wrote: %v", f.writes)
 	}
@@ -330,6 +448,9 @@ func TestWorklogUpdateAndDeleteOwnOnly(t *testing.T) {
 	if _, err := run("update", map[string]interface{}{"key": "THP-1", "worklog_id": "12", "hours": 1.0}); err == nil {
 		t.Fatal("updating another author's worklog must be refused")
 	}
+	if _, err := run("delete", map[string]interface{}{"key": "THP-1", "worklog_id": "21"}); err == nil || !strings.Contains(err.Error(), "is not on THP-1") {
+		t.Fatalf("deleting a worklog through another issue's key: err = %v", err)
+	}
 	if _, err := run("update", map[string]interface{}{"key": "THP-1", "worklog_id": "11"}); err == nil {
 		t.Fatal("an update with nothing to change must be refused")
 	}
@@ -337,15 +458,14 @@ func TestWorklogUpdateAndDeleteOwnOnly(t *testing.T) {
 		t.Fatalf("refused requests wrote: %v", f.writes)
 	}
 
-	// Changing only the hours keeps the original start and comment.
+	// Changing only the hours keeps the original date, start, comment and work attributes.
 	out, err := run("update", map[string]interface{}{"key": "THP-1", "worklog_id": "11", "hours": 7.25})
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := f.writes[0]
-	if !strings.HasPrefix(w, "PUT /rest/api/3/issue/THP-1/worklog/11 ") || !strings.Contains(w, `"started":"2026-11-09T09:00:00.000+0100"`) ||
-		!strings.Contains(w, `"timeSpentSeconds":26100`) || !strings.Contains(w, `"text":"c11"`) {
-		t.Errorf("write = %s", w)
+	want := `PUT /4/worklogs/11 {"attributes":[{"key":"_Role_","value":"dev"}],"authorAccountId":"me","billableSeconds":26100,"description":"c11","startDate":"2026-11-09","startTime":"09:00:00","timeSpentSeconds":26100}`
+	if f.writes[0] != want {
+		t.Errorf("write = %s", f.writes[0])
 	}
 	if num(t, out, "before", "hours") != 6 || num(t, out, "worklog", "hours") != 7.25 {
 		t.Errorf("update result = %v", out)
@@ -354,13 +474,13 @@ func TestWorklogUpdateAndDeleteOwnOnly(t *testing.T) {
 	if _, err := run("delete", map[string]interface{}{"key": "THP-1", "worklog_id": "13"}); err != nil {
 		t.Fatal(err)
 	}
-	if f.writes[1] != "DELETE /rest/api/3/issue/THP-1/worklog/13" {
+	if f.writes[1] != "DELETE /4/worklogs/13" {
 		t.Errorf("delete = %s", f.writes[1])
 	}
 }
 
 func TestWorklogIssueTotals(t *testing.T) {
-	_, _, _, run := worklogFixture(t)
+	f, _, _, run := worklogFixture(t)
 	out, err := run("issue", map[string]interface{}{"key": "THP-1"})
 	if err != nil {
 		t.Fatal(err)
@@ -372,8 +492,13 @@ func TestWorklogIssueTotals(t *testing.T) {
 	if num(t, out, "time_tracking", "original_estimate_hours") != 10 || num(t, out, "time_tracking", "remaining_estimate_hours") != 2 {
 		t.Errorf("time_tracking = %v", out["time_tracking"])
 	}
-	if len(out["worklogs"].([]interface{})) != 5 || len(out["by_author"].([]interface{})) != 2 {
-		t.Errorf("worklogs = %d, authors = %v", len(out["worklogs"].([]interface{})), out["by_author"])
+	authors := out["by_author"].([]interface{})
+	if len(out["worklogs"].([]interface{})) != 5 || len(authors) != 2 ||
+		authors[0].(map[string]interface{})["author"] != "Me" || authors[1].(map[string]interface{})["author"] != "name-other" {
+		t.Errorf("worklogs = %d, authors = %v", len(out["worklogs"].([]interface{})), authors)
+	}
+	if len(f.listings) != 1 || !strings.HasPrefix(f.listings[0], "/4/worklogs/issue/1?") {
+		t.Errorf("tempo listings = %v", f.listings)
 	}
 	if _, err := run("issue", map[string]interface{}{"key": "OPS-7"}); err == nil {
 		t.Error("issue outside jira_projects must be refused")
