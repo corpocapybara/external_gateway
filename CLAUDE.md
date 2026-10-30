@@ -6,6 +6,9 @@ A compiled Go proxy that lets LLM agents call external services (Jira, GitLab, K
 - `.ai/AGENTS.md` — build, deploy, secrets, admin API, architecture, conventions
 - `.ai/INDEX.md` — full doc index with descriptions (lazy-load as needed)
 
+@.ai/AGENTS.md
+@.ai/INDEX.md
+
 Windows shell and git pitfalls (shared with other projects):
 
 @.ai/shared/pitfalls/windows-shell.md
