@@ -19,4 +19,5 @@ Lazy-load by reading the file relevant to your task.
 | `../docs/GDOCS.md` | Google Docs OAuth — token acquisition, operations, caveats |
 | `../docs/ONEDRIVE.md` | OneDrive / Microsoft Graph OAuth — token acquisition, operations, caveats |
 | `../docs/CLOCKIFY.md` | Clockify time tracking — all operations with examples |
+| `../docs/WORKLOG.md` | Jira worklogs (Tempo) — period reports vs Polish working-hours norm, writes, activity map |
 | `LOCAL.md` | **(gitignored)** Workspace-specific deployment details, real URLs, tokens |

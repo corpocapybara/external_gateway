@@ -36,6 +36,7 @@ In `server.go`, the operation-execution path routes to the appropriate connector
 "local-service" → executeLocalServiceConnector → localservice.Connector
 "mcp"           → executeMcpConnector         (JSON-RPC 2.0 over Streamable HTTP)
 "email"         → executeEmailConnector       → email.Connector (IMAP/SMTP)
+"jira-worklog"  → executeJiraWorklog          (Jira Cloud worklogs + Polish working-hours norm)
 ```
 
 `form-session`/`formsession.Connector` is implemented but **not** in the dispatch
@@ -117,6 +118,13 @@ Speaks JSON-RPC 2.0 over MCP Streamable HTTP to an upstream MCP server (e.g. Atl
 ## Email Connector (`email`)
 
 IMAP read + SMTP send, implemented in `internal/connectors/email/` and dispatched via `executeEmailConnector`. Defaults to IMAP `:993` (TLS) and SMTP `:587` (TLS). Works with Gmail app passwords. Sender/mailbox access is gated by the workspace `email_allowed_senders/mailboxes` and `email_denied_senders/mailboxes` policy lists. See `docs/GMAIL.md`.
+
+## Jira Worklog Connector (`jira-worklog`)
+
+Time tracking on Jira Cloud worklogs (the data Tempo shows), in `internal/server/jira_worklog.go`; the working-day
+calendar is `internal/workcal`. Several upstream calls per op, so it is not an `http-rest` op. The op's `path` names
+the action. Uses the site's default environment only (Cloud v3 API) and its basic/bearer auth. Issue keys must be
+in `jira_projects`; update/delete refuse worklogs by another author. See `docs/WORKLOG.md`.
 
 ## Form Session Connector (`formsession`)
 
