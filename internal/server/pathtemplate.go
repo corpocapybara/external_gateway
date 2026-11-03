@@ -22,6 +22,13 @@ func hasPathInjection(s string, multiSegment bool) bool {
 	if !multiSegment && strings.Contains(s, "/") {
 		return true
 	}
+	if multiSegment {
+		for _, seg := range strings.Split(s, "/") {
+			if seg == "" || seg == "." {
+				return true
+			}
+		}
+	}
 	for _, r := range s {
 		if r < 0x20 || r == 0x7f {
 			return true
@@ -72,7 +79,9 @@ func expandPathTemplate(tmpl string, site map[string]string, params map[string]i
 			}
 			str = url.PathEscape(str)
 		default:
-			if hasPathInjection(str, defs[key].MultiSegment) {
+			if hasPathInjection(str, defs[key].MultiSegment) ||
+				strings.Contains(str, ";") ||
+				(strings.Contains(before, "?") && strings.ContainsAny(str, "&=+")) {
 				return "", bad
 			}
 		}

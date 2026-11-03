@@ -169,6 +169,9 @@ func TestSlackFileContentChannelScope(t *testing.T) {
 		{"no allow-list", "", nil, true},
 		{"in allowed channel", `,"channels":["C0ALLOWED"]`, []string{"C0ALLOWED"}, true},
 		{"allowed via shares", `,"shares":{"public":{"C0ALLOWED":[{"ts":"1"}]}}`, []string{"C0ALLOWED"}, true},
+		{"allowed via groups", `,"groups":["G0ALLOWED"]`, []string{"G0ALLOWED"}, true},
+		{"allowed via ims", `,"ims":["D0ALLOWED"]`, []string{"D0ALLOWED"}, true},
+		{"allowed via private shares", `,"shares":{"private":{"G0ALLOWED":[{"ts":"1"}]}}`, []string{"G0ALLOWED"}, true},
 		{"only other channel", `,"channels":["C0OTHER"],"groups":["G0OTHER"],"ims":["D0OTHER"]`, []string{"C0ALLOWED"}, false},
 		{"shared nowhere", "", []string{"C0ALLOWED"}, false},
 	}
@@ -180,8 +183,8 @@ func TestSlackFileContentChannelScope(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if !c.ok {
-				if err == nil {
-					t.Fatal("expected denial")
+				if err == nil || !strings.Contains(err.Error(), "slack_channels") {
+					t.Fatalf("expected scope denial, got %v", err)
 				}
 				if f.gotFileAuth {
 					t.Fatal("file was downloaded despite denial")

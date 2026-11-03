@@ -23,13 +23,24 @@ func TestExpandPathTemplateRejectsInjection(t *testing.T) {
 	}
 }
 
+func TestExpandPathTemplateQueryAndMatrixInjection(t *testing.T) {
+	for _, v := range []string{"1&admin=true", "a=b", "a+b", "a;x=1"} {
+		if _, err := expandPathTemplate("/x?id={id}", nil, map[string]interface{}{"id": v}, nil); err == nil {
+			t.Errorf("query value %q should be rejected", v)
+		}
+	}
+	if _, err := expandPathTemplate("/x/{id}", nil, map[string]interface{}{"id": "a;x=1"}, nil); err == nil {
+		t.Error("; should be rejected in a path value")
+	}
+}
+
 func TestExpandPathTemplateMultiSegmentOptIn(t *testing.T) {
 	defs := map[string]policy.ParamDef{"path": {MultiSegment: true}}
 	got, err := expandPathTemplate("/contents/{path}", nil, map[string]interface{}{"path": "src/a/b.go"}, defs)
 	if err != nil || got != "/contents/src/a/b.go" {
 		t.Fatalf("got %q, %v", got, err)
 	}
-	for _, v := range []string{"src/../x", "src/%2e%2e/x", "a%2Fb", "a?x"} {
+	for _, v := range []string{"src/../x", "src/%2e%2e/x", "a%2Fb", "a?x", "a/./b", "a//b", "/a", "a/", "./a"} {
 		if _, err := expandPathTemplate("/contents/{path}", nil, map[string]interface{}{"path": v}, defs); err == nil {
 			t.Errorf("multi_segment value %q should still be rejected", v)
 		}
