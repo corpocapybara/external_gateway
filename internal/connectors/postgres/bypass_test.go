@@ -1,6 +1,40 @@
 package postgres
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestFilterTableRows(t *testing.T) {
+	mk := func() *QueryResult {
+		return &QueryResult{Count: 3, Rows: []map[string]interface{}{
+			{"table_name": "users"}, {"table_name": "secrets"}, {"table_name": []byte("users")},
+		}}
+	}
+	r := mk()
+	FilterTableRows(r, []string{"users"}, "public")
+	if r.Count != 1 || len(r.Rows) != 1 || r.Rows[0]["table_name"] != "users" {
+		t.Fatalf("filtered = %+v", r)
+	}
+	r = mk()
+	FilterTableRows(r, nil, "public")
+	if r.Count != 3 {
+		t.Fatalf("no allow-list must keep all rows, got %d", r.Count)
+	}
+}
+
+func TestBuildConnStrSSLMode(t *testing.T) {
+	cases := []struct {
+		mode, want string
+		wantErr    bool
+	}{{"", "sslmode=prefer", false}, {"disable", "sslmode=disable", false}, {"verify-full", "sslmode=verify-full", false}, {"bogus", "", true}}
+	for _, c := range cases {
+		s, err := buildConnStr("h", 5432, "u", "p", "d", "public", c.mode)
+		if (err != nil) != c.wantErr || (!c.wantErr && !strings.Contains(s, c.want)) {
+			t.Errorf("mode %q: s=%q err=%v", c.mode, s, err)
+		}
+	}
+}
 
 // Allow-list bypass regressions: every "deny" case below used to pass because
 // walkTables ignored all node types except FROM/JOIN/subquery/CTE structure.
@@ -43,13 +77,26 @@ func TestCheckTableScopeBypasses(t *testing.T) {
 		{"table via TABLE command", "TABLE secret_tbl", true},
 		{"union branch", "SELECT 1 FROM allowed UNION SELECT 1 FROM secret_tbl", true},
 		// CTE scoping
-		{"cte name in one branch does not exempt other", "WITH secret_tbl AS (SELECT 1) SELECT * FROM secret_tbl UNION ALL SELECT * FROM (SELECT * FROM public.secret_tbl) z", true},
+		{"quoted mixed-case identifier", `SELECT * FROM "Secret_Tbl"`, true},
+		{"FROM ONLY", "SELECT * FROM ONLY secret_tbl", true},
+		{"ROWS FROM denied func", "SELECT * FROM ROWS FROM (query_to_xml('select 1', true, true, ''))", true},
+		{"data-modifying cte", "WITH d AS (DELETE FROM secret_tbl RETURNING *) SELECT * FROM d", true},
+		{"select into", "SELECT * INTO newt FROM secret_tbl", true},
+		{"query_to_xml_and_xmlschema", "SELECT query_to_xml_and_xmlschema('select 1', true, true, '')", true},
+		{"schema_to_xml", "SELECT schema_to_xml('public', true, true, '')", true},
+		{"nextval", "SELECT nextval('s')", true},
+		{"ts_stat", "SELECT * FROM ts_stat('select 1')", true},
+		{"cte scoped to branch, other branch reads real table", "SELECT * FROM allowed UNION ALL (WITH secret_tbl AS (SELECT 1) SELECT * FROM secret_tbl) UNION ALL SELECT * FROM secret_tbl", true},
+		{"cte only visible after definition", "WITH a AS (SELECT * FROM secret_tbl), secret_tbl AS (SELECT 1) SELECT * FROM a", true},
+		{"deep nesting fails closed", "SELECT " + strings.Repeat("(SELECT ", 300) + "1" + strings.Repeat(")", 300), true},
 		{"cte defined in subquery does not leak out", "SELECT * FROM (WITH secret_tbl AS (SELECT 1) SELECT * FROM secret_tbl) a, secret_tbl", true},
 		{"cte defined in set-op branch does not leak", "(WITH secret_tbl AS (SELECT 1) SELECT * FROM secret_tbl) UNION ALL SELECT * FROM secret_tbl", true},
 		{"non-recursive cte self reference is a real table", "WITH secret_tbl AS (SELECT * FROM secret_tbl) SELECT * FROM secret_tbl", true},
 		{"cte shadow in scalar subquery does not leak", "SELECT (WITH secret_tbl AS (SELECT 1) SELECT * FROM secret_tbl), (SELECT * FROM secret_tbl)", true},
 
 		// --- legitimate queries that must still pass ---
+		{"top-level cte shadows name legitimately", "WITH secret_tbl AS (SELECT 1) SELECT * FROM secret_tbl", false},
+		{"similar names not over-matched", "SELECT lower(x), pg_typeof(x), to_char(now(), 'YYYY') FROM allowed", false},
 		{"plain", "SELECT * FROM allowed", false},
 		{"join", "SELECT a.x, o.y FROM allowed a JOIN other o ON a.id = o.id WHERE a.x = 1 AND o.y IS NOT NULL", false},
 		{"left join + where subquery", "SELECT a.x FROM allowed a LEFT JOIN other o ON o.id = a.id WHERE a.id IN (SELECT id FROM other)", false},

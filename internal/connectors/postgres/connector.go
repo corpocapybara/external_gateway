@@ -67,8 +67,25 @@ func (c *Connector) Name() string {
 // Connect opens the connection. sslmode is a libpq sslmode value; empty means
 // "prefer" (TLS when the server offers it, plaintext otherwise).
 func (c *Connector) Connect(host string, port int, user, password, dbname, schema, sslmode string) error {
+	connStr, err := buildConnStr(host, port, user, password, dbname, schema, sslmode)
+	if err != nil {
+		return err
+	}
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		return fmt.Errorf("opening connection: %w", err)
+	}
+	return c.finishConnect(db, connStr)
+}
+
+var validSSLModes = map[string]bool{"disable": true, "allow": true, "prefer": true, "require": true, "verify-ca": true, "verify-full": true}
+
+func buildConnStr(host string, port int, user, password, dbname, schema, sslmode string) (string, error) {
 	if sslmode == "" {
 		sslmode = "prefer"
+	}
+	if !validSSLModes[sslmode] {
+		return "", fmt.Errorf("invalid sslmode %q", sslmode)
 	}
 	u := &url.URL{
 		Scheme: "postgres",
@@ -84,11 +101,26 @@ func (c *Connector) Connect(host string, port int, user, password, dbname, schem
 	}
 	u.RawQuery = q.Encode()
 
-	connStr := u.String()
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		return fmt.Errorf("opening connection: %w", err)
+	return u.String(), nil
+}
+
+// FilterTableRows keeps only rows whose "table_name" is readable under the
+// pg_allowed_tables list (fail closed: a missing/non-string name is dropped).
+func FilterTableRows(res *QueryResult, allowed []string, schema string) {
+	if len(allowed) == 0 {
+		return
 	}
+	kept := make([]map[string]interface{}, 0, len(res.Rows))
+	for _, row := range res.Rows {
+		if name, ok := row["table_name"].(string); ok && TableAllowed(allowed, schema, name) {
+			kept = append(kept, row)
+		}
+	}
+	res.Rows = kept
+	res.Count = len(kept)
+}
+
+func (c *Connector) finishConnect(db *sql.DB, connStr string) error {
 
 	db.SetMaxOpenConns(2)
 	db.SetMaxIdleConns(1)
