@@ -53,6 +53,8 @@ Flags:
 - `-name` — secret name (gitlab, jira, kibana-prod, etc.)
 - `-value` — the secret value (or pipe via stdin)
 - `-action` — `set` (default) or `delete`
+
+Workspace and name must match `^[A-Za-z0-9_-]+$`; the admin API refuses anything else (and bodies over 1 MiB).
 - `-admin` — admin API address (default: `http://127.0.0.1:8443/admin`)
 - `-token` — admin bearer token (required if `admin_token_sha256` is set in config; see below)
 
@@ -93,14 +95,11 @@ If `admin_token_sha256` is empty or unset, every admin call fails with `401 unau
 
 ## Deleting secrets
 
-> **Not yet supported server-side.** `egw-admin -action delete` issues an HTTP
-> `DELETE /admin/secrets`, but the gateway's admin handler only accepts `POST`/`PUT`
-> on that route and has no delete implementation, so the call returns `405 Method
-> Not Allowed`. To remove a secret today, delete the `egw/<ws>/<name>` entry from the
-> SYSTEM account's Credential Manager directly. Wiring a server-side delete is a TODO.
+`egw-admin -action delete` sends `DELETE /admin/secrets?workspace=<ws>&name=<name>` (query params, no body),
+which removes `egw/<ws>/<name>` from the SYSTEM account's Credential Manager.
 
 ```powershell
-.\egw-admin.exe -workspace acme -name gitlab -action delete   # returns 405 until server support is added
+.\egw-admin.exe -workspace acme -name gitlab -action delete -admin http://127.0.0.1:8444/admin -token $adminToken
 ```
 
 ## Secret naming convention

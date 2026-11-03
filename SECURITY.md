@@ -17,9 +17,11 @@ Manager** at runtime, and the agent never sees them.
 - **Cross-tenant isolation.** Every secret resolution enforces that the secret's
   workspace prefix matches the request's workspace. A `secret://globex/...` ref
   cannot be resolved during an `acme` workspace request.
-- **Taint tracking.** Resolved secrets are registered in a taint registry. The
-  redaction hook scans response data for tainted values before returning to the
-  agent.
+- **Taint tracking.** Resolved secrets are registered in a taint registry, with
+  their trimmed, JSON-escaped and URL-encoded forms (secrets of 4 bytes or fewer
+  are not tracked). Responses and audit-logged values are redacted before they
+  leave the gateway. The audit log also masks parameters whose key looks like a
+  credential (`token`, `secret`, `password`, `authorization`, ...) at any depth.
 - **PostgreSQL is read-only.** Queries run in a `READ ONLY` transaction and are
   parsed to an AST; with `pg_allowed_tables` set, every table reference and a
   deny-list of SQL-executing / server-touching functions are checked (fail closed).
