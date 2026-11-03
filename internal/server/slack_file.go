@@ -81,6 +81,10 @@ type slackFileInfo struct {
 		Filetype   string `json:"filetype"`
 		Size       int64  `json:"size"`
 		URLPrivate string `json:"url_private"`
+		Channels   []string `json:"channels"`
+		Groups     []string `json:"groups"`
+		Ims        []string `json:"ims"`
+		Shares     map[string]map[string]json.RawMessage `json:"shares"`
 	} `json:"file"`
 }
 
@@ -123,6 +127,9 @@ func (s *Server) executeSlackFileContent(ws *config.Workspace, op *policy.Operat
 	}
 	if info.File.ID != fileID {
 		return 0, nil, fmt.Errorf("slack files.info returned a different file")
+	}
+	if err := checkSlackFileScope(ws.Policy.SlackChannels, info.File.Channels, info.File.Groups, info.File.Ims, info.File.Shares); err != nil {
+		return 0, nil, err
 	}
 	if !isTextMimetype(info.File.Mimetype) {
 		return 0, nil, fmt.Errorf("file mimetype %q is not a text type; only text files can be read", info.File.Mimetype)
@@ -174,4 +181,33 @@ func (s *Server) executeSlackFileContent(ws *config.Workspace, op *policy.Operat
 		return 0, nil, fmt.Errorf("encoding file content: %w", err)
 	}
 	return http.StatusOK, out, nil
+}
+
+// checkSlackFileScope enforces the slack_channels allow-list for a file: when
+// the list is configured, the file must be shared in at least one allowed
+// channel (files.info channels/groups/ims, or the shares.public/private maps).
+// A file shared nowhere, or only elsewhere, is refused.
+func checkSlackFileScope(allowed, channels, groups, ims []string, shares map[string]map[string]json.RawMessage) error {
+	if len(allowed) == 0 {
+		return nil
+	}
+	allow := make(map[string]bool, len(allowed))
+	for _, c := range allowed {
+		allow[c] = true
+	}
+	for _, list := range [][]string{channels, groups, ims} {
+		for _, c := range list {
+			if allow[c] {
+				return nil
+			}
+		}
+	}
+	for _, byChannel := range shares {
+		for c := range byChannel {
+			if allow[c] {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("file is not shared in a channel listed in slack_channels")
 }
