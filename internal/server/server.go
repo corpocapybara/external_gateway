@@ -2412,6 +2412,10 @@ func (s *Server) executeEmailConnector(ws *config.Workspace, op *policy.Operatio
 		if to == "" {
 			return 0, nil, fmt.Errorf("to parameter required")
 		}
+		to, err := email.ParseRecipient(to)
+		if err != nil {
+			return 0, nil, err
+		}
 		if denyResource(to, ws.Policy.EmailDeniedSenders, ws.Policy.EmailAllowedSenders) {
 			return 0, nil, fmt.Errorf("recipient %s denied by policy", to)
 		}

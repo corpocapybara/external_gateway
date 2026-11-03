@@ -4,10 +4,14 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"mime"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
@@ -91,25 +95,49 @@ func (c *Connector) Search(cfg *Config, mailbox, criteria string) ([]map[string]
 
 	var result []map[string]interface{}
 	for msg := range messages {
-		if criteria != "" && msg.Envelope != nil {
-			joined := msg.Envelope.Subject + " " + joinAddresses(msg.Envelope.From) + " " + joinAddresses(msg.Envelope.Sender)
-			if !containsSubstr(joined, criteria) {
-				continue
-			}
-		}
-		entry := map[string]interface{}{
-			"uid":    msg.Uid,
-			"seq":    msg.SeqNum,
-			"date":   msg.Envelope.Date,
-			"subject": msg.Envelope.Subject,
-			"from":   formatAddresses(msg.Envelope.From),
-			"to":     formatAddresses(msg.Envelope.To),
-			"flags":  msg.Flags,
+		entry, ok := searchEntry(msg, criteria)
+		if !ok {
+			continue
 		}
 		result = append(result, entry)
 	}
 
 	return result, nil
+}
+
+// searchEntry builds the result row for one fetched message. It reports false
+// when the message has no envelope or does not match criteria.
+func searchEntry(msg *imap.Message, criteria string) (map[string]interface{}, bool) {
+	if msg == nil || msg.Envelope == nil {
+		return nil, false
+	}
+	if criteria != "" {
+		joined := msg.Envelope.Subject + " " + joinAddresses(msg.Envelope.From) + " " + joinAddresses(msg.Envelope.Sender)
+		if !containsSubstr(joined, criteria) {
+			return nil, false
+		}
+	}
+	return map[string]interface{}{
+		"uid":     msg.Uid,
+		"seq":     msg.SeqNum,
+		"date":    msg.Envelope.Date,
+		"subject": msg.Envelope.Subject,
+		"from":    formatAddresses(msg.Envelope.From),
+		"to":      formatAddresses(msg.Envelope.To),
+		"flags":   msg.Flags,
+	}, true
+}
+
+// maxBodyBytes caps how much of a message body ReadMessage returns.
+const maxBodyBytes = 10 << 20
+
+// readBody reads at most limit bytes from r and reports whether more data followed.
+func readBody(r io.Reader, limit int64) (string, bool, error) {
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if int64(len(data)) > limit {
+		return string(data[:limit]), true, err
+	}
+	return string(data), false, err
 }
 
 func (c *Connector) ReadMessage(cfg *Config, mailbox string, uid uint32) (map[string]interface{}, error) {
@@ -134,7 +162,7 @@ func (c *Connector) ReadMessage(cfg *Config, mailbox string, uid uint32) (map[st
 	}()
 
 	msg := <-messages
-	if msg == nil {
+	if msg == nil || msg.Envelope == nil {
 		return nil, fmt.Errorf("message uid %d not found", uid)
 	}
 
@@ -150,15 +178,58 @@ func (c *Connector) ReadMessage(cfg *Config, mailbox string, uid uint32) (map[st
 	}
 
 	for _, literal := range msg.Body {
-		body, _ := io.ReadAll(literal)
-		result["body"] = string(body)
+		body, truncated, err := readBody(literal, maxBodyBytes)
+		if err != nil {
+			return nil, fmt.Errorf("reading body: %w", err)
+		}
+		result["body"] = body
+		if truncated {
+			result["body_truncated"] = true
+		}
 		break
 	}
 
 	return result, nil
 }
 
+// checkHeaderValue rejects CR, LF and other control characters (tab allowed).
+func checkHeaderValue(name, v string) error {
+	for _, r := range v {
+		if r != '\t' && unicode.IsControl(r) {
+			return fmt.Errorf("invalid %s: control characters not allowed", name)
+		}
+	}
+	return nil
+}
+
+// ParseRecipient validates that to is exactly one bare address (no display
+// name, no list) and returns it.
+func ParseRecipient(to string) (string, error) {
+	if err := checkHeaderValue("recipient", to); err != nil {
+		return "", err
+	}
+	trimmed := strings.TrimSpace(to)
+	addr, err := mail.ParseAddress(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("invalid recipient: %w", err)
+	}
+	if addr.Address != trimmed {
+		return "", fmt.Errorf("invalid recipient: must be a single bare address")
+	}
+	return addr.Address, nil
+}
+
 func (c *Connector) Send(cfg *Config, to, subject, body string) error {
+	to, err := ParseRecipient(to)
+	if err != nil {
+		return err
+	}
+	if err := checkHeaderValue("subject", subject); err != nil {
+		return err
+	}
+	if err := checkHeaderValue("from", cfg.User); err != nil {
+		return err
+	}
 	if cfg.SmtpTLS {
 		return sendTLS(cfg, to, subject, body)
 	}
@@ -200,7 +271,7 @@ func sendTLS(cfg *Config, to, subject, body string) error {
 	addr := fmt.Sprintf("%s:%d", cfg.SmtpHost, cfg.SmtpPort)
 	tlsCfg := &tls.Config{ServerName: cfg.SmtpHost}
 
-	conn, err := tls.Dial("tcp", addr, tlsCfg)
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: dialTimeout}, "tcp", addr, tlsCfg)
 	if err != nil {
 		return fmt.Errorf("tls dial: %w", err)
 	}
@@ -235,21 +306,39 @@ func sendTLS(cfg *Config, to, subject, body string) error {
 
 func buildMessage(from, to, subject, body string) string {
 	now := time.Now().Format(time.RFC1123Z)
-	return fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=\"UTF-8\"\r\n\r\n%s\r\n", from, to, subject, now, body)
+	return fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=\"UTF-8\"\r\n\r\n%s\r\n", from, to, mime.QEncoding.Encode("UTF-8", subject), now, body)
 }
 
+const (
+	dialTimeout    = 10 * time.Second
+	commandTimeout = 30 * time.Second
+)
+
 func dialImap(cfg *Config) (*client.Client, error) {
-	addr := fmt.Sprintf("%s:%d", cfg.ImapHost, cfg.ImapPort)
+	addr := net.JoinHostPort(cfg.ImapHost, strconv.Itoa(cfg.ImapPort))
+	dialer := &net.Dialer{Timeout: dialTimeout}
 	var imapClient *client.Client
 	var err error
 
 	if cfg.ImapTLS {
-		imapClient, err = client.DialTLS(addr, &tls.Config{ServerName: cfg.ImapHost})
+		imapClient, err = client.DialWithDialerTLS(dialer, addr, &tls.Config{ServerName: cfg.ImapHost})
 	} else {
-		imapClient, err = client.Dial(addr)
+		imapClient, err = client.DialWithDialer(dialer, addr)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("dial imap: %w", err)
+	}
+	// Per-command deadline so a stalled server cannot hang the gateway.
+	imapClient.Timeout = commandTimeout
+
+	if !cfg.ImapTLS {
+		// Upgrade with STARTTLS when offered; otherwise keep the existing plaintext behaviour.
+		if ok, _ := imapClient.SupportStartTLS(); ok {
+			if err := imapClient.StartTLS(&tls.Config{ServerName: cfg.ImapHost}); err != nil {
+				imapClient.Terminate()
+				return nil, fmt.Errorf("imap starttls: %w", err)
+			}
+		}
 	}
 
 	if err := imapClient.Login(cfg.User, cfg.Password); err != nil {
