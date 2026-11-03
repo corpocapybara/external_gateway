@@ -66,6 +66,14 @@ func TestTaintVariants(t *testing.T) {
 	}
 }
 
+func TestTaintURLEncoded(t *testing.T) {
+	tr := &TaintRegistry{seen: map[string]bool{}}
+	tr.Taint([]byte("p@ss word!"))
+	if got := string(tr.Redact([]byte("?k=p%40ss+word%21&j=p%40ss%20word%21"))); got != "?k=***&j=***" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestTaintShortAfterTrim(t *testing.T) {
 	tr := &TaintRegistry{seen: map[string]bool{}}
 	tr.Taint([]byte("ab\n\n\n")) // 5 bytes raw, 2 trimmed
