@@ -41,17 +41,36 @@ func TestTaintDedup(t *testing.T) {
 	}
 }
 
-func TestTaintJSONEscapedAndTrimmed(t *testing.T) {
+func TestTaintVariants(t *testing.T) {
+	secret := "pa\"ss<w>&or\\d-é\n" // trailing newline, quote, HTML chars, backslash, non-ASCII
+	cases := map[string]string{
+		"json html-escaped": "{\"a\":\"pa\\\"ss\\u003cw\\u003e\\u0026or\\\\d-é\"}",
+		"json plain":        "{\"a\":\"pa\\\"ss<w>&or\\\\d-é\"}",
+		"json untrimmed":    "{\"a\":\"pa\\\"ss<w>&or\\\\d-é\\n\"}",
+		"raw trimmed":       "x pa\"ss<w>&or\\d-é y",
+	}
+	want := map[string]string{
+		"json html-escaped": `{"a":"***"}`,
+		"json plain":        `{"a":"***"}`,
+		"json untrimmed":    `{"a":"***"}`,
+		"raw trimmed":       "x *** y",
+	}
+	for name, in := range cases {
+		t.Run(name, func(t *testing.T) {
+			tr := &TaintRegistry{seen: map[string]bool{}}
+			tr.Taint([]byte(secret))
+			if got := string(tr.Redact([]byte(in))); got != want[name] {
+				t.Fatalf("got %q want %q", got, want[name])
+			}
+		})
+	}
+}
+
+func TestTaintShortAfterTrim(t *testing.T) {
 	tr := &TaintRegistry{seen: map[string]bool{}}
-	tr.Taint([]byte("pa\"ss<w>&or\\d-é\n"))
-	for _, in := range []string{
-		`{"a":"pa\"ss<w>&or\\d-é"}`, // json.Marshal default (HTML-escaped)
-		`{"a":"pa\"ss<w>&or\\d-é"}`,                // no HTML escaping
-		`{"a":"pa\"ss<w>&or\\d-é\n"}`,              // untrimmed, escaped
-		"raw pa\"ss<w>&or\\d-é here",               // trimmed raw
-	} {
-		if out := string(tr.Redact([]byte(in))); bytes.Contains([]byte(out), []byte("ss")) {
-			t.Errorf("not redacted: %q -> %q", in, out)
-		}
+	tr.Taint([]byte("ab\n\n\n")) // 5 bytes raw, 2 trimmed
+	tr.Taint([]byte("abc"))
+	if got := string(tr.Redact([]byte("ab abc"))); got != "ab abc" {
+		t.Fatalf("short value must not redact unrelated text, got %q", got)
 	}
 }

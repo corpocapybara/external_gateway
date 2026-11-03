@@ -204,6 +204,18 @@ func sanitizeValue(v interface{}) interface{} {
 			out[i] = sanitizeValue(e)
 		}
 		return out
+	case map[string]string:
+		m := make(map[string]interface{}, len(t))
+		for k, e := range t {
+			m[k] = e
+		}
+		return sanitizeMap(m)
+	case []string:
+		out := make([]interface{}, len(t))
+		for i, e := range t {
+			out[i] = secrets.GetTaintRegistry().RedactString(e)
+		}
+		return out
 	case string:
 		return secrets.GetTaintRegistry().RedactString(t)
 	default:
