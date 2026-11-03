@@ -39,6 +39,11 @@ Invoke-RestMethod http://127.0.0.1:8443/healthz
 
 Produces three binaries in the project root. Pass `-v` for verbose logging.
 
+**After editing `deploy\update.ps1` or `deploy\workspaces.ps1`, rebuild `ExternalGateway.exe`.** The desktop
+app's elevated Re-deploy runs the copies of those two scripts embedded in the exe (`deploy/embed.go`), not the
+files on disk, so a script planted in the checkout cannot run as administrator. Running `.\deploy\update.ps1`
+directly in an admin shell still uses the disk copy.
+
 ## Configure
 
 A workspace is a config file + an operations file, named by an opaque token `<x>`:
