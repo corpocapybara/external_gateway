@@ -1029,7 +1029,7 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		Str("url", urlStr).
 		Int("status", resp.StatusCode).
 		Int("body_len", len(resp.Body)).
-		Str("body_preview", string(secrets.GetTaintRegistry().Redact(resp.Body[:min(200, len(resp.Body))]))).
+		Str("body_preview", func() string { r := string(secrets.GetTaintRegistry().Redact(resp.Body)); return r[:min(200, len(r))] }()).
 		Msg("upstream response")
 
 	resp.Body = shapeResponse(resp.StatusCode, resp.Body, op.Response.AllowFields)

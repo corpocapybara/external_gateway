@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 )
@@ -146,6 +147,8 @@ func (t *TaintRegistry) Taint(secret []byte) {
 	t.taintExact(secret)
 	trimmed := bytes.TrimSpace(secret)
 	t.taintExact(trimmed)
+	t.taintExact([]byte(url.QueryEscape(string(trimmed))))
+	t.taintExact([]byte(url.PathEscape(string(trimmed))))
 	for _, v := range [][]byte{secret, trimmed} {
 		t.taintExact(jsonEscaped(v, true))
 		t.taintExact(jsonEscaped(v, false))
