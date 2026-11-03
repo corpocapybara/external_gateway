@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -33,6 +34,13 @@ func newAdminRequest(method, url string, body []byte) (*http.Request, error) {
 		req.Header.Set("Authorization", "Bearer "+*token)
 	}
 	return req, nil
+}
+
+// deleteURL builds the DELETE /secrets URL; the server reads workspace and name
+// from the query string, not from a request body.
+func deleteURL(adminAddr, workspace, name string) string {
+	q := url.Values{"workspace": {workspace}, "name": {name}}
+	return adminAddr + "/secrets?" + q.Encode()
 }
 
 func main() {
@@ -90,11 +98,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		body, _ := json.Marshal(map[string]string{
-			"workspace": *workspace,
-			"name":      *name,
-		})
-		req, err := newAdminRequest(http.MethodDelete, *adminAddr+"/secrets", body)
+		req, err := newAdminRequest(http.MethodDelete, deleteURL(*adminAddr, *workspace, *name), nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to build request: %v\n", err)
 			os.Exit(1)

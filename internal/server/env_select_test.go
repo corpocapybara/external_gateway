@@ -93,12 +93,11 @@ func (f *envFixture) send(t *testing.T, opID, body string, dryRun bool) (int, ma
 			Tunnels:    map[string]config.Tunnel{"thp-vpn": {Type: "globalprotect"}},
 		}
 		f.srv = &Server{
-			reg:        &policy.OperationRegistry{Operations: f.ops, TunnelChecker: f.tunnelsUp},
-			logger:     zerolog.Nop(),
+			logger:    zerolog.Nop(),
 			auditLog:   audit.GetLogger(),
 			httpClient: httprest.NewConnector(),
 		}
-		f.srv.cfgPtr.Store(cfg)
+		f.srv.state.Store(&runtimeState{cfg: cfg, reg: &policy.OperationRegistry{Operations: f.ops, TunnelChecker: f.tunnelsUp}})
 	}
 	r := httptest.NewRequest(http.MethodPost, "/v1/workspaces/thp/op/"+opID, strings.NewReader(body))
 	w := httptest.NewRecorder()
