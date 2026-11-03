@@ -398,7 +398,7 @@ func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, agentID, w
 
 	op, ok := s.reg.Get(opID)
 	if !ok {
-		s.writeDeny(w, r, agentID, workspace, opID, "operation", "operation not found")
+		s.writeUnknownOp(w, agent, agentID, workspace, opID)
 		return
 	}
 
@@ -464,7 +464,7 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 
 	op, ok := s.reg.Get(opID)
 	if !ok {
-		s.writeDeny(w, r, agentID, workspace, opID, "operation", "operation not found")
+		s.writeUnknownOp(w, agent, agentID, workspace, opID)
 		return
 	}
 
@@ -1583,6 +1583,97 @@ func formatParamValue(val interface{}) string {
 func isIntegral(f float64) bool {
 	return f == math.Trunc(f) && !math.IsInf(f, 0) &&
 		f >= math.MinInt64 && f <= math.MaxInt64
+}
+
+// writeUnknownOp answers a request for an operation id the registry does not
+// have: 404, not the 403 of a denial, naming the closest operation this agent
+// may call in the workspace (never one outside its grants). The miss is audited
+// like any other deny.
+func (s *Server) writeUnknownOp(w http.ResponseWriter, agent *config.Agent, agentID, workspace, opID string) {
+	requestID := uuid.New().String()
+	s.auditLog.LogDeny(requestID, agentID, workspace, opID, "operation", "operation not found")
+
+	body := map[string]interface{}{
+		"error":  "not_found",
+		"detail": "operation not found",
+		"op":     opID,
+	}
+	if best := s.closestAllowedOp(agent, workspace, opID); best != "" {
+		body["did_you_mean"] = best
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", requestID)
+	w.WriteHeader(http.StatusNotFound)
+	json.NewEncoder(w).Encode(body)
+}
+
+// closestAllowedOp returns the registered operation the agent is granted in the
+// workspace with the smallest edit distance to opID, or "" when none is within
+// half of the longer id's length. Ties go to the closer length, then the name.
+func (s *Server) closestAllowedOp(agent *config.Agent, workspace, opID string) string {
+	if len(opID) > 128 {
+		return ""
+	}
+	best, bestDist := "", 0
+	for _, grant := range agent.Grants {
+		if grant.Workspace != workspace {
+			continue
+		}
+		role := s.cfg().GetRole(grant.Role)
+		if role == nil {
+			continue
+		}
+		for _, cand := range role.Operations {
+			if _, ok := s.reg.Get(cand); !ok {
+				continue
+			}
+			longer := len(opID)
+			if len(cand) > longer {
+				longer = len(cand)
+			}
+			if absInt(len(cand)-len(opID)) > longer/2 {
+				continue
+			}
+			d := editDistance(opID, cand)
+			if d > longer/2 {
+				continue
+			}
+			if best == "" || d < bestDist ||
+				(d == bestDist && (absInt(len(cand)-len(opID)) < absInt(len(best)-len(opID)) ||
+					(absInt(len(cand)-len(opID)) == absInt(len(best)-len(opID)) && cand < best))) {
+				best, bestDist = cand, d
+			}
+		}
+	}
+	return best
+}
+
+func absInt(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+// editDistance is the Levenshtein distance between a and b.
+func editDistance(a, b string) int {
+	prev := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur := make([]int, len(b)+1)
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev = cur
+	}
+	return prev[len(b)]
 }
 
 func (s *Server) writeDeny(w http.ResponseWriter, r *http.Request, agentID, workspace, opID, rule, detail string) {
