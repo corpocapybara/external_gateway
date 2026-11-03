@@ -78,8 +78,32 @@ func TestDeployRunsEmbeddedScript(t *testing.T) {
 	if !strings.Contains(text, deploy.UpdateScript) || !strings.Contains(text, deploy.WorkspacesScript) {
 		t.Error("command does not contain the embedded scripts verbatim")
 	}
-	if !strings.Contains(text, `-BuildDir 'C:\it''s a build'`) {
-		t.Errorf("build dir not quoted safely: %s", text[len(text)-120:])
+	if !strings.Contains(text, "-BuildDir "+psQuote(a.buildDir)) || strings.Contains(text, "it's a build") {
+		t.Errorf("build dir not passed as opaque data: %s", text[len(text)-200:])
+	}
+}
+
+// Quote-like characters in a directory name must not appear in the script text at all.
+func TestDeployDirsAreOpaque(t *testing.T) {
+	got := stubExec(t)
+	evil := "C:\\x\u2019; calc; \u2018\"`$(calc)"
+	a := &app{buildDir: evil, installDir: evil, elevated: true}
+	if res := doHelper(a, "deploy", "", "", false); !res.OK {
+		t.Fatal(res.Error)
+	}
+	text := decodeEncoded(t, *got)
+	if strings.Contains(text, "calc") {
+		t.Error("directory text leaked into the script")
+	}
+}
+
+func TestDeployCommandSizeBudget(t *testing.T) {
+	args, err := deployArgs(`C:\dev`, `C:\Program Files\external_gateway`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(args[len(args)-1]); n > 24000 {
+		t.Errorf("encoded deploy command is %d chars, near the 30000 limit", n)
 	}
 }
 
