@@ -1061,7 +1061,7 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		Str("url", urlStr).
 		Int("status", resp.StatusCode).
 		Int("body_len", len(resp.Body)).
-		Str("body_preview", string(secrets.GetTaintRegistry().Redact(resp.Body[:min(200, len(resp.Body))]))).
+		Str("body_preview", func() string { r := string(secrets.GetTaintRegistry().Redact(resp.Body)); return r[:min(200, len(r))] }()).
 		Msg("upstream response")
 
 	resp.Body = shapeResponse(resp.StatusCode, resp.Body, op.Response.AllowFields)
@@ -1438,7 +1438,11 @@ func (s *Server) executeLocalServiceConnector(ws *config.Workspace, op *policy.O
 
 func base64Auth(username, password string) string {
 	auth := username + ":" + password
-	return base64.StdEncoding.EncodeToString([]byte(auth))
+	enc := base64.StdEncoding.EncodeToString([]byte(auth))
+	// The encoded user:secret pair is itself a credential (the Basic header value);
+	// taint it so an upstream that echoes the header back is redacted.
+	secrets.GetTaintRegistry().Taint([]byte(enc))
+	return enc
 }
 
 func parseSecretRef(ref string) (workspace, name string) {

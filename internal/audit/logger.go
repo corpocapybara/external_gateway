@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/external_gateway/internal/secrets"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
@@ -137,29 +138,87 @@ func (l *Logger) LogDeny(requestID, agentID, workspace, operation, rule, detail 
 // secrets supplied inline by a caller (e.g. basic-auth `password`). Their values
 // are replaced with a placeholder before the params map is written to the audit
 // log, which is stored in cleartext.
-var sensitiveParamKeys = map[string]bool{
-	"password":      true,
-	"passwd":        true,
-	"secret":        true,
-	"token":         true,
-	"value":         true,
-	"apikey":        true,
-	"api_key":       true,
-	"authorization": true,
-	"cookie":        true,
+//
+// Matching is case-insensitive, by substring, and applies at every nesting depth.
+// No operation in the shipped operations yaml has a param that merely contains
+// one of these words without being a credential (checked: only `password`).
+var sensitiveKeyParts = []string{
+	"password", "passwd", "secret", "token", "apikey", "api_key", "api-key",
+	"private_key", "privatekey", "authorization", "cookie", "credential",
 }
 
+// sensitiveExactKeys are credential names too short or generic for substring matching.
+var sensitiveExactKeys = map[string]bool{"value": true, "pwd": true, "pass": true, "auth": true}
+
+// harmlessKeySuffixes mark counters/metadata (e.g. `token_count`) that merely
+// mention a credential word.
+var harmlessKeySuffixes = []string{"_count", "_type", "_ttl", "_expires_in", "_length", "_len"}
+
+func isSensitiveKey(k string) bool {
+	lk := strings.ToLower(k)
+	for _, suf := range harmlessKeySuffixes {
+		if strings.HasSuffix(lk, suf) {
+			return false
+		}
+	}
+	if sensitiveExactKeys[lk] {
+		return true
+	}
+	for _, part := range sensitiveKeyParts {
+		if strings.Contains(lk, part) {
+			return true
+		}
+	}
+	return false
+}
+
+// sanitizeParams returns a deep copy of params with credential-named values
+// replaced by "***" at any depth, and every remaining string run through the
+// taint registry so a known secret value never reaches the cleartext audit log.
 func sanitizeParams(params map[string]interface{}) map[string]interface{} {
 	if params == nil {
 		return nil
 	}
-	sanitized := make(map[string]interface{})
-	for k, v := range params {
-		if sensitiveParamKeys[strings.ToLower(k)] {
-			sanitized[k] = "***"
+	return sanitizeMap(params)
+}
+
+func sanitizeMap(m map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		if isSensitiveKey(k) {
+			out[k] = "***"
 			continue
 		}
-		sanitized[k] = v
+		out[k] = sanitizeValue(v)
 	}
-	return sanitized
+	return out
+}
+
+func sanitizeValue(v interface{}) interface{} {
+	switch t := v.(type) {
+	case map[string]interface{}:
+		return sanitizeMap(t)
+	case []interface{}:
+		out := make([]interface{}, len(t))
+		for i, e := range t {
+			out[i] = sanitizeValue(e)
+		}
+		return out
+	case map[string]string:
+		m := make(map[string]interface{}, len(t))
+		for k, e := range t {
+			m[k] = e
+		}
+		return sanitizeMap(m)
+	case []string:
+		out := make([]interface{}, len(t))
+		for i, e := range t {
+			out[i] = secrets.GetTaintRegistry().RedactString(e)
+		}
+		return out
+	case string:
+		return secrets.GetTaintRegistry().RedactString(t)
+	default:
+		return v
+	}
 }

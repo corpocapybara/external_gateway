@@ -40,3 +40,45 @@ func TestTaintDedup(t *testing.T) {
 		t.Fatalf("expected 1 stored value after dedup, got %d", len(tr.values))
 	}
 }
+
+func TestTaintVariants(t *testing.T) {
+	secret := "pa\"ss<w>&or\\d-é\n" // trailing newline, quote, HTML chars, backslash, non-ASCII
+	cases := map[string]string{
+		"json html-escaped": "{\"a\":\"pa\\\"ss\\u003cw\\u003e\\u0026or\\\\d-é\"}",
+		"json plain":        "{\"a\":\"pa\\\"ss<w>&or\\\\d-é\"}",
+		"json untrimmed":    "{\"a\":\"pa\\\"ss<w>&or\\\\d-é\\n\"}",
+		"raw trimmed":       "x pa\"ss<w>&or\\d-é y",
+	}
+	want := map[string]string{
+		"json html-escaped": `{"a":"***"}`,
+		"json plain":        `{"a":"***"}`,
+		"json untrimmed":    `{"a":"***"}`,
+		"raw trimmed":       "x *** y",
+	}
+	for name, in := range cases {
+		t.Run(name, func(t *testing.T) {
+			tr := &TaintRegistry{seen: map[string]bool{}}
+			tr.Taint([]byte(secret))
+			if got := string(tr.Redact([]byte(in))); got != want[name] {
+				t.Fatalf("got %q want %q", got, want[name])
+			}
+		})
+	}
+}
+
+func TestTaintURLEncoded(t *testing.T) {
+	tr := &TaintRegistry{seen: map[string]bool{}}
+	tr.Taint([]byte("p@ss word!"))
+	if got := string(tr.Redact([]byte("?k=p%40ss+word%21&j=p%40ss%20word%21"))); got != "?k=***&j=***" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestTaintShortAfterTrim(t *testing.T) {
+	tr := &TaintRegistry{seen: map[string]bool{}}
+	tr.Taint([]byte("ab\n\n\n")) // 5 bytes raw, 2 trimmed
+	tr.Taint([]byte("abc"))
+	if got := string(tr.Redact([]byte("ab abc"))); got != "ab abc" {
+		t.Fatalf("short value must not redact unrelated text, got %q", got)
+	}
+}
