@@ -311,7 +311,7 @@ func buildMessage(from, to, subject, body string) string {
 
 const (
 	dialTimeout    = 10 * time.Second
-	commandTimeout = 30 * time.Second
+	commandTimeout = 60 * time.Second
 )
 
 func dialImap(cfg *Config) (*client.Client, error) {
@@ -333,7 +333,12 @@ func dialImap(cfg *Config) (*client.Client, error) {
 
 	if !cfg.ImapTLS {
 		// Upgrade with STARTTLS when offered; otherwise keep the existing plaintext behaviour.
-		if ok, _ := imapClient.SupportStartTLS(); ok {
+		ok, err := imapClient.SupportStartTLS()
+		if err != nil {
+			imapClient.Terminate()
+			return nil, fmt.Errorf("imap capability: %w", err)
+		}
+		if ok {
 			if err := imapClient.StartTLS(&tls.Config{ServerName: cfg.ImapHost}); err != nil {
 				imapClient.Terminate()
 				return nil, fmt.Errorf("imap starttls: %w", err)
