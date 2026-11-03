@@ -43,7 +43,7 @@ func hasPathInjection(s string, multiSegment bool) bool {
 }
 
 // hasUnsafeEscape reports whether s has a "%" that does not start a two-hex-digit
-// escape, or an escape decoding to "/", "\", ".", "?", "#", or a control character.
+// escape, or an escape decoding to "/", "\", ".", "?", "#", ";", or a control character.
 func hasUnsafeEscape(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] != '%' {
@@ -53,7 +53,7 @@ func hasUnsafeEscape(s string) bool {
 			return true
 		}
 		b := unhex(s[i+1])<<4 | unhex(s[i+2])
-		if b < 0x20 || b == 0x7f || strings.IndexByte("/\\.?#", b) >= 0 {
+		if b < 0x20 || b == 0x7f || strings.IndexByte("/\\.?#;", b) >= 0 {
 			return true
 		}
 		i += 2
