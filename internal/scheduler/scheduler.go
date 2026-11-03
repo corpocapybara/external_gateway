@@ -37,6 +37,31 @@ type Store struct {
 	jobs map[string]*Job
 }
 
+// clone returns a copy that shares no mutable state with the stored job, so
+// callers can read it while the scheduler goroutine updates the original.
+func (j *Job) clone() *Job {
+	c := *j
+	if j.LastRun != nil {
+		t := *j.LastRun
+		c.LastRun = &t
+	}
+	if j.NextRun != nil {
+		t := *j.NextRun
+		c.NextRun = &t
+	}
+	if j.Result != nil {
+		r := *j.Result
+		c.Result = &r
+	}
+	if j.Params != nil {
+		c.Params = make(map[string]interface{}, len(j.Params))
+		for k, v := range j.Params {
+			c.Params[k] = v
+		}
+	}
+	return &c
+}
+
 func NewStore() *Store {
 	return &Store{
 		jobs: make(map[string]*Job),
@@ -44,9 +69,6 @@ func NewStore() *Store {
 }
 
 func (s *Store) Add(job *Job) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if job.ID == "" {
 		job.ID = uuid.New().String()
 	}
@@ -55,7 +77,9 @@ func (s *Store) Add(job *Job) error {
 	}
 	job.Status = "pending"
 
-	s.jobs[job.ID] = job
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.jobs[job.ID] = job.clone()
 	return nil
 }
 
@@ -63,7 +87,10 @@ func (s *Store) Get(id string) (*Job, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	job, ok := s.jobs[id]
-	return job, ok
+	if !ok {
+		return nil, false
+	}
+	return job.clone(), true
 }
 
 func (s *Store) ListByAgent(agentID string) []*Job {
@@ -73,7 +100,7 @@ func (s *Store) ListByAgent(agentID string) []*Job {
 	var result []*Job
 	for _, job := range s.jobs {
 		if job.AgentID == agentID {
-			result = append(result, job)
+			result = append(result, job.clone())
 		}
 	}
 	return result
@@ -86,7 +113,7 @@ func (s *Store) ListByWorkspace(workspace string) []*Job {
 	var result []*Job
 	for _, job := range s.jobs {
 		if job.Workspace == workspace {
-			result = append(result, job)
+			result = append(result, job.clone())
 		}
 	}
 	return result
@@ -99,8 +126,42 @@ func (s *Store) Update(job *Job) error {
 	if _, ok := s.jobs[job.ID]; !ok {
 		return fmt.Errorf("job not found: %s", job.ID)
 	}
-	s.jobs[job.ID] = job
+	s.jobs[job.ID] = job.clone()
 	return nil
+}
+
+// claim moves a pending job to running and returns a private copy to execute.
+// It returns false when the job is no longer pending (cancelled, deleted, taken).
+func (s *Store) claim(id string, now time.Time) (*Job, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job, ok := s.jobs[id]
+	if !ok || job.Status != "pending" {
+		return nil, false
+	}
+	job.Status = "running"
+	job.LastRun = &now
+	return job.clone(), true
+}
+
+// finish records the result of a claimed job. A job cancelled (or deleted) while
+// it ran keeps its status: completion never overwrites "cancelled".
+func (s *Store) finish(id string, result *JobResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job, ok := s.jobs[id]
+	if !ok {
+		return
+	}
+	job.Result = result
+	if job.Status != "running" {
+		return
+	}
+	if result.Success {
+		job.Status = "completed"
+	} else {
+		job.Status = "failed"
+	}
 }
 
 func (s *Store) Delete(id string) error {
@@ -183,24 +244,25 @@ func (s *Scheduler) run(ctx context.Context) {
 
 func (s *Scheduler) processJobs() {
 	s.store.mu.RLock()
-	var pending []*Job
-	for _, job := range s.store.jobs {
+	var pending []string
+	for id, job := range s.store.jobs {
 		if job.Status == "pending" && job.ScheduledAt.Before(time.Now()) {
-			pending = append(pending, job)
+			pending = append(pending, id)
 		}
 	}
 	s.store.mu.RUnlock()
 
-	for _, job := range pending {
-		s.executeJob(job)
+	for _, id := range pending {
+		s.executeJob(id)
 	}
 }
 
-func (s *Scheduler) executeJob(job *Job) {
+func (s *Scheduler) executeJob(id string) {
 	now := time.Now()
-	job.Status = "running"
-	job.LastRun = &now
-	s.store.Update(job)
+	job, ok := s.store.claim(id, now)
+	if !ok {
+		return
+	}
 
 	result := &JobResult{
 		StartedAt: now,
@@ -222,13 +284,7 @@ func (s *Scheduler) executeJob(job *Job) {
 	}
 
 	result.FinishedAt = time.Now()
-	job.Result = result
-	if result.Success {
-		job.Status = "completed"
-	} else {
-		job.Status = "failed"
-	}
-	s.store.Update(job)
+	s.store.finish(id, result)
 }
 
 func (s *Scheduler) executeClockifyWrapup(ctx context.Context, job *Job) error {

@@ -218,7 +218,7 @@ func worklogFixture(t *testing.T) (*fakeJira, *Server, *config.Workspace, func(a
 		Policy: config.WorkspacePolicy{JiraProjects: []string{"THP", "SUP"}},
 	}
 	s := &Server{logger: zerolog.Nop(), httpClient: httprest.NewConnector()}
-	s.cfgPtr.Store(&config.Config{ConfigPath: filepath.Join(t.TempDir(), "config.yaml")})
+	s.state.Store(&runtimeState{cfg: &config.Config{ConfigPath: filepath.Join(t.TempDir(), "config.yaml")}})
 	run := func(action string, params map[string]interface{}) (map[string]interface{}, error) {
 		op := &policy.Operation{ID: "jira.worklog_" + action, Connector: "jira-worklog", Site: "jira", Path: action}
 		status, body, err := s.executeJiraWorklog(ws, op, params, "thp")
