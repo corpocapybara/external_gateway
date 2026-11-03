@@ -222,25 +222,19 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		Example  string            `json:"example"`
 	}
 
-	var ops []OpCapability
-	wsOps := s.getWorkspaceOperations(ws)
+	// Only operations this agent is granted in this workspace are listed;
+	// the workspace's other operations are not disclosed.
+	ops := []OpCapability{}
+	wsOps := s.grantedOperations(agent, workspace, ws)
 
-	for _, grant := range agent.Grants {
-		if grant.Workspace != workspace {
-			continue
-		}
-		role := s.cfg().GetRole(grant.Role)
-		if role == nil {
-			continue
-		}
-		for _, opID := range role.Operations {
-			if op, ok := s.reg.Get(opID); ok && !ws.Sites[op.Site].Disabled {
-				wsOps[opID] = op
-			}
-		}
+	opIDs := make([]string, 0, len(wsOps))
+	for id := range wsOps {
+		opIDs = append(opIDs, id)
 	}
+	sort.Strings(opIDs)
 
-	for id, op := range wsOps {
+	for _, id := range opIDs {
+		op := wsOps[id]
 		params := make(map[string]any)
 		for name, def := range op.Params {
 			params[name] = map[string]any{
@@ -274,7 +268,6 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"workspace":      workspace,
 		"operations":     ops,
-		"policy":         ws.Policy,
 		"config_checksum": s.configChecksum.Load().(string),
 		"features": map[string]string{
 			"postgres_ast_parsing":    "semicolon-multi-statement-detect",
@@ -289,17 +282,35 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) getWorkspaceOperations(ws *config.Workspace) map[string]*policy.Operation {
+// grantedOperations returns the registry operations the agent may run in the
+// workspace (via its role grants there), skipping operations whose site is disabled.
+func (s *Server) grantedOperations(agent *config.Agent, workspace string, ws *config.Workspace) map[string]*policy.Operation {
 	ops := make(map[string]*policy.Operation)
-	for id, op := range s.reg.Operations {
-		if op.Site == "" {
+	for _, grant := range agent.Grants {
+		if grant.Workspace != workspace {
 			continue
 		}
-		if site, ok := ws.Sites[op.Site]; ok && !site.Disabled {
-			ops[id] = op
+		role := s.cfg().GetRole(grant.Role)
+		if role == nil {
+			continue
+		}
+		for _, opID := range role.Operations {
+			if op, ok := s.reg.Get(opID); ok && !ws.Sites[op.Site].Disabled {
+				ops[opID] = op
+			}
 		}
 	}
 	return ops
+}
+
+// agentHasWorkspace reports whether the agent holds any grant in the workspace.
+func agentHasWorkspace(agent *config.Agent, workspace string) bool {
+	for _, grant := range agent.Grants {
+		if grant.Workspace == workspace {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) buildExample(workspace, opID string, params map[string]policy.ParamDef) string {
@@ -1733,7 +1744,7 @@ func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 		"  GET /capabilities?workspace=<name>  operation schemas",
 		"  POST /v1/workspaces/<w>/op/<id>     execute operation",
 		"  POST /v1/workspaces/<w>/op/<id>?dry_run=true  validate only",
-		"  POST /feedback                      report bug / feature / todo",
+		"  POST /feedback                      report bug / feature / todo (needs token)",
 		"",
 		"Auth:",
 		"  Authorization: Bearer <token>",
@@ -1741,45 +1752,50 @@ func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 		"",
 	}
 
-	if wsName != "" {
-		ws := s.cfg().GetWorkspace(wsName)
-		if ws == nil {
-			http.Error(w, "workspace not found", http.StatusNotFound)
+	// Workspace detail (sites, envs, DB keys, tunnels, ops) needs a valid token and
+	// a grant in that workspace. Only the static banner above is public, and only
+	// when no token is sent and no workspace is asked for: it names no workspace.
+	var agent *config.Agent
+	if r.Header.Get("Authorization") != "" || wsName != "" {
+		tokenSHA := s.authenticate(r)
+		if tokenSHA == "" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		out = append(out, s.workspaceHelp(wsName, ws)...)
-	} else if tokenSHA := s.authenticate(r); tokenSHA != "" {
-		agent := s.cfg().GetAgentByTokenSHA(tokenSHA)
-		if agent != nil {
-			seen := make(map[string]bool)
-			for _, g := range agent.Grants {
-				if !seen[g.Workspace] {
-					seen[g.Workspace] = true
-					ws := s.cfg().GetWorkspace(g.Workspace)
-					if ws != nil {
-						out = append(out, s.workspaceHelp(g.Workspace, ws)...)
-					}
+		agent = s.cfg().GetAgentByTokenSHA(tokenSHA)
+		if agent == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
+
+	switch {
+	case agent == nil:
+		out = append(out, "Authenticate to see your workspaces: GET /help with the Authorization header.")
+	case wsName != "":
+		// Unknown and not-granted workspaces answer alike, so names are not probed.
+		ws := s.cfg().GetWorkspace(wsName)
+		if ws == nil || !agentHasWorkspace(agent, wsName) {
+			http.Error(w, "workspace not accessible", http.StatusForbidden)
+			return
+		}
+		out = append(out, s.workspaceHelp(agent, wsName, ws)...)
+	default:
+		seen := make(map[string]bool)
+		for _, g := range agent.Grants {
+			if !seen[g.Workspace] {
+				seen[g.Workspace] = true
+				if ws := s.cfg().GetWorkspace(g.Workspace); ws != nil {
+					out = append(out, s.workspaceHelp(agent, g.Workspace, ws)...)
 				}
 			}
 		}
-	} else {
-		out = append(out, "Feedback: POST /feedback  {\"type\":\"bug|feature|todo\",\"text\":\"...\"}")
-		for name := range s.cfg().Workspaces {
-			out = append(out, "")
-			out = append(out, fmt.Sprintf("Workspace: %s", name))
-			ws := s.cfg().GetWorkspace(name)
-			if ws != nil && ws.Description != "" {
-				out = append(out, fmt.Sprintf("  %s", ws.Description))
-			}
-		}
-		out = append(out, "")
-		out = append(out, "For details, authenticate and hit /help, or use GET /help?workspace=<name>")
 	}
 
 	w.Write([]byte(strings.Join(out, "\r\n")))
 }
 
-func (s *Server) workspaceHelp(name string, ws *config.Workspace) []string {
+func (s *Server) workspaceHelp(agent *config.Agent, name string, ws *config.Workspace) []string {
 	var out []string
 
 	out = append(out, fmt.Sprintf("Workspace: %s", name))
@@ -1834,8 +1850,14 @@ func (s *Server) workspaceHelp(name string, ws *config.Workspace) []string {
 
 	// Operations available for this workspace
 	out = append(out, "Operations:")
-	wsOps := s.getWorkspaceOperations(ws)
-	for id, op := range wsOps {
+	wsOps := s.grantedOperations(agent, name, ws)
+	opIDs := make([]string, 0, len(wsOps))
+	for id := range wsOps {
+		opIDs = append(opIDs, id)
+	}
+	sort.Strings(opIDs)
+	for _, id := range opIDs {
+		op := wsOps[id]
 		required := ""
 		if len(op.Params) > 0 {
 			var req []string
@@ -1964,6 +1986,18 @@ func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Feedback lands in feedback.log and, for todos, in a file LLM agents read
+	// later: only a known agent may write, and its id is recorded with the item.
+	var agent *config.Agent
+	if tokenSHA := s.authenticate(r); tokenSHA != "" {
+		agent = s.cfg().GetAgentByTokenSHA(tokenSHA)
+	}
+	if agent == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	agentID := normalizeTodoText(agent.ID)
+
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxFeedbackBody))
 	var tooBig *http.MaxBytesError
 	if errors.As(err, &tooBig) {
@@ -2001,9 +2035,10 @@ func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	entry := fmt.Sprintf("%s | %s | %s\r\n",
+	entry := fmt.Sprintf("%s | %s | agent=%s | %s\r\n",
 		time.Now().UTC().Format(time.RFC3339),
-		fb.Type,
+		strings.NewReplacer("\r", " ", "\n", " ").Replace(fb.Type),
+		agentID,
 		strings.NewReplacer("\r", " ", "\n", " ").Replace(fb.Text),
 	)
 
@@ -2017,7 +2052,7 @@ func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
 
 	status := "recorded"
 	if todoPath := s.cfg().Feedback.TodoPath; fb.Type == "todo" && todoPath != "" {
-		added, err := appendTodo(todoPath, todoText)
+		added, err := appendTodo(todoPath, todoText, agentID)
 		if err != nil {
 			s.logger.Error().Err(err).Str("path", todoPath).Msg("feedback: todo write failed")
 			msg := "feedback logged, but writing the TODO file failed"

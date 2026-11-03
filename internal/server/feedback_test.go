@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,12 +19,21 @@ import (
 func feedbackServer(t *testing.T, todoPath string) *Server {
 	t.Helper()
 	t.Chdir(t.TempDir())
-	cfg := &config.Config{Feedback: config.FeedbackConfig{TodoPath: todoPath}}
+	cfg := &config.Config{
+		Feedback: config.FeedbackConfig{TodoPath: todoPath},
+		Agents:   []config.Agent{{ID: "tester", TokenSHA: tokenSHA("tok")}},
+	}
 	return New(cfg, nil, "", zerolog.Nop())
+}
+
+func tokenSHA(tok string) string {
+	h := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(h[:])
 }
 
 func postFeedback(s *Server, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, "/feedback", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer tok")
 	w := httptest.NewRecorder()
 	s.handleFeedback(w, req)
 	return w
@@ -44,7 +55,54 @@ func wantResp(t *testing.T, w *httptest.ResponseRecorder, code int, body string)
 	}
 }
 
-func item(text string) string { return "- [ ] " + text + " (" + todayUTC() + ", via /feedback)." }
+func item(text string) string {
+	return "- [ ] " + text + " (" + todayUTC() + ", via /feedback by tester)."
+}
+
+func TestFeedbackAgentIDSanitisedAndEmptyTokenAgentRejected(t *testing.T) {
+	todo := filepath.Join(t.TempDir(), "TODO.md")
+	s := feedbackServer(t, todo)
+	cfg := s.cfg()
+	cfg.Agents = append(cfg.Agents,
+		config.Agent{ID: "ev\nil (x)\n- [ ] pwn", TokenSHA: tokenSHA("evil")},
+		config.Agent{ID: "notoken"}) // empty token_sha256
+	req := httptest.NewRequest(http.MethodPost, "/feedback", strings.NewReader(`{"type":"todo","text":"a"}`))
+	w := httptest.NewRecorder()
+	s.handleFeedback(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("no token: code=%d", w.Code)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/feedback", strings.NewReader(`{"type":"todo","text":"b"}`))
+	req.Header.Set("Authorization", "Bearer evil")
+	if w := httptest.NewRecorder(); func() int { s.handleFeedback(w, req); return w.Code }() != 200 {
+		t.Fatalf("evil agent: %q", w.Body.String())
+	}
+	if got, want := readFile(t, todo), "# TODO\n\n- [ ] b ("+todayUTC()+", via /feedback by ev il _x_ - [ ] pwn).\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestFeedbackRequiresValidToken(t *testing.T) {
+	todo := filepath.Join(t.TempDir(), "TODO.md")
+	s := feedbackServer(t, todo)
+	for name, auth := range map[string]string{"none": "", "wrong": "Bearer nope", "scheme": "Basic tok"} {
+		req := httptest.NewRequest(http.MethodPost, "/feedback", strings.NewReader(`{"type":"todo","text":"injected"}`))
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		w := httptest.NewRecorder()
+		s.handleFeedback(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("%s: code=%d, want 401", name, w.Code)
+		}
+	}
+	if _, err := os.Stat(todo); err == nil {
+		t.Fatal("TODO written without auth")
+	}
+	if _, err := os.Stat("feedback.log"); err == nil {
+		t.Fatal("feedback.log written without auth")
+	}
+}
 
 func TestFeedbackTodoAppendedToTodoFile(t *testing.T) {
 	todo := filepath.Join(t.TempDir(), "TODO.md")
@@ -55,7 +113,7 @@ func TestFeedbackTodoAppendedToTodoFile(t *testing.T) {
 	if got, want := readFile(t, todo), "# TODO\r\n\r\n- [ ] old\r\n"+item("fix the thing")+"\r\n"; got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
-	if !strings.Contains(readFile(t, "feedback.log"), "| todo | ") {
+	if !strings.Contains(readFile(t, "feedback.log"), "| todo | agent=tester | ") {
 		t.Fatal("feedback.log not written")
 	}
 }
@@ -89,7 +147,7 @@ func TestFeedbackTodoDuplicates(t *testing.T) {
 	if readFile(t, todo) != initial {
 		t.Fatal("duplicate modified TODO")
 	}
-	if !strings.Contains(readFile(t, "feedback.log"), "| todo | done one") {
+	if !strings.Contains(readFile(t, "feedback.log"), "| todo | agent=tester | done one") {
 		t.Fatal("feedback.log not written")
 	}
 	// "foo" is not the same item as "foo (bar)".
@@ -121,7 +179,7 @@ func TestFeedbackNonTodoLeavesTodoUntouched(t *testing.T) {
 func TestFeedbackKeyUnsetLeavesBehaviour(t *testing.T) {
 	s := feedbackServer(t, "")
 	wantResp(t, postFeedback(s, `{"type":"todo","text":"x"}`), 200, `{"status":"recorded"}`)
-	if !strings.Contains(readFile(t, "feedback.log"), "| todo | x") {
+	if !strings.Contains(readFile(t, "feedback.log"), "| todo | agent=tester | x") {
 		t.Fatal("feedback.log not written")
 	}
 }
@@ -129,7 +187,7 @@ func TestFeedbackKeyUnsetLeavesBehaviour(t *testing.T) {
 func TestFeedbackLogReplacesCR(t *testing.T) {
 	s := feedbackServer(t, "")
 	postFeedback(s, `{"type":"bug","text":"a\rb\nc"}`)
-	if !strings.HasSuffix(readFile(t, "feedback.log"), "| bug | a b c\r\n") {
+	if !strings.HasSuffix(readFile(t, "feedback.log"), "| bug | agent=tester | a b c\r\n") {
 		t.Fatalf("log %q", readFile(t, "feedback.log"))
 	}
 }
@@ -175,7 +233,7 @@ func TestFeedbackTodoFileOverOneMB500(t *testing.T) {
 	if readFile(t, todo) != big {
 		t.Fatal("oversize file modified")
 	}
-	if !strings.Contains(readFile(t, "feedback.log"), "| todo | x") {
+	if !strings.Contains(readFile(t, "feedback.log"), "| todo | agent=tester | x") {
 		t.Fatal("feedback.log not written")
 	}
 }
@@ -185,7 +243,7 @@ func TestFeedbackTodoMissingParentIs500AndLogKept(t *testing.T) {
 	if w := postFeedback(s, `{"type":"todo","text":"x"}`); w.Code != 500 {
 		t.Fatalf("code=%d", w.Code)
 	}
-	if !strings.Contains(readFile(t, "feedback.log"), "| todo | x") {
+	if !strings.Contains(readFile(t, "feedback.log"), "| todo | agent=tester | x") {
 		t.Fatal("feedback.log not written")
 	}
 }
