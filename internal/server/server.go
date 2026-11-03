@@ -433,7 +433,7 @@ func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, agentID, w
 		return
 	}
 
-	if !s.agentHasOp(agent, workspace, opID) {
+	if !agentHasOp(st.cfg, agent, workspace, opID) {
 		s.writeDeny(w, r, agentID, workspace, opID, "grant", "operation not allowed for this agent")
 		return
 	}
@@ -500,7 +500,7 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 		return
 	}
 
-	if !s.agentHasOp(agent, workspace, opID) {
+	if !agentHasOp(st.cfg, agent, workspace, opID) {
 		s.writeDeny(w, r, agentID, workspace, opID, "grant", "operation not allowed for this agent")
 		return
 	}
@@ -553,7 +553,7 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 		return
 	}
 
-	if err := s.checkTunnelAccess(ws, op, params); err != nil {
+	if err := checkTunnelAccess(st, ws, op, params); err != nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "tunnel", err.Error())
 		return
 	}
@@ -642,12 +642,14 @@ func (s *Server) checkParamScopes(ws *config.Workspace, op *policy.Operation, pa
 	return nil
 }
 
-func (s *Server) agentHasOp(agent *config.Agent, workspace, opID string) bool {
+// agentHasOp checks the grant against cfg, the same snapshot the caller took the
+// agent from, so a reload mid-request cannot mix old grants with new roles.
+func agentHasOp(cfg *config.Config, agent *config.Agent, workspace, opID string) bool {
 	for _, grant := range agent.Grants {
 		if grant.Workspace != workspace {
 			continue
 		}
-		role := s.cfg().GetRole(grant.Role)
+		role := cfg.GetRole(grant.Role)
 		if role == nil {
 			continue
 		}
@@ -711,7 +713,7 @@ func checkEnvSelection(ws *config.Workspace, op *policy.Operation, params map[st
 	return err
 }
 
-func (s *Server) checkTunnelAccess(ws *config.Workspace, op *policy.Operation, params map[string]interface{}) error {
+func checkTunnelAccess(st *runtimeState, ws *config.Workspace, op *policy.Operation, params map[string]interface{}) error {
 	site, ok := ws.Sites[op.Site]
 	if !ok {
 		return nil
@@ -726,12 +728,12 @@ func (s *Server) checkTunnelAccess(ws *config.Workspace, op *policy.Operation, p
 		return nil
 	}
 
-	tunnel := s.cfg().GetTunnel(env.RequiresTunnel)
+	tunnel := st.cfg.GetTunnel(env.RequiresTunnel)
 	if tunnel == nil {
 		return fmt.Errorf("required tunnel %s not configured", env.RequiresTunnel)
 	}
 
-	if err := s.registry().CheckTunnel(env.RequiresTunnel); err != nil {
+	if err := st.reg.CheckTunnel(env.RequiresTunnel); err != nil {
 		return fmt.Errorf("required tunnel %s is down: bring it up manually", env.RequiresTunnel)
 	}
 

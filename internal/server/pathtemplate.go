@@ -110,7 +110,8 @@ func expandPathTemplate(tmpl string, site map[string]string, params map[string]i
 		inQuery := strings.HasSuffix(before, "?path=") || strings.HasSuffix(before, "&path=")
 		bad := fmt.Errorf("parameter %q contains characters not allowed in a path value", key)
 		switch {
-		case inQuery:
+		case inQuery, encode && strings.Contains(before, "?"):
+			// In a query string PathEscape would leave & = + intact, letting a value add parameters.
 			str = url.QueryEscape(str)
 		case encode:
 			if str == "." || str == ".." {

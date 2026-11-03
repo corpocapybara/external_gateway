@@ -52,7 +52,7 @@ func TestExpandPathTemplateMultiSegmentOptIn(t *testing.T) {
 // job/<repo>/job/release%252F9.19; that escape must pass in a multi_segment param.
 func TestExpandPathTemplateMultiSegmentSafeEscapes(t *testing.T) {
 	defs := map[string]policy.ParamDef{"job": {MultiSegment: true}}
-	for _, v := range []string{"job/thp-backend/job/release%252F9.19", "job/x/job/feat%20y", "job/a/job/b%2Dc"} {
+	for _, v := range []string{"job/backend/job/release%252F9.19", "job/x/job/feat%20y", "job/a/job/b%2Dc"} {
 		got, err := expandPathTemplate("/{job}/api/json", nil, map[string]interface{}{"job": v}, defs)
 		if err != nil || got != "/"+v+"/api/json" {
 			t.Errorf("%q: got %q, %v", v, got, err)
@@ -75,6 +75,11 @@ func TestExpandPathTemplateURLEncode(t *testing.T) {
 	got, err = expandPathTemplate("/f?path={p}&x=1", nil, map[string]interface{}{"p": "a/b c"}, nil)
 	if err != nil || got != "/f?path=a%2Fb+c&x=1" {
 		t.Fatalf("query path: got %q, %v", got, err)
+	}
+	// |urlencode in a query string must escape & = + so a value cannot add parameters
+	got, err = expandPathTemplate("/s?jql={q|urlencode}&max=10", nil, map[string]interface{}{"q": "a&max=9999+b=c"}, nil)
+	if err != nil || got != "/s?jql=a%26max%3D9999%2Bb%3Dc&max=10" {
+		t.Fatalf("query urlencode: got %q, %v", got, err)
 	}
 }
 
