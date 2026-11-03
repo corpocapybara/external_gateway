@@ -63,6 +63,8 @@ type slackFileFixture struct {
 	contentType string
 	gotFileAuth bool
 	infoFile    string
+	extraInfo   string   // raw JSON fields appended to the files.info "file" object
+	allowed     []string // ws.Policy.SlackChannels
 }
 
 func (f *slackFileFixture) run(t *testing.T) (map[string]interface{}, error) {
@@ -72,8 +74,8 @@ func (f *slackFileFixture) run(t *testing.T) (map[string]interface{}, error) {
 		switch {
 		case r.URL.Path == "/api/files.info":
 			f.infoFile = r.URL.Query().Get("file")
-			w.Write([]byte(fmt.Sprintf(`{"ok":true,"file":{"id":%q,"name":"untitled","title":"Untitled","mimetype":%q,"filetype":"text","size":%d,"url_private":%q}}`,
-				testFileID, f.mimetype, f.size, f.urlPrivate(upstream.URL))))
+			w.Write([]byte(fmt.Sprintf(`{"ok":true,"file":{"id":%q,"name":"untitled","title":"Untitled","mimetype":%q,"filetype":"text","size":%d,"url_private":%q%s}}`,
+				testFileID, f.mimetype, f.size, f.urlPrivate(upstream.URL), f.extraInfo)))
 		case strings.HasPrefix(r.URL.Path, "/files-pri/"):
 			f.gotFileAuth = true
 			if f.contentType != "" {
@@ -91,7 +93,7 @@ func (f *slackFileFixture) run(t *testing.T) (map[string]interface{}, error) {
 
 	ws := &config.Workspace{Sites: map[string]config.Site{"slack": {Environments: map[string]config.Environment{
 		"prod": {BaseURL: upstream.URL + "/api", Auth: config.AuthConfig{Type: "slack-session"}},
-	}}}}
+	}}}, Policy: config.WorkspacePolicy{SlackChannels: f.allowed}}
 	op := &policy.Operation{ID: "slack.file_content", Connector: "http-rest", Site: "slack", SlackFileContent: true}
 	s := &Server{logger: zerolog.Nop(), httpClient: httprest.NewConnector(), slackFilesBase: upstream.URL}
 	status, body, err := s.executeSlackFileContent(ws, op, map[string]interface{}{"file": testFileID}, "slacktest")
@@ -154,5 +156,37 @@ func TestSlackFileContentAtCapIsAllowed(t *testing.T) {
 	}
 	if got := len(out["content"].(string)); got != slackFileMaxBytes {
 		t.Fatalf("content length = %d", got)
+	}
+}
+
+func TestSlackFileContentChannelScope(t *testing.T) {
+	cases := []struct {
+		name    string
+		extra   string
+		allowed []string
+		ok      bool
+	}{
+		{"no allow-list", "", nil, true},
+		{"in allowed channel", `,"channels":["C0ALLOWED"]`, []string{"C0ALLOWED"}, true},
+		{"allowed via shares", `,"shares":{"public":{"C0ALLOWED":[{"ts":"1"}]}}`, []string{"C0ALLOWED"}, true},
+		{"only other channel", `,"channels":["C0OTHER"],"groups":["G0OTHER"],"ims":["D0OTHER"]`, []string{"C0ALLOWED"}, false},
+		{"shared nowhere", "", []string{"C0ALLOWED"}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := &slackFileFixture{mimetype: "text/plain", size: 2, urlPrivate: goodURL, fileBody: "hi", contentType: "text/plain", extraInfo: c.extra, allowed: c.allowed}
+			_, err := f.run(t)
+			if c.ok && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !c.ok {
+				if err == nil {
+					t.Fatal("expected denial")
+				}
+				if f.gotFileAuth {
+					t.Fatal("file was downloaded despite denial")
+				}
+			}
+		})
 	}
 }

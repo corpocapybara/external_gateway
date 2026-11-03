@@ -302,6 +302,7 @@ operations:
       branch:
         type: string
         default: develop
+        multi_segment: true   # branch names like feature/x contain "/"
       limit:
         type: int
         max: 50
@@ -891,6 +892,7 @@ operations:
       path:
         type: string
         required: true
+        multi_segment: true   # file paths contain "/"
       ref:
         type: string
     response:

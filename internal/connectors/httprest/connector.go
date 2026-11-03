@@ -97,16 +97,16 @@ func (c *Connector) Execute(ctx context.Context, req *connectors.Request) (*conn
 	}
 	defer resp.Body.Close()
 
-	var bodyReader io.Reader = resp.Body
-	if req.MaxBodyBytes > 0 {
-		bodyReader = io.LimitReader(resp.Body, req.MaxBodyBytes+1)
+	limit := req.MaxBodyBytes
+	if limit <= 0 {
+		limit = DefaultMaxBodyBytes
 	}
-	respBody, err := io.ReadAll(bodyReader)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
-	if req.MaxBodyBytes > 0 && int64(len(respBody)) > req.MaxBodyBytes {
-		return nil, fmt.Errorf("response exceeds %d bytes", req.MaxBodyBytes)
+	if int64(len(respBody)) > limit {
+		return nil, fmt.Errorf("response exceeds %d bytes", limit)
 	}
 
 	if req.Credentials != nil {
@@ -128,6 +128,9 @@ func (c *Connector) Execute(ctx context.Context, req *connectors.Request) (*conn
 		Body:       respBody,
 	}, nil
 }
+
+// DefaultMaxBodyBytes caps a response body when the request sets no MaxBodyBytes.
+const DefaultMaxBodyBytes int64 = 20 << 20
 
 func BuildPath(pathTemplate string, params map[string]interface{}) (string, error) {
 	tmpl, err := template.New("path").Parse(pathTemplate)

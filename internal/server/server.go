@@ -610,20 +610,6 @@ func (s *Server) checkParamScopes(ws *config.Workspace, op *policy.Operation, pa
 	return nil
 }
 
-// hasPathInjection reports whether a raw path-parameter value would break out of
-// its path segment or inject a query/fragment when substituted unescaped.
-func hasPathInjection(s string) bool {
-	if strings.Contains(s, "..") || strings.ContainsAny(s, "?#\\") {
-		return true
-	}
-	for _, r := range s {
-		if r < 0x20 || r == 0x7f {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *Server) agentHasOp(agent *config.Agent, workspace, opID string) bool {
 	for _, grant := range agent.Grants {
 		if grant.Workspace != workspace {
@@ -750,37 +736,15 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		return 0, nil, fmt.Errorf("base_url for environment %q is not configured (empty or placeholder); update config.<ws>.yaml and deploy", envName)
 	}
 
-	path := op.Path
-	path = strings.Replace(path, "{site.workspace_id}", env.WorkspaceID, -1)
-	path = strings.Replace(path, "{site.user_id}", env.UserID, -1)
-	path = strings.Replace(path, "{site.workspace}", env.Workspace, -1)
-	path = strings.Replace(path, "{site.org}", env.Org, -1)
-	path = strings.Replace(path, "{site.group}", env.Group, -1)
-	for key, val := range params {
-		strVal := fmt.Sprintf("%v", val)
-		if strings.HasSuffix(key, "|urlencode") {
-			strVal = url.PathEscape(strVal)
-			key = strings.TrimSuffix(key, "|urlencode")
-		}
-
-		encKey := key + "|urlencode"
-		if strings.Contains(op.Path, "{"+encKey+"}") {
-			encodedVal := url.PathEscape(fmt.Sprintf("%v", val))
-			if strings.Contains(op.Path, "?path={"+encKey+"}") || strings.Contains(op.Path, "&path={"+encKey+"}") {
-				encodedVal = url.QueryEscape(fmt.Sprintf("%v", val))
-			}
-			path = strings.Replace(path, "{"+encKey+"}", encodedVal, -1)
-		}
-
-		if strings.Contains(op.Path, "?path={"+key+"}") || strings.Contains(op.Path, "&path={"+key+"}") {
-			strVal = url.QueryEscape(strVal)
-		} else if strings.Contains(op.Path, "{"+key+"}") && hasPathInjection(strVal) {
-			// Raw path substitution: reject values that would traverse out of the
-			// path segment (../) or inject a query/fragment (?, #). Values routed
-			// through {key|urlencode} or ?path={key} are already escaped above.
-			return 0, nil, fmt.Errorf("parameter %q contains characters not allowed in a path value", key)
-		}
-		path = strings.Replace(path, "{"+key+"}", strVal, -1)
+	path, err := expandPathTemplate(op.Path, map[string]string{
+		"site.workspace_id": env.WorkspaceID,
+		"site.user_id":      env.UserID,
+		"site.workspace":    env.Workspace,
+		"site.org":          env.Org,
+		"site.group":        env.Group,
+	}, params, op.Params)
+	if err != nil {
+		return 0, nil, err
 	}
 
 	// Slack write methods ignore query-string arguments on a JSON POST

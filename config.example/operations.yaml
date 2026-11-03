@@ -575,6 +575,7 @@ operations:
       path:
         type: string
         required: true
+        multi_segment: true   # file paths contain "/"
       ref:
         type: string
     response:

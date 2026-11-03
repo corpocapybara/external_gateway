@@ -39,6 +39,8 @@ operations:
 
 `{param_name}` — replaced with the param's string value (from request body params).
 
+Raw `{param_name}` values are rejected if they contain `/`, `%`, `..`, `?`, `#`, `\` or control chars (path injection). A param whose real values contain `/` (Jenkins `job`, GitHub file `path`, Bitbucket `branch`) must set `multi_segment: true` in its param def; `%`, `..` etc. are still rejected. Otherwise use `|urlencode`. Placeholders are expanded in a single pass, so a value containing `{other}` stays literal.
+
 ### URL encoding
 
 `{param_name|urlencode}` — replaced with URL-path-encoded value. Essential for GitLab project IDs containing `/`.
