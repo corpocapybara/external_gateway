@@ -13,10 +13,15 @@ var pathPlaceholder = regexp.MustCompile(`\{([^{}]+)\}`)
 
 // hasPathInjection reports whether a raw path-parameter value would break out of
 // its path segment or inject a query/fragment when substituted unescaped.
-// "/" is only allowed when the param opts in (multiSegment); "%" is never allowed
-// raw, so no value can smuggle %2e%2e / %2F past the checks.
+// "/" is only allowed when the param opts in (multiSegment). "%" is refused in a
+// single-segment value; a multi-segment value may carry %XX escapes (Jenkins
+// branch jobs need release%252F9.19) except ones that decode to a path or query
+// separator, a dot, or a control character, so %2e%2e / %2F stay refused.
 func hasPathInjection(s string, multiSegment bool) bool {
-	if strings.Contains(s, "..") || strings.ContainsAny(s, "?#\\%") {
+	if strings.Contains(s, "..") || strings.ContainsAny(s, "?#\\") {
+		return true
+	}
+	if strings.Contains(s, "%") && (!multiSegment || hasUnsafeEscape(s)) {
 		return true
 	}
 	if !multiSegment && strings.Contains(s, "/") {
@@ -35,6 +40,40 @@ func hasPathInjection(s string, multiSegment bool) bool {
 		}
 	}
 	return false
+}
+
+// hasUnsafeEscape reports whether s has a "%" that does not start a two-hex-digit
+// escape, or an escape decoding to "/", "\", ".", "?", "#", or a control character.
+func hasUnsafeEscape(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] != '%' {
+			continue
+		}
+		if i+2 >= len(s) || !isHex(s[i+1]) || !isHex(s[i+2]) {
+			return true
+		}
+		b := unhex(s[i+1])<<4 | unhex(s[i+2])
+		if b < 0x20 || b == 0x7f || strings.IndexByte("/\\.?#", b) >= 0 {
+			return true
+		}
+		i += 2
+	}
+	return false
+}
+
+func isHex(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
+}
+
+func unhex(c byte) byte {
+	switch {
+	case c <= '9':
+		return c - '0'
+	case c <= 'F':
+		return c - 'A' + 10
+	default:
+		return c - 'a' + 10
+	}
 }
 
 // expandPathTemplate substitutes every {placeholder} of an op path in ONE pass
