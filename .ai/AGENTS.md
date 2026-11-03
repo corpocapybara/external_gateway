@@ -64,7 +64,7 @@ See `docs/SLACK.md` for full details.
 
 ## Capabilities endpoint
 
-`GET /capabilities?workspace=<ws>` returns config checksum and feature status map.
+`GET /capabilities?workspace=<ws>` (Bearer token, grant in `<ws>`) returns the operations the agent is granted there, config checksum and feature status map; no workspace policy. `GET /help?workspace=<ws>` and `POST /feedback` also need a Bearer token (help: grant in `<ws>`, else 403); only the bare `/help` banner and `/healthz` are public.
 
 ## Key files
 

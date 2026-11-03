@@ -249,15 +249,16 @@ All endpoints that return JSON. Operations require `Authorization: Bearer <token
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/healthz` | GET | Service alive check |
-| `/help` | GET | Plain-text summary of workspaces/operations |
-| `/feedback` | POST | Submit feedback (stored to `feedback.log`; `"type":"todo"` also appends to `feedback.todo_path` when set) |
+| `/help` | GET | Static endpoint list only (names no workspace); with a token it adds the agent's granted workspaces |
 
 ### Agent (needs bearer token)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/whoami` | GET | Current agent identity, roles, grants |
-| `/capabilities?workspace=<ws>` | GET | Operation schemas, params, example calls, config checksum, feature status |
+| `/help?workspace=<ws>` | GET | Plain-text services, envs, DB keys, tunnels and operations of a granted workspace (403 otherwise, also for unknown workspaces) |
+| `/feedback` | POST | Submit feedback (stored to `feedback.log` with the agent id; `"type":"todo"` also appends `- [ ] <text> (date, via /feedback by <agent>).` to `feedback.todo_path` when set) |
+| `/capabilities?workspace=<ws>` | GET | Schemas, params and example calls of the operations the agent is granted in `<ws>` only, config checksum, feature status |
 | `/v1/workspaces/<ws>/op/<op-id>` | POST, GET | Execute an operation |
 | `?dry_run=true` | — | Validate params + grants, skip upstream call |
 
