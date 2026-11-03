@@ -41,7 +41,7 @@ func TestExpandPathTemplateMultiSegmentOptIn(t *testing.T) {
 		t.Fatalf("got %q, %v", got, err)
 	}
 	for _, v := range []string{"src/../x", "src/%2e%2e/x", "a%2Fb", "a?x", "a/./b", "a//b", "/a", "a/", "./a",
-		"a%2fb", "a%5Cb", "a%2Eb", "a%3Fb", "a%23b", "a%00b", "a%0Ab", "a%7Fb", "a%", "a%2", "a%zzb"} {
+		"a%2fb", "a%5Cb", "a%2Eb", "a%3Fb", "a%23b", "a%00b", "a%0Ab", "a%7Fb", "a%3Bb", "a;b", "a%", "a%2", "a%zzb"} {
 		if _, err := expandPathTemplate("/contents/{path}", nil, map[string]interface{}{"path": v}, defs); err == nil {
 			t.Errorf("multi_segment value %q should still be rejected", v)
 		}
