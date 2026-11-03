@@ -17,7 +17,6 @@ func main() {
 		return
 	}
 	fmt.Printf("Secret length: %d bytes\n", len(secret))
-	fmt.Printf("First 5 chars: %s\n", secret[:min(5, len(secret))])
 
 	body := `{"jql":"project = MD","maxResults":5,"fields":["summary","status"]}`
 

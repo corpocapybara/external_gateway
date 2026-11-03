@@ -1398,7 +1398,11 @@ func (s *Server) executeLocalServiceConnector(ws *config.Workspace, op *policy.O
 
 func base64Auth(username, password string) string {
 	auth := username + ":" + password
-	return base64.StdEncoding.EncodeToString([]byte(auth))
+	enc := base64.StdEncoding.EncodeToString([]byte(auth))
+	// The encoded user:secret pair is itself a credential (the Basic header value);
+	// taint it so an upstream that echoes the header back is redacted.
+	secrets.GetTaintRegistry().Taint([]byte(enc))
+	return enc
 }
 
 func parseSecretRef(ref string) (workspace, name string) {

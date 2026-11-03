@@ -13,6 +13,6 @@ func main() {
 			fmt.Printf("globex/%s: ERROR - %v\n", name, err)
 			continue
 		}
-		fmt.Printf("globex/%s: %d bytes, first 10: %s\n", name, len(secret), string(secret[:min(10, len(secret))]))
+		fmt.Printf("globex/%s: %d bytes\n", name, len(secret))
 	}
 }
