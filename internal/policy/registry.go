@@ -54,6 +54,10 @@ type ParamDef struct {
 	Pattern  string `yaml:"pattern"`
 	Keys     []string `yaml:"keys"`
 	Default  interface{}
+	// MultiSegment lets a raw {param} path value contain "/" (e.g. a GitHub file
+	// path or a branch name like feature/x). Off by default: "/" and "%" are
+	// rejected in raw path values so they cannot add or encode path segments.
+	MultiSegment bool `yaml:"multi_segment"`
 }
 
 type Constraint interface {

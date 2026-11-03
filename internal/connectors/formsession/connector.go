@@ -87,9 +87,16 @@ func (c *Connector) Execute(ctx context.Context, req *connectors.Request) (*conn
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	limit := req.MaxBodyBytes
+	if limit <= 0 {
+		limit = DefaultMaxBodyBytes
+	}
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
+	}
+	if int64(len(respBody)) > limit {
+		return nil, fmt.Errorf("response exceeds %d bytes", limit)
 	}
 
 	headers := make(map[string]string)
@@ -105,6 +112,9 @@ func (c *Connector) Execute(ctx context.Context, req *connectors.Request) (*conn
 		Body:       respBody,
 	}, nil
 }
+
+// DefaultMaxBodyBytes caps a response body when the request sets no MaxBodyBytes.
+const DefaultMaxBodyBytes int64 = 20 << 20
 
 func UnmarshalJSON[T any](data []byte) (T, error) {
 	var result T
