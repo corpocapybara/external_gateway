@@ -78,7 +78,8 @@ Read-only SQL execution with safety guards:
 - Multiple statements rejected (any internal or trailing `;`)
 - Only `SELECT` and `WITH` (CTE) statements are allowed
 - Wraps execution in `BEGIN TRANSACTION READ ONLY` with a 5s `statement_timeout`, caps results at 1000 rows
-- Connects using `lib/pq` driver with `sslmode=disable` (traffic runs over a WireGuard tunnel, not TLS)
+- Connects using `lib/pq` driver; `sslmode` comes from the environment's `sslmode:` field (`disable|allow|prefer|require|verify-ca|verify-full`), default `prefer` (TLS if the server offers it, else plaintext). Set `sslmode: disable` to force the old behaviour.
+- `pg_allowed_tables` (workspace policy): the SELECT is walked generically (every node, scalar subqueries included) with CTE names scoped to their defining SELECT; any table outside the list is refused, as are SQL-executing / server-touching functions (`query_to_xml*`, `table_to_xml*`, `dblink*`, `pg_read_*`, `pg_ls_*`, `lo_*`, `pg_sleep*`, `set_config`, ...). `postgres.tables` lists only allowed tables and `postgres.schema` refuses others. See `internal/connectors/postgres/walk.go`.
 - Values interpolated into `information_schema` lookups (`postgres.tables`/`postgres.schema`) are escaped via `postgres.QuoteLiteral` — the read-only regex guard alone does **not** stop injection inside a single `SELECT`
 
 ### How to add a new PG environment
@@ -94,6 +95,7 @@ Read-only SQL execution with safety guards:
          schema: public
      secret_ref: secret://ws/pg-newenv
      requires_tunnel: tunnel-name  # optional
+     sslmode: prefer               # optional; disable|allow|prefer|require|verify-ca|verify-full
    ```
 2. Optionally add tables to `pg_allowed_tables` policy
 

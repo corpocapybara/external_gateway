@@ -83,6 +83,7 @@ type Environment struct {
 	CookieSecretRef string               `yaml:"cookie_secret_ref"` // second secret (Slack xoxd / Trello token)
 	OAuth          *OAuthRefreshConfig   `yaml:"oauth"`
 	InsecureSkipVerify bool              `yaml:"insecure_skip_verify"`
+	SSLMode      string                  `yaml:"sslmode"` // postgres: disable|allow|prefer|require|verify-ca|verify-full (default prefer)
 }
 
 type Database struct {

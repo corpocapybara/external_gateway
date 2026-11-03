@@ -36,6 +36,19 @@ func (c *Connector) SetAllowedTables(tables []string) {
 	c.allowedTables = tables
 }
 
+// TableAllowed reports whether schema.name may be read under the given
+// pg_allowed_tables list (always true when the list is empty). An empty schema
+// means "public".
+func TableAllowed(allowed []string, schema, name string) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	if schema == "" {
+		schema = "public"
+	}
+	return tableAllowed(tableRef{schema: strings.ToLower(schema), name: strings.ToLower(name)}, allowed)
+}
+
 type ColumnDef struct {
 	Name string
 	Type string
@@ -51,7 +64,12 @@ func (c *Connector) Name() string {
 	return "postgres"
 }
 
-func (c *Connector) Connect(host string, port int, user, password, dbname, schema string) error {
+// Connect opens the connection. sslmode is a libpq sslmode value; empty means
+// "prefer" (TLS when the server offers it, plaintext otherwise).
+func (c *Connector) Connect(host string, port int, user, password, dbname, schema, sslmode string) error {
+	if sslmode == "" {
+		sslmode = "prefer"
+	}
 	u := &url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(user, password),
@@ -59,7 +77,7 @@ func (c *Connector) Connect(host string, port int, user, password, dbname, schem
 		Path:   dbname,
 	}
 	q := u.Query()
-	q.Set("sslmode", "disable")
+	q.Set("sslmode", sslmode)
 	q.Set("connect_timeout", "10")
 	if schema != "" {
 		q.Set("search_path", schema)
@@ -224,20 +242,21 @@ type tableRef struct {
 	name   string
 }
 
-// checkTableScope enforces pg_allowed_tables. It is a best-effort read-scope: it
-// walks the FROM / JOIN / subquery / CTE structure of the SELECT and rejects any
-// table not covered by the allow-list. Table references buried in scalar
-// expression subqueries may not be reached, so this is a guard rail, not a
-// complete sandbox — the read-only transaction remains the hard write barrier.
+// checkTableScope enforces pg_allowed_tables. It walks every node of the parsed
+// statement (generic descent, so scalar subqueries, function arguments, CASE,
+// casts etc. are covered), rejects any table not covered by the allow-list and
+// rejects functions that execute SQL text or reach the server (deniedFuncPrefixes).
+// The read-only transaction remains the hard write barrier.
 func (c *Connector) checkTableScope(query string) error {
 	stmts, err := pgparserparser.Parse(strings.TrimSpace(query))
 	if err != nil {
 		return fmt.Errorf("sql parse error: %w", err)
 	}
-	cte := map[string]bool{}
 	var refs []tableRef
 	for _, item := range stmts.Items {
-		walkTables(item, cte, &refs)
+		if err := walkTables(item, map[string]bool{}, &refs); err != nil {
+			return err
+		}
 	}
 	for _, ref := range refs {
 		if !tableAllowed(ref, c.allowedTables) {
@@ -280,69 +299,3 @@ func tableAllowed(ref tableRef, allowed []string) bool {
 	return false
 }
 
-func walkTables(n pgparsernodes.Node, cte map[string]bool, out *[]tableRef) {
-	switch v := n.(type) {
-	case nil:
-		return
-	case *pgparsernodes.List:
-		if v == nil {
-			return
-		}
-		for _, it := range v.Items {
-			walkTables(it, cte, out)
-		}
-	case *pgparsernodes.ExplainStmt:
-		if v == nil {
-			return
-		}
-		walkTables(v.Query, cte, out)
-	case *pgparsernodes.SelectStmt:
-		if v == nil {
-			return
-		}
-		if v.WithClause != nil && v.WithClause.Ctes != nil {
-			for _, it := range v.WithClause.Ctes.Items {
-				if c, ok := it.(*pgparsernodes.CommonTableExpr); ok {
-					cte[strings.ToLower(c.Ctename)] = true
-					walkTables(c.Ctequery, cte, out)
-				}
-			}
-		}
-		walkTables(v.FromClause, cte, out)
-		walkTables(v.WhereClause, cte, out)
-		walkTables(v.TargetList, cte, out)
-		walkTables(v.HavingClause, cte, out)
-		walkTables(v.Larg, cte, out)
-		walkTables(v.Rarg, cte, out)
-	case *pgparsernodes.JoinExpr:
-		if v == nil {
-			return
-		}
-		walkTables(v.Larg, cte, out)
-		walkTables(v.Rarg, cte, out)
-		walkTables(v.Quals, cte, out)
-	case *pgparsernodes.RangeSubselect:
-		if v == nil {
-			return
-		}
-		walkTables(v.Subquery, cte, out)
-	case *pgparsernodes.SubLink:
-		if v == nil {
-			return
-		}
-		walkTables(v.Subselect, cte, out)
-		walkTables(v.Testexpr, cte, out)
-	case *pgparsernodes.RangeVar:
-		if v == nil {
-			return
-		}
-		name := strings.ToLower(v.Relname)
-		if v.Schemaname == "" && cte[name] {
-			return // reference to a CTE, not a real table
-		}
-		*out = append(*out, tableRef{schema: strings.ToLower(v.Schemaname), name: name})
-	default:
-		// Best-effort: references nested in scalar expressions we do not descend
-		// into are not reached. Documented as a guard rail, not a sandbox.
-	}
-}

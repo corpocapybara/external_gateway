@@ -1290,7 +1290,7 @@ func (s *Server) executePostgresConnector(ws *config.Workspace, op *policy.Opera
 	// concurrent requests, letting one tenant's query run on another tenant's
 	// connection.
 	pgConn := postgres.NewConnector()
-	if err := pgConn.Connect(host, port, env.User, string(secret), db.DB, db.Schema); err != nil {
+	if err := pgConn.Connect(host, port, env.User, string(secret), db.DB, db.Schema, env.SSLMode); err != nil {
 		return 0, nil, fmt.Errorf("connecting to postgres: %w", err)
 	}
 	defer pgConn.Close()
@@ -1314,12 +1314,28 @@ func (s *Server) executePostgresConnector(ws *config.Workspace, op *policy.Opera
 		pgConn.SetAllowedTables(ws.Policy.PgAllowedTables)
 		result, err = pgConn.ExecuteQuery(context.Background(), sqlQuery)
 	case "tables":
+		// The internal catalog query is not agent SQL, so it runs unscoped; its
+		// result is filtered to the allow-list instead.
 		result, err = pgConn.ExecuteQuery(context.Background(),
 			"SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = "+postgres.QuoteLiteral(db.Schema)+" ORDER BY table_name")
+		if err == nil {
+			kept := result.Rows[:0]
+			for _, row := range result.Rows {
+				name, _ := row["table_name"].(string)
+				if postgres.TableAllowed(ws.Policy.PgAllowedTables, db.Schema, name) {
+					kept = append(kept, row)
+				}
+			}
+			result.Rows = kept
+			result.Count = len(kept)
+		}
 	case "schema":
 		tableName, _ := params["table"].(string)
 		if tableName == "" {
 			return 0, nil, fmt.Errorf("table parameter required")
+		}
+		if !postgres.TableAllowed(ws.Policy.PgAllowedTables, db.Schema, tableName) {
+			return 0, nil, fmt.Errorf("table %q is not permitted by pg_allowed_tables", tableName)
 		}
 		result, err = pgConn.ExecuteQuery(context.Background(),
 			"SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema = "+postgres.QuoteLiteral(db.Schema)+" AND table_name = "+postgres.QuoteLiteral(tableName)+" ORDER BY ordinal_position")
