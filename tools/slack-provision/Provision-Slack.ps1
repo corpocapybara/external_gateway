@@ -260,12 +260,7 @@ if ($Diagnose) {
 if ($Deploy) {
   Assert-Admin
   Info "== build + deploy (restarts services) =="
-  Push-Location $Repo
-  try {
-    & $GoExe build -o egw.exe ./cmd/egw
-    if ($LASTEXITCODE -ne 0) { throw "go build egw failed" }
-  } finally { Pop-Location }
-  & (Join-Path $Repo 'deploy\update.ps1')
+  & (Join-Path $Repo 'deploy\update.ps1') -GoExe $GoExe   # rebuilds egw.exe
 }
 
 # ---- wait for the gateway ----

@@ -202,7 +202,7 @@ Default port is 8443. Default `--svc-name` is `external_gateway`.
 ### Deploy script
 
 ```powershell
-# Copies binaries + configs + ops to C:\Program Files\external_gateway\{acme,globex}\
+# Rebuilds egw.exe, copies it + configs + ops to C:\Program Files\external_gateway\{acme,globex}\
 # and restarts both services. Run as Administrator.
 .\deploy\update.ps1
 ```
