@@ -370,7 +370,7 @@ func checkPostgres(env config.Environment, password string) Result {
 		db = env.Databases[names[0]].DB
 	}
 	c := postgres.NewConnector()
-	if err := c.Connect(host, port, env.User, password, db, ""); err != nil {
+	if err := c.Connect(host, port, env.User, password, db, "", env.SSLMode); err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "password authentication failed") || strings.Contains(msg, "SASL authentication failed") || strings.Contains(msg, "28P01") || strings.Contains(msg, "28000") {
 			return Result{State: StateRejected, Detail: msg}
