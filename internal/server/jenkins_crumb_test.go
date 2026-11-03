@@ -53,7 +53,8 @@ func TestJenkinsPostSendsCrumbWithItsSessionCookie(t *testing.T) {
 	ws := &config.Workspace{Sites: map[string]config.Site{"jenkins": {Environments: map[string]config.Environment{
 		"dev": {BaseURL: jenkins.URL, Auth: config.AuthConfig{Type: "basic"}, User: "bot", SecretRef: "secret://crumbtest/jenkins"},
 	}}}}
-	op := &policy.Operation{ID: "jenkins.build_with_params", Connector: "http-rest", Site: "jenkins", Method: "POST", Path: "/{job}/buildWithParameters"}
+	op := &policy.Operation{ID: "jenkins.build_with_params", Connector: "http-rest", Site: "jenkins", Method: "POST", Path: "/{job}/buildWithParameters",
+		Params: map[string]policy.ParamDef{"job": {Type: "string", MultiSegment: true}}}
 	s := &Server{logger: zerolog.Nop(), httpClient: httprest.NewConnector()}
 
 	status, body, err := s.executeHttpConnector(ws, op, map[string]interface{}{"env": "dev", "job": "job/MR-1", "PUBLISH": "false"}, "crumbtest")
