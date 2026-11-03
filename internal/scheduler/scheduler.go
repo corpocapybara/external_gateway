@@ -186,6 +186,9 @@ func (s *Store) Cancel(id, agentID string) error {
 	if job.AgentID != agentID {
 		return fmt.Errorf("unauthorized")
 	}
+	if job.Status == "completed" || job.Status == "failed" {
+		return fmt.Errorf("job already %s", job.Status)
+	}
 	job.Status = "cancelled"
 	return nil
 }
