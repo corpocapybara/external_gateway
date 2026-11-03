@@ -23,6 +23,18 @@ Manager** at runtime, and the agent never sees them.
 - **PostgreSQL is read-only.** Multi-statement detection and regex-based DDL/DML
   guards prevent write operations. Full AST parsing is not yet implemented.
 
+## Accepted risks
+
+- **Re-deploy trusts the checkout** (owner decision, 2026-11-03). egw-desktop's
+  elevated Re-deploy runs `deploy\update.ps1` from the checkout with `-File` and
+  copies `egw.exe` and the `config.*.yaml` / `operations.*.yaml` files into
+  Program Files, where `egw.exe` runs as `LocalSystem`. Anything that can write
+  the checkout therefore gets SYSTEM at the next deploy. Embedding the script in
+  egw-desktop was tried and reverted: it closed only the script path while the
+  binary and configs stayed open, and it added a rebuild after every script
+  edit. Don't propose that fix alone; a real fix builds or signs `egw.exe` in
+  an admin-only location, and that is the owner's call.
+
 ## What is committed
 
 This repository ships **templates and placeholders only**. No real credentials,
