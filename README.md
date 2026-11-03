@@ -250,7 +250,7 @@ All endpoints that return JSON. Operations require `Authorization: Bearer <token
 |----------|--------|-------------|
 | `/healthz` | GET | Service alive check |
 | `/help` | GET | Plain-text summary of workspaces/operations |
-| `/feedback` | POST | Submit feedback (stored to `feedback.log`) |
+| `/feedback` | POST | Submit feedback (stored to `feedback.log`; `"type":"todo"` also appends to `feedback.todo_path` when set) |
 
 ### Agent (needs bearer token)
 
