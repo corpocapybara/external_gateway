@@ -61,6 +61,9 @@ Auth types the server injects before calling this connector (`env.auth.type`): `
 
 **Important**: Credentials are typically passed via `Headers["Authorization"]` set by the server (not via `req.Credentials`). The server resolves secrets and injects the `Authorization` header before calling the connector.
 
+Response bodies are capped at 20 MB (`httprest.DefaultMaxBodyBytes`, also used by `formsession`) unless the request
+sets `MaxBodyBytes`; a larger body fails with "response exceeds N bytes". Redirects are not followed.
+
 ### Response shaping (wired)
 
 If an operation defines `response.allow_fields`, the server applies `ResponseShaper` after receiving the upstream response. The JSON body is unmarshalled, filtered to only the allowed fields (dot-notation supported), and re-marshalled. Non-JSON responses pass through unchanged. See `internal/redact/hook.go`.
@@ -73,10 +76,9 @@ All secret resolution calls in the HTTP connector path use `ResolveWithWorkspace
 
 Read-only SQL execution with safety guards:
 
-- `\b(?:INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE|COPY|VACUUM|REINDEX)\b` — blocks DDL/DML
-- `FOR UPDATE` — blocked
-- Multiple statements rejected (any internal or trailing `;`)
-- Only `SELECT` and `WITH` (CTE) statements are allowed
+- The query is parsed to a Postgres AST (`validateQueryAST`): every statement must be a `SELECT` (incl. `WITH`, or
+  `EXPLAIN` of one); anything else (DDL/DML, `COPY`, `SET`, ...) is refused
+- `SELECT ... FOR UPDATE/SHARE` — refused
 - Wraps execution in `BEGIN TRANSACTION READ ONLY` with a 5s `statement_timeout`, caps results at 1000 rows
 - Connects using `lib/pq` driver; `sslmode` comes from the environment's `sslmode:` field (`disable|allow|prefer|require|verify-ca|verify-full`), default `prefer` (TLS if the server offers it, else plaintext). Set `sslmode: disable` to force the old behaviour.
 - `pg_allowed_tables` (workspace policy): the SELECT is walked generically (every node, scalar subqueries included) with CTE names scoped to their defining SELECT; any table outside the list is refused, as are SQL-executing / server-touching functions (`query_to_xml*`, `table_to_xml*`, `dblink*`, `pg_read_*`, `pg_ls_*`, `lo_*`, `pg_sleep*`, `set_config`, ...). `postgres.tables` lists only allowed tables and `postgres.schema` refuses others. See `internal/connectors/postgres/walk.go`.
@@ -120,6 +122,11 @@ Speaks JSON-RPC 2.0 over MCP Streamable HTTP to an upstream MCP server (e.g. Atl
 ## Email Connector (`email`)
 
 IMAP read + SMTP send, implemented in `internal/connectors/email/` and dispatched via `executeEmailConnector`. Defaults to IMAP `:993` (TLS) and SMTP `:587` (TLS). Works with Gmail app passwords. Sender/mailbox access is gated by the workspace `email_allowed_senders/mailboxes` and `email_denied_senders/mailboxes` policy lists. See `docs/GMAIL.md`.
+
+- Send: CR/LF or other control characters in subject/from/to are refused; `to` must be one bare address
+  (`net/mail`), checked against the policy as sent. Non-ASCII subjects are Q-encoded.
+- Read: message bodies are capped at 10 MB (`body_truncated: true`). IMAP has a 10 s dial timeout and a 60 s
+  per-command deadline; on a plaintext IMAP port STARTTLS is used when the server offers it.
 
 ## Jira Worklog Connector (`jira-worklog`)
 
