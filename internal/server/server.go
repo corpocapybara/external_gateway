@@ -1586,8 +1586,8 @@ func isIntegral(f float64) bool {
 }
 
 // writeUnknownOp answers a request for an operation id the registry does not
-// have: 404, not the 403 of a denial, naming the closest operation this agent
-// may call in the workspace (never one outside its grants). The miss is audited
+// have: 404, not the 403 of a denial, naming the closest operations this agent
+// may call in the workspace (never any outside its grants). The miss is audited
 // like any other deny.
 func (s *Server) writeUnknownOp(w http.ResponseWriter, agent *config.Agent, agentID, workspace, opID string) {
 	requestID := uuid.New().String()
@@ -1598,7 +1598,7 @@ func (s *Server) writeUnknownOp(w http.ResponseWriter, agent *config.Agent, agen
 		"detail": "operation not found",
 		"op":     opID,
 	}
-	if best := s.closestAllowedOp(agent, workspace, opID); best != "" {
+	if best := s.closestAllowedOps(agent, workspace, opID); len(best) > 0 {
 		body["did_you_mean"] = best
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1607,14 +1607,20 @@ func (s *Server) writeUnknownOp(w http.ResponseWriter, agent *config.Agent, agen
 	json.NewEncoder(w).Encode(body)
 }
 
-// closestAllowedOp returns the registered operation the agent is granted in the
-// workspace with the smallest edit distance to opID, or "" when none is within
-// half of the longer id's length. Ties go to the closer length, then the name.
-func (s *Server) closestAllowedOp(agent *config.Agent, workspace, opID string) string {
+// closestAllowedOps returns up to three registered operations the agent is
+// granted in the workspace whose edit distance to opID is within half of the
+// longer id's length, best first: smaller distance, then closer length, then
+// name. It returns nil when none qualifies or opID is over 128 characters.
+func (s *Server) closestAllowedOps(agent *config.Agent, workspace, opID string) []string {
 	if len(opID) > 128 {
-		return ""
+		return nil
 	}
-	best, bestDist := "", 0
+	type scored struct {
+		id         string
+		dist, diff int
+	}
+	var found []scored
+	seen := map[string]bool{}
 	for _, grant := range agent.Grants {
 		if grant.Workspace != workspace {
 			continue
@@ -1624,28 +1630,43 @@ func (s *Server) closestAllowedOp(agent *config.Agent, workspace, opID string) s
 			continue
 		}
 		for _, cand := range role.Operations {
+			if seen[cand] {
+				continue
+			}
+			seen[cand] = true
 			if _, ok := s.reg.Get(cand); !ok {
 				continue
 			}
-			longer := len(opID)
-			if len(cand) > longer {
-				longer = len(cand)
-			}
-			if absInt(len(cand)-len(opID)) > longer/2 {
+			longer := max(len(opID), len(cand))
+			diff := absInt(len(cand) - len(opID))
+			if diff > longer/2 {
 				continue
 			}
 			d := editDistance(opID, cand)
 			if d > longer/2 {
 				continue
 			}
-			if best == "" || d < bestDist ||
-				(d == bestDist && (absInt(len(cand)-len(opID)) < absInt(len(best)-len(opID)) ||
-					(absInt(len(cand)-len(opID)) == absInt(len(best)-len(opID)) && cand < best))) {
-				best, bestDist = cand, d
-			}
+			found = append(found, scored{cand, d, diff})
 		}
 	}
-	return best
+	sort.Slice(found, func(i, j int) bool {
+		a, b := found[i], found[j]
+		if a.dist != b.dist {
+			return a.dist < b.dist
+		}
+		if a.diff != b.diff {
+			return a.diff < b.diff
+		}
+		return a.id < b.id
+	})
+	if len(found) > 3 {
+		found = found[:3]
+	}
+	var out []string
+	for _, f := range found {
+		out = append(out, f.id)
+	}
+	return out
 }
 
 func absInt(n int) int {

@@ -60,7 +60,7 @@ See `docs/SLACK.md` for full details.
 ## Error responses
 
 - `403 {"error":"denied","rule":"<rule>","detail":...}` — refused (authentication, grant, disabled, validation, constraint...).
-- `404 {"error":"not_found","detail":"operation not found","op":"<id>","did_you_mean":"<id>"}` — no such op id. `did_you_mean` is the closest op (edit distance) the calling agent is granted in that workspace; omitted when none is close. An op that exists but is not granted stays 403 `rule:"grant"`. Both are audited as `deny`.
+- `404 {"error":"not_found","detail":"operation not found","op":"<id>","did_you_mean":["<id>",...]}` — no such op id. `did_you_mean` is an array of up to 3 ops the calling agent is granted in that workspace, best first (edit distance, then closer length, then name); omitted when none is close. An op that exists but is not granted stays 403 `rule:"grant"`. Both are audited as `deny`.
 
 ## Capabilities endpoint
 
