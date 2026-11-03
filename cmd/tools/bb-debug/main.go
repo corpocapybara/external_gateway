@@ -15,7 +15,6 @@ func main() {
 		return
 	}
 	fmt.Printf("Secret length: %d bytes\n", len(secret))
-	fmt.Printf("First 20 chars: %s\n", string(secret[:min(20, len(secret))]))
 
 	req, _ := http.NewRequest("GET", "https://api.bitbucket.org/2.0/user", nil)
 	req.SetBasicAuth("you@example.com", string(secret))

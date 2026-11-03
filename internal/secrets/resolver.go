@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -132,9 +133,45 @@ func (r *Resolver) FlushCache() {
 	r.mu.Unlock()
 }
 
+// Taint registers a secret for outbound redaction, together with the forms it
+// takes once the gateway handles it: the whitespace-trimmed value (headers use
+// strings.TrimSpace) and the JSON-escaped forms (with and without HTML
+// escaping), since responses are redacted after json.Marshal.
+//
+// Values shorter than 5 bytes are ignored on purpose: redacting a 1-4 byte
+// string would mangle unrelated response content, and such a value is not a
+// credential worth protecting (a brute-force guess space this small is no
+// secret). The check applies to each variant separately.
 func (t *TaintRegistry) Taint(secret []byte) {
-	// Ignore trivially short values — redacting a 1-4 byte string would mangle
-	// unrelated response content and leak nothing meaningful.
+	t.taintExact(secret)
+	trimmed := bytes.TrimSpace(secret)
+	t.taintExact(trimmed)
+	for _, v := range [][]byte{secret, trimmed} {
+		t.taintExact(jsonEscaped(v, true))
+		t.taintExact(jsonEscaped(v, false))
+	}
+}
+
+// jsonEscaped returns v as it appears inside a JSON string literal (quotes
+// stripped), with HTML escaping of < > & on or off.
+func jsonEscaped(v []byte, escapeHTML bool) []byte {
+	if len(v) == 0 {
+		return nil
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(escapeHTML)
+	if err := enc.Encode(string(v)); err != nil {
+		return nil
+	}
+	b := bytes.TrimRight(buf.Bytes(), "\n")
+	if len(b) < 2 {
+		return nil
+	}
+	return append([]byte(nil), b[1:len(b)-1]...)
+}
+
+func (t *TaintRegistry) taintExact(secret []byte) {
 	if len(secret) < 5 {
 		return
 	}

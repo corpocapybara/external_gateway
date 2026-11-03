@@ -113,7 +113,9 @@ func (s *Server) newRestClient(api, siteName string, site config.Site, params ma
 		secret, err := secrets.ResolveWithWorkspaceCheck(wsName, secretName, workspace)
 		if err != nil {
 			s.logger.Error().Err(err).Str("secret_ref", env.SecretRef).Msg("failed to resolve secret")
-		} else if env.Auth.Type == "basic" {
+			return nil, fmt.Errorf("resolving credentials for %s: %w", env.SecretRef, err)
+		}
+		if env.Auth.Type == "basic" {
 			headers["Authorization"] = "Basic " + base64Auth(env.User, strings.TrimSpace(string(secret)))
 		} else {
 			headers["Authorization"] = "Bearer " + strings.TrimSpace(string(secret))
