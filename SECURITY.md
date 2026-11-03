@@ -20,8 +20,11 @@ Manager** at runtime, and the agent never sees them.
 - **Taint tracking.** Resolved secrets are registered in a taint registry. The
   redaction hook scans response data for tainted values before returning to the
   agent.
-- **PostgreSQL is read-only.** Multi-statement detection and regex-based DDL/DML
-  guards prevent write operations. Full AST parsing is not yet implemented.
+- **PostgreSQL is read-only.** Queries run in a `READ ONLY` transaction and are
+  parsed to an AST; with `pg_allowed_tables` set, every table reference and a
+  deny-list of SQL-executing / server-touching functions are checked (fail closed).
+  The deny-list does not cover user-defined or `SECURITY DEFINER` functions:
+  restrict those with database grants.
 
 ## Accepted risks
 
