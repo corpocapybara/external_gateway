@@ -132,10 +132,15 @@ func deployArgs(buildDir, installDir string) ([]string, error) {
 	if len(enc) > 30000 { // CreateProcess command line limit is 32767 chars
 		return nil, fmt.Errorf("embedded deploy script too large for -EncodedCommand (%d chars)", len(enc))
 	}
-	return []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc}, nil
+	return []string{"-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc}, nil
 }
 
-func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+// psQuote returns a PowerShell expression yielding s. It is base64 so no character in s (including the
+// typographic quotes U+2018..U+201B that PowerShell treats as single quotes) can end the literal.
+func psQuote(s string) string {
+	return "([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" +
+		base64.StdEncoding.EncodeToString([]byte(s)) + "')))"
+}
 
 // deployScript composes the embedded workspaces.ps1 and update.ps1 into one script. Inputs that are
 // still read from buildDir at run time and are NOT pinned: config.<ws>.yaml / operations.<ws>.yaml
