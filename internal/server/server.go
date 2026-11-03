@@ -1319,15 +1319,7 @@ func (s *Server) executePostgresConnector(ws *config.Workspace, op *policy.Opera
 		result, err = pgConn.ExecuteQuery(context.Background(),
 			"SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = "+postgres.QuoteLiteral(db.Schema)+" ORDER BY table_name")
 		if err == nil {
-			kept := result.Rows[:0]
-			for _, row := range result.Rows {
-				name, _ := row["table_name"].(string)
-				if postgres.TableAllowed(ws.Policy.PgAllowedTables, db.Schema, name) {
-					kept = append(kept, row)
-				}
-			}
-			result.Rows = kept
-			result.Count = len(kept)
+			postgres.FilterTableRows(result, ws.Policy.PgAllowedTables, db.Schema)
 		}
 	case "schema":
 		tableName, _ := params["table"].(string)
