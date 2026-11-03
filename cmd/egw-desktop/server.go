@@ -227,17 +227,25 @@ func (a *app) apiDeploy(r *http.Request) (interface{}, error) {
 	if err := decode(r, &req); err != nil {
 		return nil, err
 	}
+	res, err := a.deploy()
+	if err != nil {
+		return map[string]string{"output": res.Output, "error": err.Error()}, nil
+	}
+	return map[string]string{"output": res.Output}, nil
+}
+
+// deploy runs deploy\update.ps1 elevated, writes last-deploy.log and re-checks after a success.
+func (a *app) deploy() (helperResult, error) {
 	res, err := a.runElevated("deploy", "", "", false)
 	logText := time.Now().Format(time.RFC3339) + "\r\n" + res.Output
 	if err != nil {
 		logText += "\r\nERROR: " + err.Error()
 	}
 	os.WriteFile(filepath.Join(a.dataDir, "last-deploy.log"), []byte(logText), 0600)
-	if err != nil {
-		return map[string]string{"output": res.Output, "error": err.Error()}, nil
+	if err == nil {
+		go a.checkAll()
 	}
-	go a.checkAll()
-	return map[string]string{"output": res.Output}, nil
+	return res, err
 }
 
 // apiPublish copies the source config to the install dir (elevated) and reloads the gateway, or
