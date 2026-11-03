@@ -47,6 +47,20 @@ func TestBuildMessageEncodesNonASCIISubject(t *testing.T) {
 	}
 }
 
+func TestParseRecipient(t *testing.T) {
+	ok := map[string]string{"a@example.com": "a@example.com", "  a@example.com ": "a@example.com"}
+	for in, want := range ok {
+		if got, err := ParseRecipient(in); err != nil || got != want {
+			t.Errorf("%q: got %q, %v", in, got, err)
+		}
+	}
+	for _, in := range []string{"", "<a@example.com>", "A <a@example.com>", "a@example.com\t,b@evil.com", "a@example.com (c)"} {
+		if _, err := ParseRecipient(in); err == nil {
+			t.Errorf("%q must be rejected", in)
+		}
+	}
+}
+
 func TestSearchEntryNilEnvelope(t *testing.T) {
 	if _, ok := searchEntry(&imap.Message{SeqNum: 1}, ""); ok {
 		t.Fatal("message without envelope must be skipped")
