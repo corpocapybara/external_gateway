@@ -13,6 +13,10 @@ audit:
 secret_store:
   backend: "wincred"
 
+# Optional: POST /feedback items with "type":"todo" are also appended to this markdown file.
+#feedback:
+#  todo_path: "C:\\dev\\apps\\external_gateway\\TODO.md"
+
 roles:
   dev-bot:
     operations:

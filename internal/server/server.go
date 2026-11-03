@@ -1704,7 +1704,7 @@ func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 		"  GET /capabilities?workspace=<name>  operation schemas",
 		"  POST /v1/workspaces/<w>/op/<id>     execute operation",
 		"  POST /v1/workspaces/<w>/op/<id>?dry_run=true  validate only",
-		"  POST /feedback                      report bug / request feature",
+		"  POST /feedback                      report bug / feature / todo",
 		"",
 		"Auth:",
 		"  Authorization: Bearer <token>",
@@ -1734,7 +1734,7 @@ func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		out = append(out, "Feedback: POST /feedback  {\"type\":\"bug|feature\",\"text\":\"...\"}")
+		out = append(out, "Feedback: POST /feedback  {\"type\":\"bug|feature|todo\",\"text\":\"...\"}")
 		for name := range s.cfg().Workspaces {
 			out = append(out, "")
 			out = append(out, fmt.Sprintf("Workspace: %s", name))
@@ -1935,7 +1935,12 @@ func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, _ := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxFeedbackBody))
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		http.Error(w, "feedback body too large", http.StatusRequestEntityTooLarge)
+		return
+	}
 	if len(body) == 0 {
 		http.Error(w, "empty body", http.StatusBadRequest)
 		return
@@ -1954,10 +1959,23 @@ func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
 		fb.Type = "feedback"
 	}
 
+	// Empty todo text is rejected only when it would be filed; other types log as before.
+	todoText := ""
+	if fb.Type == "todo" && s.cfg().Feedback.TodoPath != "" {
+		todoText = normalizeTodoText(fb.Text)
+		if r := []rune(todoText); len(r) > maxTodoTextLen {
+			todoText = strings.TrimSpace(string(r[:maxTodoTextLen]))
+		}
+		if todoText == "" {
+			http.Error(w, "empty text", http.StatusBadRequest)
+			return
+		}
+	}
+
 	entry := fmt.Sprintf("%s | %s | %s\r\n",
 		time.Now().UTC().Format(time.RFC3339),
 		fb.Type,
-		strings.ReplaceAll(fb.Text, "\n", " "),
+		strings.NewReplacer("\r", " ", "\n", " ").Replace(fb.Text),
 	)
 
 	f, err := os.OpenFile("feedback.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -1965,11 +1983,29 @@ func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to write feedback", http.StatusInternalServerError)
 		return
 	}
-	defer f.Close()
 	f.WriteString(entry)
+	f.Close()
+
+	status := "recorded"
+	if todoPath := s.cfg().Feedback.TodoPath; fb.Type == "todo" && todoPath != "" {
+		added, err := appendTodo(todoPath, todoText)
+		if err != nil {
+			s.logger.Error().Err(err).Str("path", todoPath).Msg("feedback: todo write failed")
+			msg := "feedback logged, but writing the TODO file failed"
+			if errors.Is(err, errTodoTooLarge) {
+				msg = "feedback logged, but the TODO file is over 1 MB so nothing was appended"
+			}
+			http.Error(w, msg, http.StatusInternalServerError)
+			return
+		}
+		status = "duplicate"
+		if added {
+			status = "added"
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "recorded"})
+	json.NewEncoder(w).Encode(map[string]string{"status": status})
 }
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
