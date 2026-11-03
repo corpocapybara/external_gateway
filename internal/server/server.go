@@ -42,9 +42,25 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	maxAdminSecretBody = 1 << 20  // 1 MiB: certificates/tokens fit, runaway bodies do not
+	maxAdminDiagBody   = 64 << 10 // 64 KiB
+)
+
+// secretIDRe is the allowed shape of a workspace or secret name accepted by the
+// admin API (all names in config.example and docs fit it).
+var secretIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// runtimeState is the config and operation registry that must change together on
+// hot-reload; handlers read it through one atomic pointer so a request never sees
+// new config with an old registry.
+type runtimeState struct {
+	cfg *config.Config
+	reg *policy.OperationRegistry
+}
+
 type Server struct {
-	cfgPtr        atomic.Pointer[config.Config]
-	reg           *policy.OperationRegistry
+	state         atomic.Pointer[runtimeState]
 	logger        zerolog.Logger
 	mux           *http.ServeMux
 	auditLog      *audit.Logger
@@ -60,7 +76,6 @@ type Server struct {
 func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logger zerolog.Logger) *Server {
 	checksum := computeChecksum(cfg.ConfigPath)
 	s := &Server{
-		reg:      reg,
 		logger:   logger,
 		mux:      http.NewServeMux(),
 		auditLog: audit.GetLogger(),
@@ -68,7 +83,7 @@ func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logg
 		emailConn: email.NewConnector(),
 		opsPath:  opsPath,
 	}
-	s.cfgPtr.Store(cfg)
+	s.state.Store(&runtimeState{cfg: cfg, reg: reg})
 	s.configChecksum.Store(checksum)
 	s.setupRoutes()
 	return s
@@ -94,8 +109,12 @@ func (s *Server) writeRedactedJSON(w http.ResponseWriter, obj interface{}) {
 	_, _ = w.Write(buf)
 }
 
+func (s *Server) registry() *policy.OperationRegistry {
+	return s.state.Load().reg
+}
+
 func (s *Server) cfg() *config.Config {
-	return s.cfgPtr.Load()
+	return s.state.Load().cfg
 }
 
 func computeChecksum(path string) string {
@@ -234,7 +253,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, opID := range role.Operations {
-			if op, ok := s.reg.Get(opID); ok && !ws.Sites[op.Site].Disabled {
+			if op, ok := s.registry().Get(opID); ok && !ws.Sites[op.Site].Disabled {
 				wsOps[opID] = op
 			}
 		}
@@ -291,7 +310,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getWorkspaceOperations(ws *config.Workspace) map[string]*policy.Operation {
 	ops := make(map[string]*policy.Operation)
-	for id, op := range s.reg.Operations {
+	for id, op := range s.registry().Operations {
 		if op.Site == "" {
 			continue
 		}
@@ -384,19 +403,20 @@ func auditParams(op *policy.Operation, params map[string]interface{}) map[string
 }
 
 func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, agentID, workspace, opID string) {
-	agent := s.cfg().GetAgentByTokenSHA(agentID)
+	st := s.state.Load()
+	agent := st.cfg.GetAgentByTokenSHA(agentID)
 	if agent == nil {
 		http.Error(w, "agent not found", http.StatusNotFound)
 		return
 	}
 
-	ws := s.cfg().GetWorkspace(workspace)
+	ws := st.cfg.GetWorkspace(workspace)
 	if ws == nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "workspace", "workspace not found")
 		return
 	}
 
-	op, ok := s.reg.Get(opID)
+	op, ok := st.reg.Get(opID)
 	if !ok {
 		s.writeUnknownOp(w, agent, agentID, workspace, opID)
 		return
@@ -420,12 +440,12 @@ func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, agentID, w
 		}
 	}
 
-	if err := s.reg.ValidateParams(op, params, ws); err != nil {
+	if err := st.reg.ValidateParams(op, params, ws); err != nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "validation", err.Error())
 		return
 	}
 
-	if err := s.reg.CheckConstraints(op, params, ws); err != nil {
+	if err := st.reg.CheckConstraints(op, params, ws); err != nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "constraint", err.Error())
 		return
 	}
@@ -433,7 +453,7 @@ func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, agentID, w
 	if params == nil {
 		params = map[string]interface{}{}
 	}
-	s.reg.ApplyDefaults(op, params)
+	st.reg.ApplyDefaults(op, params)
 	if err := checkEnvSelection(ws, op, params); err != nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "validation", err.Error())
 		return
@@ -447,22 +467,23 @@ func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, agentID, w
 }
 
 func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, workspace, opID string) {
+	st := s.state.Load()
 	requestID := uuid.New().String()
 	start := time.Now()
 
-	agent := s.cfg().GetAgentByTokenSHA(agentID)
+	agent := st.cfg.GetAgentByTokenSHA(agentID)
 	if agent == nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "agent", "agent not found")
 		return
 	}
 
-	ws := s.cfg().GetWorkspace(workspace)
+	ws := st.cfg.GetWorkspace(workspace)
 	if ws == nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "workspace", "workspace not found")
 		return
 	}
 
-	op, ok := s.reg.Get(opID)
+	op, ok := st.reg.Get(opID)
 	if !ok {
 		s.writeUnknownOp(w, agent, agentID, workspace, opID)
 		return
@@ -494,12 +515,12 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 		}
 	}
 
-	if err := s.reg.ValidateParams(op, params, ws); err != nil {
+	if err := st.reg.ValidateParams(op, params, ws); err != nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "validation", err.Error())
 		return
 	}
 
-	if err := s.reg.CheckConstraints(op, params, ws); err != nil {
+	if err := st.reg.CheckConstraints(op, params, ws); err != nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "constraint", err.Error())
 		return
 	}
@@ -514,7 +535,7 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 	if params == nil {
 		params = map[string]interface{}{}
 	}
-	s.reg.ApplyDefaults(op, params)
+	st.reg.ApplyDefaults(op, params)
 
 	if err := checkEnvSelection(ws, op, params); err != nil {
 		s.writeDeny(w, r, agentID, workspace, opID, "validation", err.Error())
@@ -713,7 +734,7 @@ func (s *Server) checkTunnelAccess(ws *config.Workspace, op *policy.Operation, p
 		return fmt.Errorf("required tunnel %s not configured", env.RequiresTunnel)
 	}
 
-	if err := s.reg.CheckTunnel(env.RequiresTunnel); err != nil {
+	if err := s.registry().CheckTunnel(env.RequiresTunnel); err != nil {
 		return fmt.Errorf("required tunnel %s is down: bring it up manually", env.RequiresTunnel)
 	}
 
@@ -1634,7 +1655,7 @@ func (s *Server) closestAllowedOps(agent *config.Agent, workspace, opID string) 
 				continue
 			}
 			seen[cand] = true
-			if _, ok := s.reg.Get(cand); !ok {
+			if _, ok := s.registry().Get(cand); !ok {
 				continue
 			}
 			longer := max(len(opID), len(cand))
@@ -2058,6 +2079,10 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "workspace and name query params required", http.StatusBadRequest)
 				return
 			}
+			if !secretIDRe.MatchString(workspace) || !secretIDRe.MatchString(name) {
+				http.Error(w, "workspace and name may contain only letters, digits, '_' and '-'", http.StatusBadRequest)
+				return
+			}
 			resolver := secrets.GetResolver()
 			if err := resolver.Delete(workspace, name); err != nil {
 				http.Error(w, fmt.Sprintf("delete failed: %v", err), http.StatusInternalServerError)
@@ -2071,8 +2096,13 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "POST, PUT, or DELETE required", http.StatusMethodNotAllowed)
 			return
 		}
-		body, err := io.ReadAll(r.Body)
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxAdminSecretBody))
 		if err != nil {
+			var tooBig *http.MaxBytesError
+			if errors.As(err, &tooBig) {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "cannot read body", http.StatusBadRequest)
 			return
 		}
@@ -2087,6 +2117,10 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Workspace == "" || req.Name == "" || req.Value == "" {
 			http.Error(w, "workspace, name, value required", http.StatusBadRequest)
+			return
+		}
+		if !secretIDRe.MatchString(req.Workspace) || !secretIDRe.MatchString(req.Name) {
+			http.Error(w, "workspace and name may contain only letters, digits, '_' and '-'", http.StatusBadRequest)
 			return
 		}
 		resolver := secrets.GetResolver()
@@ -2110,7 +2144,16 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			Workspace string `json:"workspace"`
 			Site      string `json:"site"`
 		}
-		body, _ := io.ReadAll(r.Body)
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxAdminDiagBody))
+		if err != nil {
+			var tooBig *http.MaxBytesError
+			if errors.As(err, &tooBig) {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(w, "cannot read body", http.StatusBadRequest)
+			return
+		}
 		if err := json.Unmarshal(body, &req); err != nil || req.Workspace == "" || req.Site == "" {
 			http.Error(w, "workspace and site required", http.StatusBadRequest)
 			return
@@ -2244,8 +2287,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			newReg.TunnelChecker = s.tunnelCheckerFactory(cfg)
 		}
 		checksum := computeChecksum(cfg.ConfigPath)
-		s.cfgPtr.Store(cfg)
-		s.reg = newReg
+		s.state.Store(&runtimeState{cfg: cfg, reg: newReg})
 		s.configChecksum.Store(checksum)
 		s.logger.Info().Str("checksum", checksum).Msg("config and ops hot-reloaded")
 		w.Header().Set("Content-Type", "application/json")
