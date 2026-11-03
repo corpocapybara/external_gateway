@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -34,7 +35,7 @@ func TestExecuteHTTPPathInjectionEndToEnd(t *testing.T) {
 		return err
 	}
 	for _, v := range []string{"%2e%2e%2f", "%2F", "a/b"} {
-		if err := run(map[string]interface{}{"key": v, "k2": "z"}); err == nil || gotURI != "" {
+		if err := run(map[string]interface{}{"key": v, "k2": "z"}); err == nil || gotURI != "" || !strings.Contains(err.Error(), "not allowed in a path value") {
 			t.Errorf("value %q reached upstream as %q (err=%v)", v, gotURI, err)
 		}
 	}
