@@ -49,6 +49,22 @@ func TestSanitizeParamsNestedAndExtendedKeys(t *testing.T) {
 	}
 }
 
+func TestSanitizeParamsTypedContainersAndExactKeys(t *testing.T) {
+	got := sanitizeParams(map[string]interface{}{
+		"h":     map[string]string{"Authorization": "Bearer x", "Accept": "json"},
+		"l":     []string{"a"},
+		"pwd":   "x",
+		"value": "y",
+	})
+	h := got["h"].(map[string]interface{})
+	if h["Authorization"] != "***" || h["Accept"] != "json" || got["pwd"] != "***" || got["value"] != "***" {
+		t.Fatalf("got %#v", got)
+	}
+	if sanitizeParams(nil) != nil {
+		t.Fatal("nil must stay nil")
+	}
+}
+
 func TestSanitizeParamsRedactsTaintedValues(t *testing.T) {
 	secrets.GetTaintRegistry().Taint([]byte("tainted-value-12345"))
 	got := sanitizeParams(map[string]interface{}{
