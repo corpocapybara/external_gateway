@@ -1,15 +1,10 @@
 # Quick deploy: copy egw.exe + each workspace's config/ops and restart services.
 param(
-    [string]$InstallDir = "C:\Program Files\external_gateway",
-    # Defaults to the checkout this script lives in. egw-desktop (elevated) runs an embedded copy of
-    # this script via -EncodedCommand, where $PSScriptRoot is empty, and passes -BuildDir explicitly.
-    [string]$BuildDir = $(Split-Path -Parent $PSScriptRoot)
+    [string]$InstallDir = "C:\Program Files\external_gateway"
 )
 $ErrorActionPreference = "Stop"
-# egw-desktop pre-defines Get-EgwWorkspaces from its embedded copy; never load it from disk then.
-if (-not (Get-Command Get-EgwWorkspaces -CommandType Function -ErrorAction SilentlyContinue)) {
-    . "$PSScriptRoot\workspaces.ps1"
-}
+$BuildDir = Split-Path -Parent $PSScriptRoot
+. "$PSScriptRoot\workspaces.ps1"
 
 $ws = Get-EgwWorkspaces -BuildDir $BuildDir
 $names = ($ws | ForEach-Object { $_.X }) -join ', '
