@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf16"
+
+	"github.com/external_gateway/deploy"
 )
 
 type helperResult struct {
@@ -74,10 +78,11 @@ func doHelper(a *app, action, ws, svcAction string, restart bool) helperResult {
 	}
 	switch action {
 	case "deploy":
-		script := filepath.Join(a.buildDir, "deploy", "update.ps1")
-		cmd := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script)
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-		out, err := cmd.CombinedOutput()
+		args, err := deployArgs(a.buildDir, a.installDir)
+		if err != nil {
+			return fail(err)
+		}
+		out, err := execPowerShell(args)
 		if err != nil {
 			return helperResult{Error: fmt.Sprintf("%v\n%s", err, out), Output: string(out)}
 		}
@@ -102,6 +107,47 @@ func doHelper(a *app, action, ws, svcAction string, restart bool) helperResult {
 		return helperResult{OK: true}
 	}
 	return fail(fmt.Errorf("unknown helper action %q", action))
+}
+
+// execPowerShell runs powershell.exe with args; a variable so tests can intercept it.
+var execPowerShell = func(args []string) ([]byte, error) {
+	cmd := exec.Command("powershell.exe", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd.CombinedOutput()
+}
+
+// deployArgs builds the powershell command line for the elevated deploy. The script text comes from
+// the deploy package (embedded in this executable at build time), never from the checkout, and is
+// passed inline via -EncodedCommand, so no file exists that could be swapped between check and use
+// (no TOCTOU, no temp file in a user-writable directory). The checkout is passed only as data
+// (-BuildDir); see deployScript for the inputs that are still read from it.
+func deployArgs(buildDir, installDir string) ([]string, error) {
+	text := deployScript(buildDir, installDir)
+	units := utf16.Encode([]rune(text))
+	raw := make([]byte, 2*len(units))
+	for i, u := range units {
+		raw[2*i], raw[2*i+1] = byte(u), byte(u>>8)
+	}
+	enc := base64.StdEncoding.EncodeToString(raw)
+	if len(enc) > 30000 { // CreateProcess command line limit is 32767 chars
+		return nil, fmt.Errorf("embedded deploy script too large for -EncodedCommand (%d chars)", len(enc))
+	}
+	return []string{"-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc}, nil
+}
+
+// psQuote returns a PowerShell expression yielding s. It is base64 so no character in s (including the
+// typographic quotes U+2018..U+201B that PowerShell treats as single quotes) can end the literal.
+func psQuote(s string) string {
+	return "([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" +
+		base64.StdEncoding.EncodeToString([]byte(s)) + "')))"
+}
+
+// deployScript composes the embedded workspaces.ps1 and update.ps1 into one script. Inputs that are
+// still read from buildDir at run time and are NOT pinned: config.<ws>.yaml / operations.<ws>.yaml
+// (copied into Program Files) and egw.exe (copied to Program Files and run as LocalSystem).
+func deployScript(buildDir, installDir string) string {
+	return deploy.WorkspacesScript + "\n$egwDeploy = {\n" + deploy.UpdateScript + "\n}\n& $egwDeploy -BuildDir " +
+		psQuote(buildDir) + " -InstallDir " + psQuote(installDir) + "\n"
 }
 
 // publishFiles copies one workspace's source config and operations into the install dir the same
