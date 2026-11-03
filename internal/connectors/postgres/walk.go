@@ -18,7 +18,8 @@ var deniedFuncPrefixes = []string{
 	"ts_stat", "pg_reload_conf", "pg_rotate_logfile", "pg_switch_wal", "pg_notify",
 	"pg_advisory_", "pg_logical_", "pg_create_", "pg_drop_", "pg_replication_",
 	"pg_export_snapshot", "nextval", "setval", "currval", "pg_backup_",
-	"pg_promote", "pg_wal_replay_", "pg_import_system_collations",
+	"ts_rewrite", "crosstab", "connectby", "xpath_table", "pg_stat_get_", "pg_show_all_",
+	"pg_sequence_last_value", "pg_promote", "pg_wal_replay_", "pg_import_system_collations",
 }
 
 func funcDenied(name string) bool {
