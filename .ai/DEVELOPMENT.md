@@ -42,10 +42,10 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8444/v1/workspaces/acme/op/gitlab.proje
 Useful debug endpoints:
 - `GET /healthz` — service alive check
 - `GET /whoami` — agent identity and grants (needs auth)
-- `GET /help` — list available operations
-- `GET /capabilities?workspace=<ws>` — config checksum + feature status
-- `POST /feedback` `{"type","text"}` — append to `feedback.log` (no auth). With `feedback.todo_path` set in
-  `config.<x>.yaml` (hot-reloadable), `"type":"todo"` also appends `- [ ] <text> (date, via /feedback).` to that file
+- `GET /help` — public banner; `?workspace=<ws>` needs a Bearer token with a grant there (granted ops only)
+- `GET /capabilities?workspace=<ws>` — granted ops only + config checksum + feature status (Bearer token)
+- `POST /feedback` `{"type","text"}` — append to `feedback.log` (Bearer token required; agent id is recorded). With `feedback.todo_path` set in
+  `config.<x>.yaml` (hot-reloadable), `"type":"todo"` also appends `- [ ] <text> (date, via /feedback by <agent>).` to that file
   (created with a `# TODO` header if missing; parent dir must exist; line endings kept; text whitespace-collapsed,
   capped at 400 chars; empty text -> 400). Responds `{"status":"added"}` or `"duplicate"` (same item text already
   there); other types and unset key respond `"recorded"`. A TODO write failure is a 500 after `feedback.log` was written.
