@@ -57,6 +57,11 @@ See `docs/SLACK.md` for full details.
 | `/admin/secrets` | POST | Set a secret in SYSTEM Credential Manager |
 | `/admin/reload` | POST | Hot-reload config and ops from disk |
 
+## Error responses
+
+- `403 {"error":"denied","rule":"<rule>","detail":...}` — refused (authentication, grant, disabled, validation, constraint...).
+- `404 {"error":"not_found","detail":"operation not found","op":"<id>","did_you_mean":"<id>"}` — no such op id. `did_you_mean` is the closest op (edit distance) the calling agent is granted in that workspace; omitted when none is close. An op that exists but is not granted stays 403 `rule:"grant"`. Both are audited as `deny`.
+
 ## Capabilities endpoint
 
 `GET /capabilities?workspace=<ws>` returns config checksum and feature status map.
