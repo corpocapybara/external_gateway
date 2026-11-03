@@ -118,7 +118,8 @@ service start/stop). Running it again just reopens the window. Quit it from the 
   expiring within N days, service stopped or gateway down, admin API locked, unpublished config changes, an
   `egw.exe` build newer than the deployed one. Unreachable checks (VPN/tunnel down) are listed as info.
 - **Background checks** every N minutes (default 30) with a Windows notification when a new problem appears; the
-  tray icon turns amber/red. Tray menu: Open, Check now, Start with Windows, Notifications, Quit.
+  tray icon turns amber/red. Tray menu: Open, Check now, Re-deploy (runs `deploy\update.ps1` after a UAC prompt, the
+  same as the UI's deploy button, and shows the result as a notification), Start with Windows, Notifications, Quit.
 - Per workspace tab:
   - **Secrets**: stored state, last written, live check (identity, expiry and scopes for GitLab/GitHub), and a
     guided **Change/Set** with creation links, format hints and a **Test** against the provider before saving.

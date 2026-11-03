@@ -14,6 +14,18 @@ func runTray(a *app) {
 	systray.Run(func() { trayReady(a) }, func() { os.Exit(0) })
 }
 
+func (a *app) redeployFromTray(item *systray.MenuItem) {
+	item.Disable()
+	item.SetTitle("Re-deploying...")
+	defer item.Enable()
+	defer item.SetTitle("Re-deploy")
+	if _, err := a.deploy(); err != nil {
+		showToast("External Gateway: re-deploy failed", err.Error())
+		return
+	}
+	showToast("External Gateway", "Re-deployed; the gateways were restarted")
+}
+
 func trayReady(a *app) {
 	systray.SetIcon(statusIcon("unknown"))
 	systray.SetTooltip("External Gateway")
@@ -22,6 +34,7 @@ func trayReady(a *app) {
 	summary := systray.AddMenuItem("Checking...", "")
 	summary.Disable()
 	check := systray.AddMenuItem("Check now", "Re-check every workspace")
+	redeploy := systray.AddMenuItem("Re-deploy", `Run deploy\update.ps1 as administrator: egw.exe and every workspace's config, then restart the gateways`)
 	systray.AddSeparator()
 	autostart := systray.AddMenuItemCheckbox("Start with Windows", "Run in the tray after sign-in", autostartEnabled())
 	a.mu.Lock()
@@ -69,6 +82,8 @@ func trayReady(a *app) {
 				a.openUI()
 			case <-check.ClickedCh:
 				go a.checkAll()
+			case <-redeploy.ClickedCh:
+				go a.redeployFromTray(redeploy)
 			case <-autostart.ClickedCh:
 				want := !autostart.Checked()
 				if err := setAutostart(want); err == nil {
