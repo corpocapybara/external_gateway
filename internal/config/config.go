@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,8 +17,15 @@ type Config struct {
 	Tunnels       map[string]Tunnel    `yaml:"tunnels"`
 	SecretStore   SecretStoreConfig    `yaml:"secret_store"`
 	AdminTokenSHA string               `yaml:"admin_token_sha256"`
+	Feedback      FeedbackConfig       `yaml:"feedback"`
 	ConfigPath    string               `yaml:"-"`
 	OpsPath       string               `yaml:"-"`
+}
+
+// FeedbackConfig controls where POST /feedback items of type "todo" are also
+// recorded. An empty TodoPath keeps feedback.log as the only destination.
+type FeedbackConfig struct {
+	TodoPath string `yaml:"todo_path"`
 }
 
 type SecretStoreConfig struct {
@@ -188,6 +196,9 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) Validate() error {
+	if p := c.Feedback.TodoPath; p != "" && !filepath.IsAbs(p) {
+		return fmt.Errorf("feedback.todo_path %q must be an absolute path", p)
+	}
 	if len(c.Agents) == 0 {
 		return fmt.Errorf("no agents defined")
 	}

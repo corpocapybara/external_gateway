@@ -44,7 +44,11 @@ Useful debug endpoints:
 - `GET /whoami` — agent identity and grants (needs auth)
 - `GET /help` — list available operations
 - `GET /capabilities?workspace=<ws>` — config checksum + feature status
-- `POST /feedback` — append feedback to log (no auth)
+- `POST /feedback` `{"type","text"}` — append to `feedback.log` (no auth). With `feedback.todo_path` set in
+  `config.<x>.yaml` (hot-reloadable), `"type":"todo"` also appends `- [ ] <text> (date, via /feedback).` to that file
+  (created with a `# TODO` header if missing; parent dir must exist; line endings kept; text whitespace-collapsed,
+  capped at 400 chars; empty text -> 400). Responds `{"status":"added"}` or `"duplicate"` (same item text already
+  there); other types and unset key respond `"recorded"`. A TODO write failure is a 500 after `feedback.log` was written.
 - `POST /admin/reload` — hot-reload config + ops from disk (needs admin auth)
 - `POST /admin/secrets` — set a secret (needs admin auth)
 
