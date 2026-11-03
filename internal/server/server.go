@@ -1980,7 +1980,10 @@ func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
 
 	// Feedback lands in feedback.log and, for todos, in a file LLM agents read
 	// later: only a known agent may write, and its id is recorded with the item.
-	agent := s.cfg().GetAgentByTokenSHA(s.authenticate(r))
+	var agent *config.Agent
+	if tokenSHA := s.authenticate(r); tokenSHA != "" {
+		agent = s.cfg().GetAgentByTokenSHA(tokenSHA)
+	}
 	if agent == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return

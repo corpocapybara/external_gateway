@@ -59,6 +59,29 @@ func item(text string) string {
 	return "- [ ] " + text + " (" + todayUTC() + ", via /feedback by tester)."
 }
 
+func TestFeedbackAgentIDSanitisedAndEmptyTokenAgentRejected(t *testing.T) {
+	todo := filepath.Join(t.TempDir(), "TODO.md")
+	s := feedbackServer(t, todo)
+	cfg := s.cfg()
+	cfg.Agents = append(cfg.Agents,
+		config.Agent{ID: "ev\nil (x)\n- [ ] pwn", TokenSHA: tokenSHA("evil")},
+		config.Agent{ID: "notoken"}) // empty token_sha256
+	req := httptest.NewRequest(http.MethodPost, "/feedback", strings.NewReader(`{"type":"todo","text":"a"}`))
+	w := httptest.NewRecorder()
+	s.handleFeedback(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("no token: code=%d", w.Code)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/feedback", strings.NewReader(`{"type":"todo","text":"b"}`))
+	req.Header.Set("Authorization", "Bearer evil")
+	if w := httptest.NewRecorder(); func() int { s.handleFeedback(w, req); return w.Code }() != 200 {
+		t.Fatalf("evil agent: %q", w.Body.String())
+	}
+	if got, want := readFile(t, todo), "# TODO\n\n- [ ] b ("+todayUTC()+", via /feedback by ev il _x_ - [ ] pwn).\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
 func TestFeedbackRequiresValidToken(t *testing.T) {
 	todo := filepath.Join(t.TempDir(), "TODO.md")
 	s := feedbackServer(t, todo)
