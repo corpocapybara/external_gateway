@@ -69,8 +69,10 @@ func (s *ResponseShaper) Shape(data map[string]interface{}) map[string]interface
 
 	result := make(map[string]interface{})
 	for _, field := range s.allowFields {
-		if projected, ok := project(data, splitPath(field)).(map[string]interface{}); ok {
-			deepMerge(result, projected)
+		if v, found := project(data, splitPath(field)); found {
+			if projected, ok := v.(map[string]interface{}); ok {
+				deepMerge(result, projected)
+			}
 		}
 	}
 	return result
@@ -79,43 +81,49 @@ func (s *ResponseShaper) Shape(data map[string]interface{}) map[string]interface
 // project extracts the value at `parts` from src, preserving object and array
 // shape. A "[]" segment maps the remaining path over EVERY element of an array
 // (index-aligned), so `channels[].id` yields every channel's id — not just the
-// first. Returns nil when the path is absent.
-func project(src interface{}, parts []string) interface{} {
+// first. found is false only when the path is absent upstream. A key that exists
+// but is empty or null stays present (an empty array projects to [], a null
+// parent of the path projects to null), so callers can tell "unset" from "not
+// returned".
+func project(src interface{}, parts []string) (interface{}, bool) {
 	if len(parts) == 0 {
-		return src
+		return src, true
+	}
+	if src == nil {
+		return nil, true // JSON null where more path was expected: keep the null
 	}
 	if parts[0] == "[]" {
 		arr, ok := src.([]interface{})
 		if !ok {
-			return nil
+			return nil, false
 		}
 		out := make([]interface{}, len(arr))
-		any := false
+		any := len(arr) == 0
 		for i, item := range arr {
-			v := project(item, parts[1:])
+			v, ok := project(item, parts[1:])
 			out[i] = v
-			if v != nil {
+			if ok {
 				any = true
 			}
 		}
 		if !any {
-			return nil
+			return nil, false
 		}
-		return out
+		return out, true
 	}
 	m, ok := src.(map[string]interface{})
 	if !ok {
-		return nil
+		return nil, false
 	}
 	child, ok := m[parts[0]]
 	if !ok {
-		return nil
+		return nil, false
 	}
-	v := project(child, parts[1:])
-	if v == nil {
-		return nil
+	v, ok := project(child, parts[1:])
+	if !ok {
+		return nil, false
 	}
-	return map[string]interface{}{parts[0]: v}
+	return map[string]interface{}{parts[0]: v}, true
 }
 
 // deepMerge merges src into dst, combining nested maps and index-aligning arrays

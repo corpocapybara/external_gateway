@@ -173,6 +173,8 @@ response:
 
 Fields not listed are stripped from the response before returning to the agent. This is wired in `server.go:executeHttpConnector()` — JSON unmarshal → `ResponseShaper.Shape()` → re-marshal. Non-JSON responses pass through unchanged.
 
+A listed path whose upstream field is present but empty or null stays in the response: an empty array projects to `[]` (`fields.fixVersions[].name` gives `"fixVersions": []`) and a null parent projects to `null` (`fields.customfield_10340.value` gives `"customfield_10340": null`). A path the upstream never sent is omitted.
+
 ## Complete operation reference
 
 ### Globex Workspace (operations.globex.yaml)

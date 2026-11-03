@@ -61,6 +61,29 @@ func TestShapeResponse(t *testing.T) {
 		}
 	})
 
+	t.Run("empty and null projected fields stay present", func(t *testing.T) {
+		jiraAllow := []string{"fields.labels", "fields.fixVersions[].name", "fields.customfield_10340.value"}
+		cases := []struct{ name, body, want string }{
+			{"empty array and null object",
+				`{"fields":{"labels":[],"fixVersions":[],"customfield_10340":null,"other":1}}`,
+				`{"fields":{"customfield_10340":null,"fixVersions":[],"labels":[]}}`},
+			{"null array",
+				`{"fields":{"fixVersions":null}}`,
+				`{"fields":{"fixVersions":null}}`},
+			{"non-empty values unchanged",
+				`{"fields":{"fixVersions":[{"id":"1","name":"v1"}],"customfield_10340":{"id":"9","value":"svc"}}}`,
+				`{"fields":{"customfield_10340":{"value":"svc"},"fixVersions":[{"name":"v1"}]}}`},
+			{"absent upstream key stays absent",
+				`{"fields":{"labels":["a"]}}`,
+				`{"fields":{"labels":["a"]}}`},
+		}
+		for _, c := range cases {
+			if got := string(shapeResponse(200, []byte(c.body), jiraAllow)); got != c.want {
+				t.Fatalf("%s:\n got:  %s\n want: %s", c.name, got, c.want)
+			}
+		}
+	})
+
 	t.Run("no allow_fields is a no-op", func(t *testing.T) {
 		body := []byte(`{"a":1,"b":2}`)
 		if got := shapeResponse(200, body, nil); string(got) != string(body) {
