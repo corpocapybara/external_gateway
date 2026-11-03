@@ -40,10 +40,27 @@ func TestExpandPathTemplateMultiSegmentOptIn(t *testing.T) {
 	if err != nil || got != "/contents/src/a/b.go" {
 		t.Fatalf("got %q, %v", got, err)
 	}
-	for _, v := range []string{"src/../x", "src/%2e%2e/x", "a%2Fb", "a?x", "a/./b", "a//b", "/a", "a/", "./a"} {
+	for _, v := range []string{"src/../x", "src/%2e%2e/x", "a%2Fb", "a?x", "a/./b", "a//b", "/a", "a/", "./a",
+		"a%2fb", "a%5Cb", "a%2Eb", "a%3Fb", "a%23b", "a%00b", "a%0Ab", "a%7Fb", "a%", "a%2", "a%zzb"} {
 		if _, err := expandPathTemplate("/contents/{path}", nil, map[string]interface{}{"path": v}, defs); err == nil {
 			t.Errorf("multi_segment value %q should still be rejected", v)
 		}
+	}
+}
+
+// A Jenkins multibranch job for branch release/9.19 is addressed as
+// job/<repo>/job/release%252F9.19; that escape must pass in a multi_segment param.
+func TestExpandPathTemplateMultiSegmentSafeEscapes(t *testing.T) {
+	defs := map[string]policy.ParamDef{"job": {MultiSegment: true}}
+	for _, v := range []string{"job/thp-backend/job/release%252F9.19", "job/x/job/feat%20y", "job/a/job/b%2Dc"} {
+		got, err := expandPathTemplate("/{job}/api/json", nil, map[string]interface{}{"job": v}, defs)
+		if err != nil || got != "/"+v+"/api/json" {
+			t.Errorf("%q: got %q, %v", v, got, err)
+		}
+	}
+	// a single-segment param still refuses any "%"
+	if _, err := expandPathTemplate("/issue/{key}", nil, map[string]interface{}{"key": "a%2Db"}, nil); err == nil {
+		t.Error("single-segment value with % should be rejected")
 	}
 }
 
