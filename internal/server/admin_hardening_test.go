@@ -118,6 +118,12 @@ func TestAdminBodyLimits(t *testing.T) {
 	if len(fs.sets) != 0 {
 		t.Errorf("oversized secret stored")
 	}
+	// exactly at the limit is not rejected for size (it fails later as bad JSON/400)
+	pad := maxAdminSecretBody - len(`{"workspace":"acme","name":"jira","value":""}`)
+	atLimit := `{"workspace":"acme","name":"jira","value":"` + strings.Repeat("x", pad) + `"}`
+	if w := adminDo(s, http.MethodPost, "/admin/secrets", atLimit); w.Code != 200 {
+		t.Errorf("secrets at limit: code %d, want 200", w.Code)
+	}
 	bigDiag := `{"workspace":"acme","site":"` + strings.Repeat("x", maxAdminDiagBody+10) + `"}`
 	if w := adminDo(s, http.MethodPost, "/admin/diag", bigDiag); w.Code != http.StatusRequestEntityTooLarge {
 		t.Errorf("diag oversize: code %d, want 413", w.Code)

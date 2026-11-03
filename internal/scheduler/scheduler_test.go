@@ -71,6 +71,19 @@ func TestExecuteJobSetsTerminalStatus(t *testing.T) {
 	}
 }
 
+func TestCancelTerminalJobRefused(t *testing.T) {
+	st := NewStore()
+	sc := NewScheduler(st)
+	_ = st.Add(&Job{ID: "x", AgentID: "a", Type: "unknown", ScheduledAt: time.Now().Add(-time.Second)})
+	sc.processJobs()
+	if err := st.Cancel("x", "a"); err == nil {
+		t.Fatal("cancel of failed job succeeded")
+	}
+	if j, _ := st.Get("x"); j.Status != "failed" {
+		t.Fatalf("status %q", j.Status)
+	}
+}
+
 func TestGetReturnsCopy(t *testing.T) {
 	st := NewStore()
 	_ = st.Add(&Job{ID: "x", AgentID: "a", Params: map[string]interface{}{"k": 1}})
