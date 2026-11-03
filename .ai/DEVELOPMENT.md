@@ -9,11 +9,6 @@
 & "C:\Program Files\Go\bin\go.exe" build -o egwctl.exe     ./cmd/egwctl/
 ```
 
-**egw-desktop embeds `deploy/update.ps1` + `deploy/workspaces.ps1`** (`deploy/embed.go`, `//go:embed`) and runs
-those bytes elevated via `-EncodedCommand`; it never executes a script from the checkout. After editing either
-script, rebuild egw-desktop (`go build -ldflags -H=windowsgui -o ExternalGateway.exe ./cmd/egw-desktop/`). Still
-read from the checkout at deploy time and NOT pinned: `config.<ws>.yaml`, `operations.<ws>.yaml`, `egw.exe`.
-
 Builds produce statically-linked `.exe` files in the project root. Go modules are in `go.mod` (module: `github.com/external_gateway`).
 
 ## Deploying
