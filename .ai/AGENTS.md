@@ -19,7 +19,7 @@ Workspace convention: `config.<x>.yaml` is the single source of truth — everyt
 & "C:\Program Files\Go\bin\go.exe" build -o egw.exe       ./cmd/egw/
 & "C:\Program Files\Go\bin\go.exe" build -o egw-admin.exe  ./cmd/egw-admin/
 & "C:\Program Files\Go\bin\go.exe" build -o egwctl.exe     ./cmd/egwctl/
-.\deploy\update.ps1     # Admin shell
+.\deploy\update.ps1     # Admin shell; rebuilds egw.exe itself
 ```
 
 ## Testing an operation
@@ -75,7 +75,7 @@ See `docs/SLACK.md` for full details.
 | `internal/config/config.go` | YAML config loading, validation, checksum |
 | `internal/secrets/resolver.go` | Credential Manager w/ 30s cache, cross-tenant isolation |
 | `internal/connectors/*.go` | Connector implementations |
-| `deploy/update.ps1` | Quick deploy (binary + configs + ops) |
+| `deploy/update.ps1` | Quick deploy (rebuild egw.exe, copy it + configs + ops, restart) |
 | `tools/slack-provision/` | Slack session token provisioning |
 
 ## Service lifecycle

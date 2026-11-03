@@ -13,7 +13,7 @@ Builds produce statically-linked `.exe` files in the project root. Go modules ar
 
 ## Deploying
 
-`deploy\update.ps1` copies the binary + configs + operations to `C:\Program Files\external_gateway\` and restarts both services. **Must run as Administrator.**
+`deploy\update.ps1` rebuilds `egw.exe` (`-GoExe` overrides the Go path; a build error stops it before any service is touched), copies it + configs + operations to `C:\Program Files\external_gateway\` and restarts both services. **Must run as Administrator.**
 
 The script does NOT patch configs — all config values are the source of truth in the repo.
 

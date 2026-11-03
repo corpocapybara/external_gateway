@@ -1,6 +1,7 @@
-# Quick deploy: copy egw.exe + each workspace's config/ops and restart services.
+# Quick deploy: rebuild egw.exe, copy it + each workspace's config/ops and restart services.
 param(
-    [string]$InstallDir = "C:\Program Files\external_gateway"
+    [string]$InstallDir = "C:\Program Files\external_gateway",
+    [string]$GoExe      = "C:\Program Files\Go\bin\go.exe"
 )
 $ErrorActionPreference = "Stop"
 $BuildDir = Split-Path -Parent $PSScriptRoot
@@ -8,6 +9,11 @@ $BuildDir = Split-Path -Parent $PSScriptRoot
 
 $ws = Get-EgwWorkspaces -BuildDir $BuildDir
 $names = ($ws | ForEach-Object { $_.X }) -join ', '
+
+# Build before stopping anything, so a compile error leaves the running gateways alone.
+Write-Host "Building egw.exe..."
+& $GoExe -C $BuildDir build -o egw.exe ./cmd/egw/
+if ($LASTEXITCODE -ne 0) { throw "go build egw failed; nothing deployed" }
 
 foreach ($w in $ws) {
     Stop-Service $w.Service -ErrorAction SilentlyContinue
