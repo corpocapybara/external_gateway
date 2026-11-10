@@ -58,6 +58,9 @@ func (e *cmdExitError) Error() string {
 func runTodoCmd(ctx context.Context, argv, env []string, dir string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env, cmd.Dir = env, dir
+	// After a timeout kills the child, stop waiting for grandchildren (hooks, git under
+	// python) that still hold the output pipes, so todoToolTimeout really bounds the call.
+	cmd.WaitDelay = 2 * time.Second
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -310,17 +313,18 @@ func fileByHand(ctx context.Context, fb config.FeedbackConfig, title, body strin
 	if !hasBucket(c, fb.TodoBucket) {
 		return "", fmt.Errorf("bucket %q is not in %s", fb.TodoBucket, todoConfig)
 	}
-	prioPath := filepath.Join(repo, filepath.FromSlash(todoPriorityF))
-	prio, err := os.ReadFile(prioPath)
-	if err != nil {
-		return "", err
-	}
 	n, err := maxTodoID(ctx, fb, c.IDPrefix)
 	if err != nil {
 		return "", err
 	}
 	id = fmt.Sprintf("%s%04d", c.IDPrefix, n+1)
 	titleYAML, err := yamlScalar(title)
+	if err != nil {
+		return "", err
+	}
+	// Read PRIORITY.md after the (slow) id scan, so a todo committed meanwhile keeps its line.
+	prioPath := filepath.Join(repo, filepath.FromSlash(todoPriorityF))
+	prio, err := os.ReadFile(prioPath)
 	if err != nil {
 		return "", err
 	}
@@ -340,12 +344,26 @@ func fileByHand(ctx context.Context, fb config.FeedbackConfig, title, body strin
 	if err != nil {
 		return "", err
 	}
-	created := true
 	defer func() {
-		if err != nil && created {
-			os.Remove(path)
-			os.WriteFile(prioPath, prio, 0644)
-			todoCall(context.WithoutCancel(ctx), fb, "git", "reset", "-q", "--", rel, todoPriorityF)
+		if err == nil {
+			return
+		}
+		// Undo: the new file goes, PRIORITY.md gets its old bytes back unless someone else
+		// rewrote it since our write, and the two paths are unstaged. Undo failures join err.
+		var undo []error
+		if e := os.Remove(path); e != nil && !errors.Is(e, os.ErrNotExist) {
+			undo = append(undo, e)
+		}
+		if cur, e := os.ReadFile(prioPath); e == nil && string(cur) == newPrio {
+			if e := os.WriteFile(prioPath, prio, 0644); e != nil {
+				undo = append(undo, e)
+			}
+		}
+		if _, e := todoCall(context.WithoutCancel(ctx), fb, "git", "reset", "-q", "--", rel, todoPriorityF); e != nil {
+			undo = append(undo, fmt.Errorf("git reset: %w", e))
+		}
+		if len(undo) > 0 {
+			err = errors.Join(err, fmt.Errorf("undo incomplete: %w", errors.Join(undo...)))
 		}
 	}()
 	if _, err = f.WriteString(doc); err != nil {
