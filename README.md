@@ -378,7 +378,7 @@ Detailed guides live in `.ai/`:
 
 | File | Covers |
 |------|--------|
-| `.ai/AGENTS.md` | Agent conventions — build, deploy, secrets, admin API, service lifecycle, architecture |
+| `AGENTS.md` | Agent conventions — build, deploy, secrets, admin API, service lifecycle, architecture |
 | `.ai/INDEX.md` | Doc index — quick reference to all docs |
 | `.ai/DEVELOPMENT.md` | Build, deploy, testing, adding operations |
 | `.ai/PITFALLS.md` | Known bugs, YAML pitfalls, design gotchas, session caveats |
