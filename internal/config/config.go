@@ -23,9 +23,50 @@ type Config struct {
 }
 
 // FeedbackConfig controls where POST /feedback items of type "todo" are also
-// recorded. An empty TodoPath keeps feedback.log as the only destination.
+// recorded. An empty TodoRepo keeps feedback.log as the only destination.
+// Once TodoRepo has todo/_config.yaml committed in HEAD, todos are filed there as
+// draft todo files (through the ToDo tool at TodoTool when it runs, else by the
+// gateway itself); before that they are appended to TodoPath, the legacy to-do list.
 type FeedbackConfig struct {
-	TodoPath string `yaml:"todo_path"`
+	TodoRepo   string `yaml:"todo_repo"`
+	TodoTool   string `yaml:"todo_tool"`
+	TodoPython string `yaml:"todo_python"`
+	TodoBucket string `yaml:"todo_bucket"`
+	TodoPath   string `yaml:"todo_path"`
+}
+
+// LegacyTodoName is the legacy to-do list file name, used before TodoRepo adopts the ToDo tool.
+const LegacyTodoName = "TODO" + ".md"
+
+// LegacyTodoPath is the pre-adoption target: TodoPath, or TodoRepo/<legacy file> when unset.
+func (f FeedbackConfig) LegacyTodoPath() string {
+	if f.TodoPath != "" {
+		return f.TodoPath
+	}
+	return filepath.Join(f.TodoRepo, LegacyTodoName)
+}
+
+func (f FeedbackConfig) validate() error {
+	for _, k := range []struct{ name, val string }{
+		{"todo_repo", f.TodoRepo}, {"todo_tool", f.TodoTool}, {"todo_path", f.TodoPath},
+	} {
+		if k.val != "" && !filepath.IsAbs(k.val) {
+			return fmt.Errorf("feedback.%s %q must be an absolute path", k.name, k.val)
+		}
+	}
+	if f.TodoRepo == "" {
+		if f.TodoPath != "" {
+			return fmt.Errorf("feedback.todo_path is set but feedback.todo_repo is not: set todo_repo (the repo todos are filed in)")
+		}
+		return nil
+	}
+	if f.TodoPython == "" || !filepath.IsAbs(f.TodoPython) {
+		return fmt.Errorf("feedback.todo_python %q must be an absolute path to python when feedback.todo_repo is set", f.TodoPython)
+	}
+	if f.TodoBucket == "" {
+		return fmt.Errorf("feedback.todo_bucket is required when feedback.todo_repo is set")
+	}
+	return nil
 }
 
 type SecretStoreConfig struct {
@@ -197,8 +238,8 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	if p := c.Feedback.TodoPath; p != "" && !filepath.IsAbs(p) {
-		return fmt.Errorf("feedback.todo_path %q must be an absolute path", p)
+	if err := c.Feedback.validate(); err != nil {
+		return err
 	}
 	if len(c.Agents) == 0 {
 		return fmt.Errorf("no agents defined")
