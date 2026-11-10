@@ -44,11 +44,22 @@ Useful debug endpoints:
 - `GET /whoami` — agent identity and grants (needs auth)
 - `GET /help` — public banner; `?workspace=<ws>` needs a Bearer token with a grant there (granted ops only)
 - `GET /capabilities?workspace=<ws>` — granted ops only + config checksum + feature status (Bearer token)
-- `POST /feedback` `{"type","text"}` — append to `feedback.log` (Bearer token required; agent id is recorded). With `feedback.todo_path` set in
-  `config.<x>.yaml` (hot-reloadable), `"type":"todo"` also appends `- [ ] <text> (date, via /feedback by <agent>).` to that file
-  (created with a `# TODO` header if missing; parent dir must exist; line endings kept; text whitespace-collapsed,
-  capped at 400 chars; empty text -> 400). Responds `{"status":"added"}` or `"duplicate"` (same item text already
-  there); other types and unset key respond `"recorded"`. A TODO write failure is a 500 after `feedback.log` was written.
+- `POST /feedback` `{"type","text"}` — append to `feedback.log` (Bearer token required; agent id is recorded). With `feedback.todo_repo`
+  set in `config.<x>.yaml` (hot-reloadable; `todo_python` absolute and `todo_bucket` then required), `"type":"todo"`
+  (text whitespace-collapsed, capped at 400 chars; empty text -> 400) is also filed in that repo R:
+  - **Adopted** (`todo/_config.yaml` committed in R's HEAD, checked per request with `git rev-parse --verify -q HEAD`
+    and `git ls-tree HEAD -- todo/_config.yaml`; the working tree does not count): a `draft` todo, P2, size S, bucket
+    `todo_bucket`, title = text cut at 120 chars, body = text + `Filed via /feedback by <agent> on <date>.`. Through
+    the ToDo tool (`todo_python -I -X utf8 todo_tool new ...` then `commit`) when `todo_tool` runs, else written by
+    the gateway as the todo rule's "Without the tool" section says (`todo/<ID>.md`, its PRIORITY.md line, one `[hand]`
+    commit of those two paths, R's hooks run). Every git/python child gets identity `egw-feedback`,
+    `safe.directory=R` via `GIT_CONFIG_*` and PATH prefixed with `todo_python`'s directory (the services run as
+    LocalSystem). Responds `{"status":"added","todo":"<ID>"}`, or `"duplicate"` when a `todo/T*.md` body starts with
+    the same text. Any failure (check, tool, commit) is a 500 after `feedback.log` was written; nothing is half-written.
+  - **Not adopted**: appends `- [ ] <text> (date, via /feedback by <agent>).` to the legacy to-do list file
+    `todo_path` (default: that file in R; created with a `# TODO` header if missing; parent dir must exist; line
+    endings kept). Responds `{"status":"added"}` or `"duplicate"` (same item text already there).
+  Other types and an unset `todo_repo` respond `"recorded"`.
 - `POST /admin/reload` — hot-reload config + ops from disk (needs admin auth)
 - `POST /admin/secrets` — set a secret (needs admin auth)
 

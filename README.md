@@ -257,7 +257,7 @@ All endpoints that return JSON. Operations require `Authorization: Bearer <token
 |----------|--------|-------------|
 | `/whoami` | GET | Current agent identity, roles, grants |
 | `/help?workspace=<ws>` | GET | Plain-text services, envs, DB keys, tunnels and operations of a granted workspace (403 otherwise, also for unknown workspaces) |
-| `/feedback` | POST | Submit feedback (stored to `feedback.log` with the agent id; `"type":"todo"` also appends `- [ ] <text> (date, via /feedback by <agent>).` to `feedback.todo_path` when set) |
+| `/feedback` | POST | Submit feedback (stored to `feedback.log` with the agent id). With `feedback.todo_repo` set, `"type":"todo"` is also filed there: as a `draft` todo (P2, size S, bucket `feedback.todo_bucket`, response `{"status":"added","todo":"<ID>"}`) once `todo/_config.yaml` is committed in that repo's HEAD, else appended as `- [ ] <text> (date, via /feedback by <agent>).` to the legacy to-do list file `feedback.todo_path` (default: that file in `todo_repo`) |
 | `/capabilities?workspace=<ws>` | GET | Schemas, params and example calls of the operations the agent is granted in `<ws>` only, config checksum, feature status |
 | `/v1/workspaces/<ws>/op/<op-id>` | POST, GET | Execute an operation |
 | `?dry_run=true` | — | Validate params + grants, skip upstream call |

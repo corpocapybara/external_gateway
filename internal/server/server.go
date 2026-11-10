@@ -2015,7 +2015,7 @@ func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
 
 	// Empty todo text is rejected only when it would be filed; other types log as before.
 	todoText := ""
-	if fb.Type == "todo" && s.cfg().Feedback.TodoPath != "" {
+	if fb.Type == "todo" && s.cfg().Feedback.TodoRepo != "" {
 		todoText = normalizeTodoText(fb.Text)
 		if r := []rune(todoText); len(r) > maxTodoTextLen {
 			todoText = strings.TrimSpace(string(r[:maxTodoTextLen]))
@@ -2041,26 +2041,21 @@ func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
 	f.WriteString(entry)
 	f.Close()
 
-	status := "recorded"
-	if todoPath := s.cfg().Feedback.TodoPath; fb.Type == "todo" && todoPath != "" {
-		added, err := appendTodo(todoPath, todoText, agentID)
-		if err != nil {
-			s.logger.Error().Err(err).Str("path", todoPath).Msg("feedback: todo write failed")
-			msg := "feedback logged, but writing the TODO file failed"
-			if errors.Is(err, errTodoTooLarge) {
-				msg = "feedback logged, but the TODO file is over 1 MB so nothing was appended"
-			}
-			http.Error(w, msg, http.StatusInternalServerError)
+	status, todoID := "recorded", ""
+	if fbc := s.cfg().Feedback; fb.Type == "todo" && fbc.TodoRepo != "" {
+		var err error
+		if status, todoID, err = s.recordTodo(context.WithoutCancel(r.Context()), fbc, todoText, agentID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
-		}
-		status = "duplicate"
-		if added {
-			status = "added"
 		}
 	}
 
+	resp := map[string]string{"status": status}
+	if todoID != "" {
+		resp["todo"] = todoID
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": status})
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
