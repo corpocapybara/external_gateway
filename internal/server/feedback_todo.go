@@ -71,6 +71,11 @@ func runTodoCmd(ctx context.Context, argv, env []string, dir string) ([]byte, er
 	if errors.As(err, &ee) {
 		return out, &cmdExitError{code: ee.ExitCode(), stderr: stderr.String()}
 	}
+	if errors.Is(err, exec.ErrWaitDelay) {
+		// os/exec returns ErrWaitDelay only when the child itself exited 0 and a grandchild
+		// kept the pipes open: a success, never "the tool did not start".
+		return out, nil
+	}
 	return out, err
 }
 
