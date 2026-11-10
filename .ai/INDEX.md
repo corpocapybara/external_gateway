@@ -4,7 +4,7 @@ Lazy-load by reading the file relevant to your task.
 
 | File | What it covers |
 |------|---------------|
-| `AGENTS.md` | Agent conventions — build, deploy, secrets, admin API, service lifecycle, architecture |
+| `../AGENTS.md` | Agent conventions — build, deploy, secrets, admin API, service lifecycle, architecture |
 | `CONNECTORS.md` | Connector architecture — interface, implementations, adding a new connector |
 | `DEVELOPMENT.md` | Dev setup — building, debugging, testing, project layout |
 | `OPERATIONS.md` | Operation definitions — YAML structure, params, constraints, response shaping |
