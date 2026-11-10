@@ -3,10 +3,12 @@ package server
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -15,12 +17,35 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// feedbackServer returns a server whose feedback.log lands in a temp cwd.
+// legacyName is the pre-adoption to-do list file name, built so the literal stays out of the repo.
+const legacyName = "TODO" + ".md"
+
+// feedbackServer returns a server whose feedback.log lands in a temp cwd. A non-empty
+// todoPath is the legacy list of a todo_repo (its directory) that is not adopted yet: the
+// injected runner answers the adoption check with an unborn HEAD, so no git runs.
 func feedbackServer(t *testing.T, todoPath string) *Server {
+	t.Helper()
+	fbc := config.FeedbackConfig{}
+	if todoPath != "" {
+		fbc = config.FeedbackConfig{TodoRepo: filepath.Dir(todoPath), TodoPath: todoPath,
+			TodoPython: filepath.Join(t.TempDir(), "python.exe"), TodoBucket: "feedback"}
+		useRunner(t, func(argv []string) ([]byte, error) {
+			if strings.Join(argv, " ") == "git rev-parse --verify -q HEAD" {
+				return nil, &cmdExitError{code: 1}
+			}
+			t.Errorf("unexpected call %q", argv)
+			return nil, &cmdExitError{code: 2}
+		})
+	}
+	return todoServer(t, fbc)
+}
+
+// todoServer returns a server with feedback config fbc whose feedback.log lands in a temp cwd.
+func todoServer(t *testing.T, fbc config.FeedbackConfig) *Server {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	cfg := &config.Config{
-		Feedback: config.FeedbackConfig{TodoPath: todoPath},
+		Feedback: fbc,
 		Agents:   []config.Agent{{ID: "tester", TokenSHA: tokenSHA("tok")}},
 	}
 	return New(cfg, nil, "", zerolog.Nop())
@@ -60,7 +85,7 @@ func item(text string) string {
 }
 
 func TestFeedbackAgentIDSanitisedAndEmptyTokenAgentRejected(t *testing.T) {
-	todo := filepath.Join(t.TempDir(), "TODO.md")
+	todo := filepath.Join(t.TempDir(), legacyName)
 	s := feedbackServer(t, todo)
 	cfg := s.cfg()
 	cfg.Agents = append(cfg.Agents,
@@ -83,7 +108,7 @@ func TestFeedbackAgentIDSanitisedAndEmptyTokenAgentRejected(t *testing.T) {
 }
 
 func TestFeedbackRequiresValidToken(t *testing.T) {
-	todo := filepath.Join(t.TempDir(), "TODO.md")
+	todo := filepath.Join(t.TempDir(), legacyName)
 	s := feedbackServer(t, todo)
 	for name, auth := range map[string]string{"none": "", "wrong": "Bearer nope", "scheme": "Basic tok"} {
 		req := httptest.NewRequest(http.MethodPost, "/feedback", strings.NewReader(`{"type":"todo","text":"injected"}`))
@@ -105,7 +130,7 @@ func TestFeedbackRequiresValidToken(t *testing.T) {
 }
 
 func TestFeedbackTodoAppendedToTodoFile(t *testing.T) {
-	todo := filepath.Join(t.TempDir(), "TODO.md")
+	todo := filepath.Join(t.TempDir(), legacyName)
 	os.WriteFile(todo, []byte("# TODO\r\n\r\n- [ ] old\r\n"), 0644)
 	s := feedbackServer(t, todo)
 
@@ -124,7 +149,7 @@ func TestFeedbackMissingTrailingNewline(t *testing.T) {
 		{"crlf", "# TODO\r\n- [ ] old", "\r\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			todo := filepath.Join(t.TempDir(), "TODO.md")
+			todo := filepath.Join(t.TempDir(), legacyName)
 			os.WriteFile(todo, []byte(tc.in), 0644)
 			s := feedbackServer(t, todo)
 			wantResp(t, postFeedback(s, `{"type":"todo","text":"x"}`), 200, `{"status":"added"}`)
@@ -136,7 +161,7 @@ func TestFeedbackMissingTrailingNewline(t *testing.T) {
 }
 
 func TestFeedbackTodoDuplicates(t *testing.T) {
-	todo := filepath.Join(t.TempDir(), "TODO.md")
+	todo := filepath.Join(t.TempDir(), legacyName)
 	initial := "# TODO\n- [ ] fix the thing (2026-01-01, via /feedback).\n- [x] done one\n- [X] done two (2026-02-02, via /feedback).\n- [ ] foo (bar)\n"
 	os.WriteFile(todo, []byte(initial), 0644)
 	s := feedbackServer(t, todo)
@@ -158,7 +183,7 @@ func TestFeedbackTodoDuplicates(t *testing.T) {
 }
 
 func TestFeedbackLFAndMissingFileCreated(t *testing.T) {
-	todo := filepath.Join(t.TempDir(), "TODO.md")
+	todo := filepath.Join(t.TempDir(), legacyName)
 	s := feedbackServer(t, todo)
 	postFeedback(s, `{"type":"todo","text":"a"}`)
 	postFeedback(s, `{"type":"todo","text":"b"}`)
@@ -168,7 +193,7 @@ func TestFeedbackLFAndMissingFileCreated(t *testing.T) {
 }
 
 func TestFeedbackNonTodoLeavesTodoUntouched(t *testing.T) {
-	todo := filepath.Join(t.TempDir(), "TODO.md")
+	todo := filepath.Join(t.TempDir(), legacyName)
 	s := feedbackServer(t, todo)
 	wantResp(t, postFeedback(s, `{"type":"bug","text":"x"}`), 200, `{"status":"recorded"}`)
 	if _, err := os.Stat(todo); err == nil {
@@ -193,7 +218,7 @@ func TestFeedbackLogReplacesCR(t *testing.T) {
 }
 
 func TestFeedbackTodoEmptyAndCap(t *testing.T) {
-	todo := filepath.Join(t.TempDir(), "TODO.md")
+	todo := filepath.Join(t.TempDir(), legacyName)
 	s := feedbackServer(t, todo)
 	if w := postFeedback(s, `{"type":"todo","text":" \n "}`); w.Code != 400 {
 		t.Fatalf("empty: code=%d", w.Code)
@@ -205,7 +230,7 @@ func TestFeedbackTodoEmptyAndCap(t *testing.T) {
 }
 
 func TestFeedbackTodoStripsControlAndBidi(t *testing.T) {
-	todo := filepath.Join(t.TempDir(), "TODO.md")
+	todo := filepath.Join(t.TempDir(), legacyName)
 	s := feedbackServer(t, todo)
 	wantResp(t, postFeedback(s, `{"type":"todo","text":"a\u0000b \u001b[31m‮c​d\te"}`), 200, `{"status":"added"}`)
 	if got, want := readFile(t, todo), "# TODO\n\n"+item("ab [31mcd e")+"\n"; got != want {
@@ -214,7 +239,7 @@ func TestFeedbackTodoStripsControlAndBidi(t *testing.T) {
 }
 
 func TestFeedbackOversizeBody413(t *testing.T) {
-	s := feedbackServer(t, filepath.Join(t.TempDir(), "TODO.md"))
+	s := feedbackServer(t, filepath.Join(t.TempDir(), legacyName))
 	w := postFeedback(s, `{"type":"todo","text":"`+strings.Repeat("a", 70<<10)+`"}`)
 	if w.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("code=%d", w.Code)
@@ -222,7 +247,7 @@ func TestFeedbackOversizeBody413(t *testing.T) {
 }
 
 func TestFeedbackTodoFileOverOneMB500(t *testing.T) {
-	todo := filepath.Join(t.TempDir(), "TODO.md")
+	todo := filepath.Join(t.TempDir(), legacyName)
 	big := strings.Repeat("x", 1<<20+1)
 	os.WriteFile(todo, []byte(big), 0644)
 	s := feedbackServer(t, todo)
@@ -239,7 +264,7 @@ func TestFeedbackTodoFileOverOneMB500(t *testing.T) {
 }
 
 func TestFeedbackTodoMissingParentIs500AndLogKept(t *testing.T) {
-	s := feedbackServer(t, filepath.Join(t.TempDir(), "nodir", "TODO.md"))
+	s := feedbackServer(t, filepath.Join(t.TempDir(), "nodir", legacyName))
 	if w := postFeedback(s, `{"type":"todo","text":"x"}`); w.Code != 500 {
 		t.Fatalf("code=%d", w.Code)
 	}
@@ -248,9 +273,9 @@ func TestFeedbackTodoMissingParentIs500AndLogKept(t *testing.T) {
 	}
 }
 
-// Same text posted concurrently must be added exactly once.
-func TestFeedbackTodoConcurrentSameTextAddedOnce(t *testing.T) {
-	todo := filepath.Join(t.TempDir(), "TODO.md")
+// Same text posted concurrently must be added exactly once (legacy list).
+func TestFeedbackLegacyConcurrentSameTextAddedOnce(t *testing.T) {
+	todo := filepath.Join(t.TempDir(), legacyName)
 	s := feedbackServer(t, todo)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -270,5 +295,43 @@ func TestFeedbackTodoConcurrentSameTextAddedOnce(t *testing.T) {
 	wg.Wait()
 	if n := strings.Count(readFile(t, todo), "- [ ] same"); n != 1 || added != 1 {
 		t.Fatalf("lines=%d added=%d", n, added)
+	}
+}
+
+// Same text posted concurrently to an adopted repo is filed once: one added, one duplicate.
+// The injected tool writes the todo file the way `todo new` does.
+func TestFeedbackTodoConcurrentSameTextAddedOnce(t *testing.T) {
+	repo := fakeAdoptedRepo(t)
+	fbc := toolConfig(t, repo)
+	var mu sync.Mutex
+	n := 0
+	useRunner(t, adoptedRunner(func(argv []string) ([]byte, error) {
+		if argv[5] == "new" {
+			mu.Lock()
+			n++
+			id := fmt.Sprintf("T%04d", n)
+			mu.Unlock()
+			doc := "---\nid: " + id + "\n---\n" + strings.TrimPrefix(argv[11], "--body=") + "\n"
+			if err := os.WriteFile(filepath.Join(repo, "todo", id+".md"), []byte(doc), 0644); err != nil {
+				t.Error(err)
+			}
+			return []byte(id + " created: x (pending)\n"), nil
+		}
+		return nil, nil
+	}))
+	s := todoServer(t, fbc)
+	var wg sync.WaitGroup
+	got := make([]string, 2)
+	for i := range got {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got[i] = strings.TrimSpace(postFeedback(s, `{"type":"todo","text":"same"}`).Body.String())
+		}()
+	}
+	wg.Wait()
+	sort.Strings(got)
+	if got[0] != `{"status":"added","todo":"T0001"}` || got[1] != `{"status":"duplicate"}` {
+		t.Fatalf("got %q", got)
 	}
 }

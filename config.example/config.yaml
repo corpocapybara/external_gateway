@@ -13,9 +13,14 @@ audit:
 secret_store:
   backend: "wincred"
 
-# Optional: POST /feedback items with "type":"todo" are also appended to this markdown file.
+# Optional: POST /feedback items with "type":"todo" are also filed in todo_repo: as draft todos once
+# todo/_config.yaml is committed there (through todo_tool, or written by the gateway when the tool
+# does not run), before that appended to the legacy to-do list file todo_path (default: in todo_repo).
 #feedback:
-#  todo_path: "C:\\dev\\apps\\external_gateway\\TODO.md"
+#  todo_repo: "C:\\dev\\apps\\external_gateway"
+#  todo_tool: "C:\\dev\\_tools\\todo\\todo.py"
+#  todo_python: "C:\\Python313\\python.exe"   # required, absolute (services run as LocalSystem)
+#  todo_bucket: "feedback"                        # required, a bucket of todo_repo's todo/_config.yaml
 
 roles:
   dev-bot:

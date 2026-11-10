@@ -122,7 +122,7 @@ Token SHAs in config (`agents[].token_sha256`). Gateway hashes Bearer token and 
 
 A subagent launched with `isolation: "worktree"` runs in `.claude/worktrees/agent-*`, a checkout of committed files only; absolute main-checkout paths (`C:\dev\apps\external_gateway\...`) are refused there.
 - Write brief paths repo-relative (`internal/...`), never absolute.
-- Untracked or uncommitted inputs (`TODO.md`, `.ai/LOCAL.md`, `config.*.yaml`, `agent-keys.txt`) are not in the worktree: paste the needed text into the brief or commit it first; don't point at a main-checkout path.
+- Untracked or uncommitted inputs (`.ai/LOCAL.md`, `config.*.yaml`, `agent-keys.txt`) are not in the worktree: paste the needed text into the brief or commit it first; don't point at a main-checkout path.
 
 ## Other AI harnesses
 
