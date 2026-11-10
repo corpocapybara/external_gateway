@@ -51,3 +51,4 @@ chars, so each read becomes several paging calls.
 - [ ] **`postgres.schema` has no `schema` param** (2026-11-04). Session a466da94 (10-16) got
   `unknown parameter: schema`. The params are `env, db, table`, so tables outside `public` can't be described.
 
+- [ ] **`jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags** (2026-11-04). thp's develop regression `job/AutomatedTests/job/Regression/job/Automated.Tests.Regressions/job/develop` takes 23 Active Choices `*ContainerImageTag` params (automated-tests `src/Thunderpick.ApiTests/.jenkins/JenkinsfileRegression`, stage `Set versions`). Its for (2026-11-04, via /feedback).
