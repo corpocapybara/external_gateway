@@ -581,6 +581,23 @@ func TestFeedbackTodoBuiltInWriterUnknownBucketAndExistingID(t *testing.T) {
 			t.Fatal("PRIORITY.md changed")
 		}
 	})
+	t.Run("PRIORITY.md changed during the id scan keeps that change", func(t *testing.T) {
+		repo := fakeAdoptedRepo(t)
+		prioPath := filepath.Join(repo, "todo", "PRIORITY.md")
+		theirs := strings.Replace(priorityTemplate, "## P2\n\nnone", "## P2\n\n- T0005 · draft · feedback · S — theirs", 1)
+		useRunner(t, adoptedRunner(func(argv []string) ([]byte, error) {
+			if argv[1] == "log" { // another process commits T0005 while we scan
+				writeFile(t, prioPath, theirs)
+				return []byte("todo: T0005 created: theirs [cli]\n"), nil
+			}
+			return nil, nil
+		}))
+		s := todoServer(t, handConfig(t, repo))
+		wantResp(t, postFeedback(s, `{"type":"todo","text":"x"}`), 200, `{"status":"added","todo":"T0006"}`)
+		if got := readFile(t, prioPath); !strings.Contains(got, "- T0005 · draft · feedback · S — theirs\n- T0006 · draft · feedback · S — x\n") {
+			t.Fatalf("PRIORITY.md %q", got)
+		}
+	})
 	t.Run("id file appears before the write", func(t *testing.T) {
 		repo := fakeAdoptedRepo(t)
 		useRunner(t, adoptedRunner(func([]string) ([]byte, error) { return nil, nil }))
