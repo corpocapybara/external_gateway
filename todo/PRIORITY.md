@@ -25,6 +25,7 @@ none
 - T0009 · draft · connectors · M — No Thunderpick admin-panel connector; agents capture the admin session token from the page
 - T0010 · draft · connectors · M — `postgres.schema` has no `schema` param
 - T0011 · draft · ops-config · M — `jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags
+- T0012 · draft · server · S — T0007 smoke 2026-11-11
 
 ## P3
 
