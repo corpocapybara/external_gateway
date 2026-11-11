@@ -23,7 +23,7 @@ none
 - T0009 · draft · connectors · M — No Thunderpick admin-panel connector; agents capture the admin session token from the page
 - T0010 · draft · connectors · M — `postgres.schema` has no `schema` param
 - T0011 · draft · ops-config · M — `jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags
-- T0013 · in-progress · server · M — No configurable Jira key-scope constraint or pre-checked issue-link delete
+- T0013 · tested · server · M — No configurable Jira key-scope constraint or pre-checked issue-link delete
 - T0014 · designed · ops-config · M — The thp Jira write ops don't cover create, links, versions or editmeta, and jira.edit never works · blocked by T0013
 - T0017 · no-design-needed · ops-config · S — thp Jira write ops pin keys by hand or not at all · blocked by T0013, T0014
 - T0019 · refined · server · S — Unknown constraint types in ops YAML are silently ignored
