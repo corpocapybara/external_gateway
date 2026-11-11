@@ -1965,7 +1965,6 @@ func (s *Server) workspaceHelp(agent *config.Agent, name string, ws *config.Work
 		case "jira":
 			out = append(out, fmt.Sprintf("  %s.jira.search  POST {\"jql\":\"project=MD\",\"env\":\"prod\"}", name))
 			out = append(out, fmt.Sprintf("  %s.jira.issue   POST {\"key\":\"MD-123\",\"env\":\"prod\"}", name))
-			out = append(out, fmt.Sprintf("  %s.jira.create  POST {\"project\":\"MD\",\"summary\":\"...\",\"env\":\"prod\"}", name))
 		case "bitbucket":
 			out = append(out, fmt.Sprintf("  %s.bitbucket.pr  POST {\"repo\":\"my-repo\",\"pr_id\":1}", name))
 		case "gitlab":
