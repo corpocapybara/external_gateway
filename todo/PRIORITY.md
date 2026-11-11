@@ -25,7 +25,6 @@ none
 - T0011 · draft · ops-config · M — `jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags
 - T0013 · in-progress · server · M — No configurable Jira key-scope constraint or pre-checked issue-link delete
 - T0014 · designed · ops-config · M — The thp Jira write ops don't cover create, links, versions or editmeta, and jira.edit never works · blocked by T0013
-- T0015 · draft · ops-config · S — cm jira.edit sends invalid JSON: fields is typed string · blocked by T0014
 - T0017 · draft · ops-config · S — thp Jira write ops pin keys by hand or not at all · blocked by T0013, T0014
 - T0019 · refined · server · S — Unknown constraint types in ops YAML are silently ignored
 - T0020 · draft · server · S — Undeclared request params leak upstream as query strings, also on write ops
@@ -33,4 +32,5 @@ none
 
 ## P3
 
+- T0015 · draft · ops-config · S — cm jira.edit sends invalid JSON: fields is typed string · blocked by T0014
 - T0016 · draft · ops-config · S — cm jira.create declares project_scope, which nothing enforces · blocked by T0013
