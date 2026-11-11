@@ -64,6 +64,9 @@ func GetLogger() *Logger {
 	return globalLogger
 }
 
+// Dir returns the directory the audit files are written to.
+func (l *Logger) Dir() string { return l.dir }
+
 func (l *Logger) Log(record *Record) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()

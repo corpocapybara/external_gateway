@@ -579,6 +579,12 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 		upstreamStatus, responseBody, err = s.executeJiraWorklog(ws, op, params, workspace)
 	}
 
+	var cd *policy.ConstraintDenied
+	if errors.As(err, &cd) {
+		s.writeDeny(w, r, agentID, workspace, opID, "constraint", cd.Detail)
+		return
+	}
+
 	latency := time.Since(start).Milliseconds()
 	s.auditLog.LogAllow(requestID, agentID, workspace, opID, auditParams(op, params), latency, upstreamStatus)
 
@@ -768,6 +774,12 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 	}
 	if baseURL == "" || baseURL == "-" {
 		return 0, nil, fmt.Errorf("base_url for environment %q is not configured (empty or placeholder); update config.<ws>.yaml and deploy", envName)
+	}
+
+	if op.Precheck == "jira_issue_link" {
+		if st, body, err := s.precheckJiraLink(ws, op, params, workspace); err != nil || st != 0 {
+			return st, body, err
+		}
 	}
 
 	path, err := expandPathTemplate(op.Path, map[string]string{
@@ -1032,6 +1044,55 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 
 	resp.Body = shapeResponse(resp.StatusCode, resp.Body, op.Response.AllowFields)
 	return resp.StatusCode, resp.Body, nil
+}
+
+// precheckJiraLink GETs the issue link behind an `id` param through the op's own
+// site, env, credential and proxy, and scopes both of its ends. It returns
+// status 0 and a nil error when the op's request may go on; otherwise the
+// response to return (a GET status >= 400, or a transport error) or a
+// *policy.ConstraintDenied.
+func (s *Server) precheckJiraLink(ws *config.Workspace, op *policy.Operation, params map[string]interface{}, workspace string) (int, []byte, error) {
+	scope, err := policy.JiraKeyScopeFor(op, ws)
+	if err != nil {
+		return 0, nil, &policy.ConstraintDenied{Detail: err.Error()}
+	}
+	id, _ := params["id"].(string)
+	// The synthetic GET op has no Precheck, so it cannot recurse into this function.
+	get := &policy.Operation{
+		ID: op.ID + ".precheck", Connector: "http-rest", Site: op.Site, Method: "GET",
+		Path: "/rest/api/2/issueLink/{id}", Params: map[string]policy.ParamDef{"id": {Type: "string"}},
+	}
+	getParams := map[string]interface{}{"id": id}
+	if env, ok := params["env"]; ok {
+		getParams["env"] = env
+	}
+	st, body, err := s.executeHttpConnector(ws, get, getParams, workspace)
+	if err != nil {
+		return 0, nil, err
+	}
+	if st >= 400 {
+		return st, body, nil
+	}
+	deny := func(reason string) (int, []byte, error) {
+		return 0, nil, &policy.ConstraintDenied{Detail: fmt.Sprintf("issue link %s: %s", id, reason)}
+	}
+	if st < 200 || st >= 300 {
+		return deny(fmt.Sprintf("unexpected status %d", st))
+	}
+	var link map[string]interface{}
+	if json.Unmarshal(body, &link) != nil || link == nil {
+		return deny("response is not a JSON object")
+	}
+	for _, end := range []string{"inwardIssue", "outwardIssue"} {
+		m, ok := link[end].(map[string]interface{})
+		if !ok {
+			return deny(end + " is missing or not an object")
+		}
+		if err := scope.CheckIssueKey(end+".key", m["key"]); err != nil {
+			return deny(err.Error())
+		}
+	}
+	return 0, nil, nil
 }
 
 // shapeResponse applies allow_fields response filtering, but ONLY to successful
