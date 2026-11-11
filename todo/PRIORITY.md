@@ -26,7 +26,7 @@ none
 - T0013 · tested · server · M — No configurable Jira key-scope constraint or pre-checked issue-link delete
 - T0014 · designed · ops-config · M — The thp Jira write ops don't cover create, links, versions or editmeta, and jira.edit never works · blocked by T0013
 - T0017 · no-design-needed · ops-config · S — thp Jira write ops pin keys by hand or not at all · blocked by T0013, T0014
-- T0019 · refined · server · S — Unknown constraint types in ops YAML are silently ignored
+- T0019 · in-progress · server · S — Unknown constraint types in ops YAML are silently ignored
 - T0020 · draft · server · S — Undeclared request params leak upstream as query strings, also on write ops
 - T0021 · draft · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 
