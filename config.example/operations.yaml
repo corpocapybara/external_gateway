@@ -35,41 +35,127 @@ operations:
         - issues[].fields.created
         - issues[].fields.updated
 
+  # Jira write ops take Jira's own `fields` / `update` objects verbatim; jira_key_scope pins the
+  # project/issue keys inside them. create uses API v2 (description = wiki-markup string), edit
+  # uses API v3 (description = ADF document).
   jira.create:
     connector: http-rest
     site: jira
     method: POST
     path: /rest/api/2/issue
     params:
-      project:
-        type: enum
-        from: $workspace.jira_projects
+      fields:
+        type: object
         required: true
-      type:
-        type: enum
-        values:
-          - Bug
-          - Task
-          - Story
-          - Epic
-        required: true
-      summary:
-        type: string
-        maxlen: 255
-        required: true
-      description:
-        type: string
-        maxlen: 8000
-      labels:
-        type: list
-        maxlen: 10
-    body_template: |
-      {"fields":{"project":{"key":"{{project}}"},"issuetype":{"name":"{{type}}"},"summary":"{{summary}}","description":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"{{description}}"}]}]},"labels":{{labels}}}}
+      update:
+        type: object
+        default: {}
+    body_template: |-
+      {"fields":{{fields}},"update":{{update}}}
+    constraints:
+      - type: jira_key_scope
+        projects: $workspace.jira_projects
+        project_keys: [fields.project.key]
+        required: [fields.project.key]
+        issue_keys: [fields.parent.key]
+        absent: [fields.issuelinks, update.issuelinks, update.parent, update.project]
     response:
       allow_fields:
         - key
         - id
         - self
+
+  jira.edit:
+    connector: http-rest
+    site: jira
+    method: PUT
+    path: /rest/api/3/issue/{key}
+    params:
+      key:
+        type: string
+        required: true
+      fields:
+        type: object
+        default: {}
+      update:
+        type: object
+        default: {}
+    body_template: |-
+      {"fields":{{fields}},"update":{{update}}}
+    constraints:
+      - type: jira_key_scope
+        projects: $workspace.jira_projects
+        issue_keys: [key, fields.parent.key]
+        absent: [fields.project, fields.issuelinks, update.issuelinks, update.parent, update.project]
+
+  jira.link:
+    connector: http-rest
+    site: jira
+    method: POST
+    path: /rest/api/2/issueLink
+    params:
+      type:
+        type: string
+        required: true
+      inward:
+        type: string
+        required: true
+      outward:
+        type: string
+        required: true
+    body_template: |-
+      {"type":{"name":"{{type}}"},"inwardIssue":{"key":"{{inward}}"},"outwardIssue":{"key":"{{outward}}"}}
+    constraints:
+      - type: jira_key_scope
+        projects: $workspace.jira_projects
+        issue_keys: [inward, outward]
+
+  jira.link_delete:
+    connector: http-rest
+    site: jira
+    method: DELETE
+    path: /rest/api/2/issueLink/{id}
+    params:
+      id:
+        type: string
+        required: true
+        pattern: '^[0-9]+$'
+    precheck: jira_issue_link
+    constraints:
+      - type: jira_key_scope
+        projects: $workspace.jira_projects
+
+  jira.versions:
+    connector: http-rest
+    site: jira
+    method: GET
+    path: /rest/api/3/project/{project}/versions
+    params:
+      project:
+        type: enum
+        from: $workspace.jira_projects
+        required: true
+    response:
+      allow_fields:
+        - id
+        - name
+        - released
+        - archived
+        - releaseDate
+
+  jira.editmeta:
+    connector: http-rest
+    site: jira
+    method: GET
+    path: /rest/api/3/issue/{key}/editmeta
+    params:
+      key:
+        type: string
+        required: true
+    constraints:
+      - type: jira_key_scope
+        projects: $workspace.jira_projects
+        issue_keys: [key]
 
   jira.comment:
     connector: http-rest

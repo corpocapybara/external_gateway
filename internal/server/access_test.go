@@ -123,3 +123,20 @@ func TestCapabilitiesAuthAndGrantScope(t *testing.T) {
 		t.Fatalf("policy leaked: %q", w.Body.String())
 	}
 }
+
+// The generic jira Examples block must not show the old jira.create project/summary shape.
+func TestHelpExamples(t *testing.T) {
+	s := accessServer(t)
+	body := get(s, "/help?workspace=acme", "alice-tok").Body.String()
+	i := strings.Index(body, "Examples:")
+	if i < 0 {
+		t.Fatalf("no Examples block: %q", body)
+	}
+	ex := body[i:]
+	if !strings.Contains(ex, "acme.jira.search") {
+		t.Fatalf("jira examples missing: %q", ex)
+	}
+	if strings.Contains(ex, "jira.create") {
+		t.Errorf("Examples still shows jira.create: %q", ex)
+	}
+}
