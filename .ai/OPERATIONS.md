@@ -320,6 +320,11 @@ globex/acme tables below describe their own (older) op files, which are unchange
 Create uses API v2, so its `description` is a wiki-markup string; edit uses API v3, so its `description` is an ADF
 document. Example: `jira.edit` with `{"key":"THP-1","update":{"fixVersions":[{"add":{"name":"9.21.0"}}]}}`.
 
+Only the paths listed in the Scope column are checked. Any other content of `fields` / `update` passes through as
+is, including custom fields that hold an issue key (Epic Link, Parent Link), `fields.subtasks` and version or
+issue-type ids; Jira's own permissions are the only guard there (accepted residual risk of pinning keys, not
+field names). The `jira.create` / `jira.edit` rows in the globex/acme tables below describe their own op files.
+
 ### Globex Workspace (operations.globex.yaml)
 
 | Operation | Connector | Site | Description |
