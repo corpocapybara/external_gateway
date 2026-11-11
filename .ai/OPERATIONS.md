@@ -304,6 +304,22 @@ A listed path whose upstream field is present but empty or null stays in the res
 
 ## Complete operation reference
 
+### Jira write ops in `config.example/operations.yaml` (T0014)
+Writes take Jira's own `fields` / `update` objects verbatim; `jira_key_scope` pins the keys inside them. The
+globex/acme tables below describe their own (older) op files, which are unchanged.
+
+| Operation | Request | Params | Scope |
+|-----------|---------|--------|-------|
+| jira.create | POST `/rest/api/2/issue` (**write**) | `fields` (object, required), `update` (object, default `{}`) | `fields.project.key` required and in `jira_projects`; `fields.parent.key` in scope; `fields.issuelinks`, `update.issuelinks`, `update.parent`, `update.project` refused |
+| jira.edit | PUT `/rest/api/3/issue/{key}` (**write**) | `key`, `fields`, `update` (objects, default `{}`) | `key` and `fields.parent.key` in scope; same refused paths plus `fields.project` |
+| jira.link | POST `/rest/api/2/issueLink` (**write**) | `type` (link type name), `inward`, `outward` (issue keys) | both keys in scope |
+| jira.link_delete | DELETE `/rest/api/2/issueLink/{id}` (**write**) | `id` (`^[0-9]+$`) | `precheck: jira_issue_link`: both ends of the link in scope |
+| jira.versions | GET `/rest/api/3/project/{project}/versions` | `project` (enum from `jira_projects`) | returns id, name, released, archived, releaseDate |
+| jira.editmeta | GET `/rest/api/3/issue/{key}/editmeta` | `key` | `key` in scope |
+
+Create uses API v2, so its `description` is a wiki-markup string; edit uses API v3, so its `description` is an ADF
+document. Example: `jira.edit` with `{"key":"THP-1","update":{"fixVersions":[{"add":{"name":"9.21.0"}}]}}`.
+
 ### Globex Workspace (operations.globex.yaml)
 
 | Operation | Connector | Site | Description |
