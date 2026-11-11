@@ -13,14 +13,6 @@ import (
 // jira_worklog.go keeps its own stricter pattern; that is deliberate.)
 var JiraIssueKeyRe = regexp.MustCompile(`^([A-Z][A-Z0-9_]*)-[0-9]+$`)
 
-// ConstraintDenied is returned by a pre-check that refuses a request: the server
-// turns it into a 403 with rule "constraint" (and no allow audit record).
-type ConstraintDenied struct {
-	Detail string
-}
-
-func (e *ConstraintDenied) Error() string { return e.Detail }
-
 // JiraKeyScopeConstraint scopes Jira issue keys and pinned project keys found at
 // dotted paths inside the request params (`- type: jira_key_scope`).
 type JiraKeyScopeConstraint struct {
@@ -59,11 +51,20 @@ func (c *JiraKeyScopeConstraint) CheckIssueKey(label string, v interface{}) erro
 	if !ok {
 		return fmt.Errorf("path %s must be an issue key string", label)
 	}
-	m := JiraIssueKeyRe.FindStringSubmatch(s)
-	if m == nil || (c.Restrict && !containsString(c.Projects, m[1])) {
+	if !c.IssueKeyInScope(s) {
 		return fmt.Errorf("path %s: %q is not an in-scope issue key (projects: %s)", label, s, c.projectList())
 	}
 	return nil
+}
+
+// IssueKeyInScope reports whether v is a string issue key whose project is in scope.
+func (c *JiraKeyScopeConstraint) IssueKeyInScope(v interface{}) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	m := JiraIssueKeyRe.FindStringSubmatch(s)
+	return m != nil && (!c.Restrict || containsString(c.Projects, m[1]))
 }
 
 func (c *JiraKeyScopeConstraint) Check(op *Operation, params map[string]interface{}, workspace *config.Workspace) error {
@@ -233,12 +234,12 @@ func validateJiraKeyScope(id string, op *Operation) error {
 	}
 	switch op.Precheck {
 	case "":
-	case "jira_issue_link":
+	case PrecheckJiraIssueLink:
 		if op.Connector != "http-rest" || op.SlackFileContent || op.Multipart != nil {
 			return fmt.Errorf("operation %s: precheck jira_issue_link needs an http-rest op without slack_file_content or multipart", id)
 		}
-		if def, ok := op.Params["id"]; !ok || def.Pattern != "^[0-9]+$" {
-			return fmt.Errorf("operation %s: precheck jira_issue_link needs an id param with pattern ^[0-9]+$", id)
+		if def, ok := op.Params["id"]; !ok || def.Pattern != "^[0-9]+$" || def.Type != "string" || !def.Required {
+			return fmt.Errorf("operation %s: precheck jira_issue_link needs an id param that is a required string with pattern ^[0-9]+$", id)
 		}
 		if !hasScope {
 			return fmt.Errorf("operation %s: precheck jira_issue_link needs a jira_key_scope constraint", id)

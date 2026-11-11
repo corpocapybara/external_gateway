@@ -776,8 +776,8 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		return 0, nil, fmt.Errorf("base_url for environment %q is not configured (empty or placeholder); update config.<ws>.yaml and deploy", envName)
 	}
 
-	if op.Precheck == "jira_issue_link" {
-		if st, body, err := s.precheckJiraLink(ws, op, params, workspace); err != nil || st != 0 {
+	if op.Precheck == policy.PrecheckJiraIssueLink {
+		if st, body, err := s.precheckJiraLink(ws, op, params, workspace, envName); err != nil || st != 0 {
 			return st, body, err
 		}
 	}
@@ -1051,7 +1051,7 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 // status 0 and a nil error when the op's request may go on; otherwise the
 // response to return (a GET status >= 400, or a transport error) or a
 // *policy.ConstraintDenied.
-func (s *Server) precheckJiraLink(ws *config.Workspace, op *policy.Operation, params map[string]interface{}, workspace string) (int, []byte, error) {
+func (s *Server) precheckJiraLink(ws *config.Workspace, op *policy.Operation, params map[string]interface{}, workspace, envName string) (int, []byte, error) {
 	scope, err := policy.JiraKeyScopeFor(op, ws)
 	if err != nil {
 		return 0, nil, &policy.ConstraintDenied{Detail: err.Error()}
@@ -1062,10 +1062,9 @@ func (s *Server) precheckJiraLink(ws *config.Workspace, op *policy.Operation, pa
 		ID: op.ID + ".precheck", Connector: "http-rest", Site: op.Site, Method: "GET",
 		Path: "/rest/api/2/issueLink/{id}", Params: map[string]policy.ParamDef{"id": {Type: "string"}},
 	}
-	getParams := map[string]interface{}{"id": id}
-	if env, ok := params["env"]; ok {
-		getParams["env"] = env
-	}
+	// Pass the RESOLVED env name: resolveEnv also honours params["cluster"], so
+	// copying only params["env"] would let the GET and the op hit different envs.
+	getParams := map[string]interface{}{"id": id, "env": envName}
 	st, body, err := s.executeHttpConnector(ws, get, getParams, workspace)
 	if err != nil {
 		return 0, nil, err
@@ -1088,8 +1087,9 @@ func (s *Server) precheckJiraLink(ws *config.Workspace, op *policy.Operation, pa
 		if !ok {
 			return deny(end + " is missing or not an object")
 		}
-		if err := scope.CheckIssueKey(end+".key", m["key"]); err != nil {
-			return deny(err.Error())
+		// Never echo upstream data (the out-of-scope key) back to the agent.
+		if !scope.IssueKeyInScope(m["key"]) {
+			return deny(end + " is out of scope or has no issue key")
 		}
 	}
 	return 0, nil, nil
