@@ -27,6 +27,8 @@ none
 - T0017 · no-design-needed · ops-config · S — thp Jira write ops pin keys by hand or not at all · blocked by T0014
 - T0020 · draft · server · S — Undeclared request params leak upstream as query strings, also on write ops
 - T0021 · draft · server · M — kibana_index_scope is never enforced: kibana.search can query any index
+- T0022 · draft · server · S — jql_scope with a non-string, non-list projects value fails open
+- T0023 · draft · server · S — A null operation in the ops YAML panics loadFromFile
 
 ## P3
 
