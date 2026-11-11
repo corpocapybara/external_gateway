@@ -1,0 +1,12 @@
+id_prefix: T
+priorities: [P0, P1, P2, P3]
+buckets:
+  - {name: connectors, owns: "`internal/connectors/` (httprest, postgres, email, formsession, localservice), `internal/secrets/`"}
+  - {name: server, owns: "`internal/server/`, `internal/policy/`, `internal/redact/`, `internal/audit/`, `internal/config/`, `internal/scheduler/`, `internal/tokencheck/`, `internal/workcal/`"}
+  - {name: ops-config, owns: "`config.example/`, operation and role definitions, per-service ops, connector docs in `docs/*.md`"}
+  - {name: cli-tools, owns: "`cmd/` (egw, egw-admin, egw-desktop, egwctl, tools), `tools/`"}
+  - {name: deploy, owns: "`deploy/*.ps1`, workspace provisioning"}
+  - {name: docs, owns: "`.ai/`, `README.md`, `SECURITY.md`, `CLAUDE.md`", self_contained: true}
+review_lanes: [correctness, tests, scope, design]
+web: {port: 8768}
+done_branch: master
