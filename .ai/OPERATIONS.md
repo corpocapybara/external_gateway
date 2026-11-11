@@ -208,7 +208,8 @@ jira.create:
   first-segment param may only default to `{}`.
 - Load errors (`operation <id>: ...`): `projects` missing, an empty literal list, an unknown `$workspace.` field, a
   path whose first segment is not a declared param (or an empty segment or `[`), a `required` path not in
-  `issue_keys`/`project_keys`, an `absent` path also in another list.
+  `issue_keys`/`project_keys`, an `absent` path also in another list, or a first-segment param whose `default` is
+  anything but `{}`.
 
 ### precheck: jira_issue_link
 An op-level field (not a constraint) for ops that act on an issue link by id, which carries no issue key itself.
@@ -238,7 +239,13 @@ jira.link_delete:
 | status >= 400 | that status and body returned, op request not sent |
 | transport error | the usual upstream error response, op request not sent |
 
-Dry-run does not run the precheck (it never calls upstream).
+The GET uses the environment the op resolves (`env`, else `cluster`, else `default_env`), so both requests always hit
+the same one. A 403 detail names which end failed but never echoes the upstream issue key. Dry-run does not run the
+precheck (it never calls upstream).
+
+Load errors (`operation <id>: ...`): an unknown `precheck` name; `id` not declared as a required `type: string` with
+`pattern: '^[0-9]+$'`; no `jira_key_scope` constraint; a connector other than http-rest, or `multipart` /
+`slack_file_content` set.
 
 ### tunnel
 Ensures a required VPN/tunnel is up before executing. Referenced via `requires_tunnel` in the environment config (not in the operation definition).

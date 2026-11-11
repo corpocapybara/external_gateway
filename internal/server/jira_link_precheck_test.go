@@ -147,6 +147,8 @@ func TestJiraLinkDeletePrecheck(t *testing.T) {
 	}{
 		{name: "both in scope", handler: link(ok, `{"key":"THP-2"}`), body: `{"id":"10","extra":"x"}`, code: 200, upstr: 204, want: []string{get, del + "?extra=x"}, audit: "allow"}, // GET has an empty query; the op request keeps the extra param
 		{name: "env stg", handler: link(ok, ok), body: `{"id":"10","env":"stg"}`, code: 200, upstr: 204, want: []string{get, del}},
+		{name: "cluster stg", handler: link(ok, ok), body: `{"id":"10","cluster":"stg"}`, code: 200, upstr: 204, want: []string{get, del}},
+		{name: "env non-string, cluster stg", handler: link(ok, ok), body: `{"id":"10","env":5,"cluster":"stg"}`, code: 200, upstr: 204, want: []string{get, del}},
 		{name: "delete 404", handler: getThen(link(ok, ok), 404), body: `{"id":"10"}`, code: 200, upstr: 404, want: []string{get, del}},
 		{name: "inward out of scope", handler: link(`{"key":"ABC-1"}`, ok), body: `{"id":"10"}`, code: 403, rule: "constraint", want: []string{get}, audit: "deny"},
 		{name: "outward out of scope", handler: link(ok, `{"key":"ABC-1"}`), body: `{"id":"10"}`, code: 403, rule: "constraint", want: []string{get}, audit: "deny"},
@@ -156,6 +158,10 @@ func TestJiraLinkDeletePrecheck(t *testing.T) {
 		{name: "inward null", handler: link(`null`, ok), body: `{"id":"10"}`, code: 403, rule: "constraint", want: []string{get}, audit: "deny"},
 		{name: "non-JSON 200", handler: status(200, `<html>`), body: `{"id":"10"}`, code: 403, rule: "constraint", want: []string{get}, audit: "deny"},
 		{name: "GET 302", handler: status(302, ``), body: `{"id":"10"}`, code: 403, rule: "constraint", want: []string{get}, audit: "deny"},
+		{name: "GET 302 with in-scope body", handler: func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(302)
+			w.Write([]byte(`{"inwardIssue":{"key":"THP-1"},"outwardIssue":{"key":"THP-2"}}`))
+		}, body: `{"id":"10"}`, code: 403, rule: "constraint", want: []string{get}, audit: "deny"},
 		{name: "GET 404", handler: status(404, `{"errorMessages":["gone"]}`), body: `{"id":"10"}`, code: 200, upstr: 404, want: []string{get}},
 		{name: "transport error", body: `{"id":"10","env":"dead"}`, code: 200, rule: "error", audit: "allow"},
 		{name: "id with newline", handler: link(ok, ok), body: `{"id":"12\n"}`, code: 403, rule: "validation"},
@@ -200,6 +206,14 @@ func TestJiraLinkDeletePrecheck(t *testing.T) {
 			if out["rule"] != c.rule {
 				t.Errorf("%s: rule %v, want %s (%v)", c.name, out["rule"], c.rule, out)
 			}
+		}
+		if c.dryOp != "" {
+			if got := prod.take(); len(got) != 0 {
+				t.Errorf("%s: dry run reached upstream: %v", c.name, got)
+			}
+		}
+		if c.dryOp == "" && strings.Contains(w.Body.String(), "ABC-1") {
+			t.Errorf("%s: response echoes the upstream issue key: %s", c.name, w.Body.String())
 		}
 		if c.dryOp == "" {
 			if got := target.take(); strings.Join(got, "|") != strings.Join(c.want, "|") {
