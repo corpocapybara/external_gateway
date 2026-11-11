@@ -184,3 +184,59 @@ func TestReloadConcurrentWithRequests(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+// A reload of an ops file with an unknown constraint type is refused with 500 and
+// leaves the previously loaded registry serving requests.
+func TestReloadRefusesUnknownConstraintType(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	opsPath := filepath.Join(dir, "ops.yaml")
+	token := "agent-token"
+	cfgYAML := "admin_token_sha256: " + sha(adminTok) + "\n" +
+		"workspaces:\n  ws:\n    sites:\n      a: {}\nroles:\n  r:\n    operations: [a.b]\n" +
+		"agents:\n  - id: bot\n    token_sha256: " + sha(token) + "\n    grants:\n      - {workspace: ws, role: r}\n"
+	if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const op = "operations:\n  a.b:\n    connector: http-rest\n    site: s\n    method: GET\n    path: /x\n"
+	if err := os.WriteFile(opsPath, []byte(op), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := policy.NewRegistry(opsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := audit.Init(dir, 1); err != nil {
+		t.Fatal(err)
+	}
+	s := New(cfg, reg, opsPath, zerolog.Nop())
+	dryRun := func() *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, "/v1/workspaces/ws/op/a.b?dry_run=true", strings.NewReader("{}"))
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	if w := dryRun(); w.Code != http.StatusOK {
+		t.Fatalf("dry run before reload: %d %s", w.Code, w.Body.String())
+	}
+
+	// Had this file been installed, CheckConstraints would deny a.b with 403.
+	bad := op + "    constraints:\n      - type: jql_scop\n"
+	if err := os.WriteFile(opsPath, []byte(bad), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := adminDo(s, http.MethodPost, "/admin/reload", "")
+	if w.Code != http.StatusInternalServerError ||
+		!strings.Contains(w.Body.String(), "ops reload failed") ||
+		!strings.Contains(w.Body.String(), "unknown constraint type") {
+		t.Fatalf("reload: %d %s, want 500 ops reload failed: unknown constraint type", w.Code, w.Body.String())
+	}
+	if w := dryRun(); w.Code != http.StatusOK {
+		t.Fatalf("dry run after refused reload: %d %s, want the old registry's 200", w.Code, w.Body.String())
+	}
+}

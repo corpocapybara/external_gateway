@@ -323,6 +323,9 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 				return fmt.Errorf("operation %s param %s: invalid pattern: %w", id, name, err)
 			}
 		}
+		if err := checkConstraintTypes(id, op); err != nil {
+			return err
+		}
 		if err := checkJiraFields(id, op); err != nil {
 			return err
 		}
@@ -634,6 +637,12 @@ func (r *OperationRegistry) CheckConstraints(op *Operation, params map[string]in
 			c := &AllowedTablesConstraint{}
 			if err := c.Check(op, params, workspace); err != nil {
 				return err
+			}
+		default:
+			// Loaded ops are already filtered by checkConstraintTypes; this
+			// fails closed for an op built in code with a missing or unknown type.
+			if _, known := constraintTypes[constraintType]; !known {
+				return fmt.Errorf("unknown constraint type %q on %s", constraintType, op.ID)
 			}
 		}
 	}
