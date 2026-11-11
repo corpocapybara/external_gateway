@@ -33,4 +33,4 @@ none
 ## P3
 
 - T0015 · no-design-needed · ops-config · S — cm jira.edit sends invalid JSON: fields is typed string · blocked by T0014
-- T0016 · no-design-needed · ops-config · S — cm jira.create declares project_scope, which nothing enforces
+- T0016 · in-progress · ops-config · S — cm jira.create declares project_scope, which nothing enforces
