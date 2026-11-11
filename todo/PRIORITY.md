@@ -34,4 +34,4 @@ none
 
 - T0016 · draft · server · S — cm jira.create's project_scope constraint is silently ignored · blocked by T0013
 - T0017 · draft · ops-config · S — thp jira.comment pins issue keys with a hard-coded pattern · blocked by T0013
-- T0018 · in-progress · server · S — A jira_fields op loads without {{fields}} in body_template or without a fields default
+- T0018 · tested · server · S — A jira_fields op loads without {{fields}} in body_template or without a fields default
