@@ -53,9 +53,17 @@ operations:
         type: int
         max: 100
         default: 50
+      # Which Jira fields to fetch; each must be in jira_fields.allowed below.
+      fields:
+        type: list
+        default: [summary, description, status, assignee, created, updated, issuetype]
+    body_template: |
+      {"jql":"{{jql}}","maxResults":{{maxResults}},"fields":{{fields}}}
     constraints:
       - type: jql_scope
         projects: $workspace.jira_projects
+      - type: jira_fields
+        allowed: [summary, description, status, assignee, created, updated, issuetype]
     response:
       allow_fields:
         - issues[].key
