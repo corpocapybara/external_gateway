@@ -76,7 +76,8 @@ func TestJiraFieldsConstraintFailsClosed(t *testing.T) {
 }
 
 func TestJiraFieldsConstraintLoadErrors(t *testing.T) {
-	const head = "operations:\n  jira.search:\n    connector: http-rest\n    site: jira\n    method: POST\n    path: /rest/api/3/search/jql\n"
+	const head = "operations:\n  jira.search:\n    connector: http-rest\n    site: jira\n    method: POST\n    path: /rest/api/3/search/jql\n" +
+		`    body_template: '{"jql":"{{jql}}","fields":{{fields}}}'` + "\n"
 	param := func(extra string) string {
 		return "    params:\n      jql:\n        type: string\n      fields:\n        type: list\n" + extra
 	}
@@ -88,8 +89,9 @@ func TestJiraFieldsConstraintLoadErrors(t *testing.T) {
 		name, yaml, want string // want "" = loads
 	}{
 		{"valid with default", head + param("        default: [summary]\n") + constraint(okAllowed), ""},
-		{"valid without default", head + param("") + constraint(okAllowed), ""},
-		{"null default is unset", head + param("        default: null\n") + constraint(okAllowed), ""},
+		{"no default", head + param("") + constraint(okAllowed), "jira_fields needs a fields default"},
+		{"null default", head + param("        default: null\n") + constraint(okAllowed), "jira_fields needs a fields default"},
+		{"no {{fields}} in body_template", strings.Replace(head, "{{fields}}", "[]", 1) + param("        default: [summary]\n") + constraint(okAllowed), "jira_fields needs {{fields}} in body_template"},
 		{"allowed missing", head + param("") + constraint(""), "jira_fields needs allowed"},
 		{"allowed empty", head + param("") + constraint("        allowed: []\n"), "jira_fields needs allowed"},
 		{"allowed not a list", head + param("") + constraint("        allowed: summary\n"), "jira_fields needs allowed"},

@@ -46,7 +46,8 @@ field names).
    `type: jira_fields`. Errors read `operation <id>: jira_fields ...`; `NewRegistry` wraps them as
    `loading operations from <path>: ...`, so tests assert "contains". They cover: `allowed` missing / not a
    list / empty / non-string item; param `fields` undeclared or not `type: list`; a set default that is not a
-   non-empty list of strings each in `allowed`. Unset default is fine.
+   non-empty list of strings each in `allowed`. T0018 (2026-11-11) also refuses an unset default and a
+   `body_template` without `{{fields}}`.
 4. `registerBuiltIn` fallback `jira.search` unchanged (out of scope).
 
 Values never break out of the body: `buildBody` renders a list with `json.Marshal` (`formatParamValue`,
