@@ -16,7 +16,7 @@ none
 
 - T0001 · draft · ops-config · M — No Grafana op: prod logs and metrics go through the browser
 - T0002 · draft · ops-config · M — `kibana.search` has no stg/dev `base_url`, and thp's docs call `kibana.*` dead
-- T0003 · in-progress · server · M — `jira.search` returns a fixed field set; callers can't ask for `fields`
+- T0003 · tested · server · M — `jira.search` returns a fixed field set; callers can't ask for `fields`
 - T0005 · draft · ops-config · M — GitLab writes and MR fields missing, so GitLab work falls back to the browser
 - T0006 · draft · server · M — An expired GitLab PAT fails silently until a call returns `invalid_token`
 - T0007 · draft · ops-config · M — No Jenkins test-report op
