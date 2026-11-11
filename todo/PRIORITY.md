@@ -30,5 +30,5 @@ none
 
 ## P3
 
-- T0015 · draft · ops-config · S — globex jira.edit sends invalid JSON: fields is typed string · blocked by T0014
+- T0015 · no-design-needed · ops-config · S — globex jira.edit sends invalid JSON: fields is typed string · blocked by T0014
 - T0016 · no-design-needed · ops-config · S — globex jira.create declares project_scope, which nothing enforces
