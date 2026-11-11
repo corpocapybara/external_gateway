@@ -14,8 +14,9 @@ const (
 // constraintTypes is the single list of constraint types an ops file may use.
 // loadFromFile refuses any other type and CheckConstraints fails closed on one.
 var constraintTypes = map[string]constraintKind{
-	"jql_scope":   constraintChecked,
-	"jira_fields": constraintChecked,
+	"jql_scope":      constraintChecked,
+	"jira_fields":    constraintChecked,
+	"jira_key_scope": constraintChecked,
 
 	// A tag; PostgresReadOnlyConstraint.Check is a no-op.
 	"readonly": constraintMarker,

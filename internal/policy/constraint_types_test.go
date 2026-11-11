@@ -36,8 +36,11 @@ func TestConstraintTypeLoadErrors(t *testing.T) {
 		`    body_template: '{"fields":{{fields}}}'` + "\n    constraints:\n"
 	for _, name := range names {
 		all += "      - type: " + name + "\n"
-		if name == "jira_fields" {
+		switch name {
+		case "jira_fields":
 			all += "        allowed: [summary]\n"
+		case "jira_key_scope":
+			all += "        projects: $workspace.jira_projects\n"
 		}
 	}
 
