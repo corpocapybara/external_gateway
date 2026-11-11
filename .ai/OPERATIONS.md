@@ -176,6 +176,70 @@ value would go out as a query param, unguarded); when `fields` has no `default` 
 Response shaping is unchanged: every allowed field needs an `allow_fields` entry, or its value is stripped from the
 reply even though Jira returned it.
 
+### jira_key_scope
+Scopes Jira issue keys and pinned project keys at dotted paths inside the params (first segment a declared param,
+later segments object members, no array indexing). Denied with 403 `rule: constraint`, the detail naming the path.
+
+```yaml
+jira.create:
+  params:
+    fields: {type: object, required: true}
+    update: {type: object, default: {}}
+  body_template: '{"fields":{{fields}},"update":{{update}}}'
+  constraints:
+    - type: jira_key_scope
+      projects: $workspace.jira_projects      # or a literal list [THP, SUP]
+      issue_keys: [fields.parent.key]
+      project_keys: [fields.project.key]
+      required: [fields.project.key]
+      absent: [fields.issuelinks, update.issuelinks, update.parent, update.project]
+```
+
+- `projects` (required): `$workspace.jira_projects` or a non-empty literal list. An empty or unset workspace list
+  leaves the project part unrestricted (as the worklog ops) while every shape, object, required and absent check
+  still applies.
+- `issue_keys`: a present value must be a string exactly matching `^[A-Z][A-Z0-9_]*-[0-9]+$` with its project in
+  `projects`. An absent path passes.
+- `project_keys`: a present value must equal one of `projects`. The object holding a pinned key (`fields.project`,
+  `fields.parent`) must have `key` as its only member: `{id: ..}`, `{key: .., id: ..}`, a string or null is denied.
+- `required`: paths that must be present (each must also be in `issue_keys` or `project_keys`). `absent`: paths that
+  must not be present at all (any value, null included).
+- Walking through a non-object (`update` a string) is a deny, never "absent". Defaults apply after constraints, so a
+  first-segment param may only default to `{}`.
+- Load errors (`operation <id>: ...`): `projects` missing, an empty literal list, an unknown `$workspace.` field, a
+  path whose first segment is not a declared param (or an empty segment or `[`), a `required` path not in
+  `issue_keys`/`project_keys`, an `absent` path also in another list.
+
+### precheck: jira_issue_link
+An op-level field (not a constraint) for ops that act on an issue link by id, which carries no issue key itself.
+Needs an http-rest op (no `slack_file_content`, no `multipart`), an `id` param with `pattern: '^[0-9]+$'` and a
+`jira_key_scope` constraint (its `projects` scopes both ends). The gateway first GETs
+`/rest/api/2/issueLink/{id}` through the same site, env, credential and proxy, then:
+
+```yaml
+jira.link_delete:
+  connector: http-rest
+  site: jira
+  method: DELETE
+  path: /rest/api/2/issueLink/{id}
+  params:
+    id: {type: string, required: true, pattern: '^[0-9]+$'}
+  precheck: jira_issue_link
+  constraints:
+    - type: jira_key_scope
+      projects: $workspace.jira_projects
+```
+
+| GET outcome | Result |
+|-------------|--------|
+| 2xx, `inwardIssue.key` and `outwardIssue.key` both in scope | the op's request is sent; its status and body are returned (a DELETE 404 included) |
+| 2xx, either key out of scope, missing or not a string; body not a JSON object | 403 `constraint`, audit deny, op request not sent |
+| status below 200 or 300-399 (redirects are not followed) | 403 `constraint`, op request not sent |
+| status >= 400 | that status and body returned, op request not sent |
+| transport error | the usual upstream error response, op request not sent |
+
+Dry-run does not run the precheck (it never calls upstream).
+
 ### tunnel
 Ensures a required VPN/tunnel is up before executing. Referenced via `requires_tunnel` in the environment config (not in the operation definition).
 
