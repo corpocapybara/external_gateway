@@ -170,8 +170,9 @@ response:
 ```
 
 The ops file fails to load (`operation <id>: jira_fields ...`) when `allowed` is missing, empty, not a list or holds
-a non-string; when the op does not declare `fields` as `type: list`; or when a set `default` is not a non-empty
-list of names from `allowed`. An op built in code with a bad `allowed` refuses every request that sends `fields`.
+a non-string; when the op does not declare `fields` as `type: list`; when `body_template` lacks `{{fields}}` (the
+value would go out as a query param, unguarded); when `fields` has no `default` (an omitted `fields` would render
+`"fields":,`, invalid JSON); or when the `default` is not a non-empty list of names from `allowed`. An op built in code with a bad `allowed` refuses every request that sends `fields`.
 Response shaping is unchanged: every allowed field needs an `allow_fields` entry, or its value is stripped from the
 reply even though Jira returned it.
 

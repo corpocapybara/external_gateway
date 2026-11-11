@@ -234,8 +234,14 @@ func checkJiraFields(id string, op *Operation) error {
 		if !declared || def.Type != "list" {
 			return fmt.Errorf("operation %s: jira_fields needs a param fields of type list", id)
 		}
+		// Without the placeholder, fields would go out as a query param and the
+		// constraint would guard nothing (same test as the query-param skip in server.go).
+		if !strings.Contains(op.BodyTemplate, "{{fields}}") {
+			return fmt.Errorf("operation %s: jira_fields needs {{fields}} in body_template", id)
+		}
+		// Without a default, an omitted fields renders `"fields":,` (invalid JSON).
 		if def.Default == nil {
-			continue
+			return fmt.Errorf("operation %s: jira_fields needs a fields default", id)
 		}
 		defaults, ok := stringList(def.Default)
 		if !ok || len(defaults) == 0 {
