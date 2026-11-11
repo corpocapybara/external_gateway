@@ -113,6 +113,25 @@ so an agent's retry needs no guess: `unknown parameter: fields (valid: env, jql,
 
 ## Constraints
 
+Each entry under `constraints:` needs a `type` that is exactly one of the 10 types below (list:
+`constraintTypes` in `internal/policy/constraint_types.go`):
+
+| Type | Effect |
+|------|--------|
+| `jql_scope`, `jira_fields`, `jira_key_scope` | Enforced by `CheckConstraints` (sections below). |
+| `readonly` | Marker only; its check does nothing. |
+| `allowed_tables` | Marker only; the postgres connector enforces the workspace's `pg_allowed_tables`. |
+| `project_scope`, `repo_scope` | No effect. Their ops scope the param with a literal `enum`, which can drift from the workspace policy. |
+| `max_rows`, `statement_timeout` | No effect. The postgres connector hard-codes 1000 rows and a 5000 ms timeout; YAML values are ignored. |
+| `kibana_index_scope` | No effect: nothing enforces it (T0021). |
+
+Any other type is refused when the ops file loads: `operation <id>: unknown constraint type "<t>"` (matching is
+exact, so `JQL_SCOPE` is refused), or `operation <id>: constraint has no type` when `type` is missing, null, empty
+or not a string. So a typo in a deployed ops file stops the service from starting; `/admin/reload` returns 500
+`ops reload failed: ...` and keeps the old ops; egw-desktop's pre-publish check shows the error. An op built in
+code with an unknown or missing type is denied at request time (403, rule `constraint`, detail
+`unknown constraint type "<t>" on <id>`).
+
 ### readonly
 Marks an operation as read-only. Write operations must NOT have this constraint.
 
@@ -247,8 +266,9 @@ Load errors (`operation <id>: ...`): an unknown `precheck` name; `id` not declar
 `pattern: '^[0-9]+$'`; no `jira_key_scope` constraint; a connector other than http-rest, or `multipart` /
 `slack_file_content` set.
 
-### tunnel
-Ensures a required VPN/tunnel is up before executing. Referenced via `requires_tunnel` in the environment config (not in the operation definition).
+### Tunnels (not a constraint type)
+A required VPN/tunnel is checked before executing via `requires_tunnel` in the environment config, not in the
+operation definition; `type: tunnel` under `constraints:` is refused at load.
 
 ## Environment selection
 
