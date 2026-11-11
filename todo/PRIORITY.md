@@ -1,0 +1,31 @@
+# Priority list
+
+Every open todo, in the order to take it: priority, then `order`, then id. The ToDo tool rewrites this file
+in every todo commit; do not edit it while the tool is available. Without the tool, update it by hand in the
+same commit as the todo change (todo rules, section "Without the tool").
+
+## P0
+
+none
+
+## P1
+
+none
+
+## P2
+
+- T0001 · draft · ops-config · M — No Grafana op: prod logs and metrics go through the browser
+- T0002 · draft · ops-config · M — `kibana.search` has no stg/dev `base_url`, and thp's docs call `kibana.*` dead
+- T0003 · draft · ops-config · M — `jira.search` returns a fixed field set; callers can't ask for `fields`
+- T0004 · draft · ops-config · M — The thp Jira write ops don't cover create, links, versions or `update`
+- T0005 · draft · ops-config · M — GitLab writes and MR fields missing, so GitLab work falls back to the browser
+- T0006 · draft · server · M — An expired GitLab PAT fails silently until a call returns `invalid_token`
+- T0007 · draft · ops-config · M — No Jenkins test-report op
+- T0008 · draft · ops-config · M — `corpjira` can't download attachment content
+- T0009 · draft · connectors · M — No Thunderpick admin-panel connector; agents capture the admin session token from the page
+- T0010 · draft · connectors · M — `postgres.schema` has no `schema` param
+- T0011 · draft · ops-config · M — `jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags
+
+## P3
+
+none
