@@ -60,7 +60,7 @@ the diff; the orchestrator never starts a round 4: after round 3 the open blocki
 questions (reviews ran to round 9-14 on 2026-11-10). Round 1 also flags stress-style acceptance ("8 writers", many
 iterations) and moves it to an opt-in script. A round counts only when it is complete: the critic ends with
 `checked: …`, and anything it did not check (tool cap, error, no verdict) goes to a continuation critic for the rest
-in the same round, not a new one. Round 2+ critics get bigger caps (about 25 tool calls, 500 words); a blocking
+in the same round, not a new one. Round 2+ critics get a bigger word cap (about 40 tool calls, 500 words); a blocking
 defect they find in unchanged text is reported as "missed in round 1". The move note names the rounds, every rejected finding and
 `risk: high (<reasons>)` or `risk: low`. The tool enforces only non-empty acceptance; the critic is this rule's job.
 
