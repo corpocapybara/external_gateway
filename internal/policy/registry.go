@@ -165,6 +165,91 @@ func isJQLWordByte(b byte) bool {
 	return b == '_' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }
 
+// JiraFieldsConstraint lets a caller pick which Jira fields a search returns,
+// from an allowlist (`- type: jira_fields` with `allowed: [...]`). It checks only
+// the request's `fields` param: absent passes (the op default applies later),
+// present must be a non-empty JSON array of allowed field names. Response
+// shaping (allow_fields) still decides what reaches the caller.
+type JiraFieldsConstraint struct {
+	Allowed []string
+}
+
+func (c *JiraFieldsConstraint) Check(op *Operation, params map[string]interface{}, workspace *config.Workspace) error {
+	val, present := params["fields"]
+	if !present {
+		return nil
+	}
+	if len(c.Allowed) == 0 {
+		// Ops built in code skip the load check: fail closed, never unscoped.
+		return fmt.Errorf("jira_fields on %s lists no allowed fields", op.ID)
+	}
+	allowed := strings.Join(c.Allowed, ", ")
+	list, ok := val.([]interface{})
+	if !ok || len(list) == 0 {
+		return fmt.Errorf("parameter fields must be a non-empty JSON array of field names (allowed: %s)", allowed)
+	}
+	for _, item := range list {
+		if _, ok := item.(string); !ok {
+			return fmt.Errorf("parameter fields must be a non-empty JSON array of field names (allowed: %s)", allowed)
+		}
+	}
+	for _, item := range list {
+		if s := item.(string); !containsString(c.Allowed, s) {
+			return fmt.Errorf("field %q is not allowed (allowed: %s)", s, allowed)
+		}
+	}
+	return nil
+}
+
+// stringList converts a YAML/JSON list to strings; ok is false for a non-list
+// or a list holding a non-string item.
+func stringList(v interface{}) ([]string, bool) {
+	list, ok := v.([]interface{})
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		s, ok := item.(string)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, s)
+	}
+	return out, true
+}
+
+// checkJiraFields validates every jira_fields constraint of an op at load time,
+// so a misconfigured allowlist or default never reaches a request.
+func checkJiraFields(id string, op *Operation) error {
+	for _, constraint := range op.Constraints {
+		if t, _ := constraint["type"].(string); t != "jira_fields" {
+			continue
+		}
+		allowed, ok := stringList(constraint["allowed"])
+		if !ok || len(allowed) == 0 {
+			return fmt.Errorf("operation %s: jira_fields needs allowed: a non-empty list of field names", id)
+		}
+		def, declared := op.Params["fields"]
+		if !declared || def.Type != "list" {
+			return fmt.Errorf("operation %s: jira_fields needs a param fields of type list", id)
+		}
+		if def.Default == nil {
+			continue
+		}
+		defaults, ok := stringList(def.Default)
+		if !ok || len(defaults) == 0 {
+			return fmt.Errorf("operation %s: jira_fields needs the fields default to be a non-empty list of field names", id)
+		}
+		for _, f := range defaults {
+			if !containsString(allowed, f) {
+				return fmt.Errorf("operation %s: jira_fields default field %q is not in allowed", id, f)
+			}
+		}
+	}
+	return nil
+}
+
 type PostgresReadOnlyConstraint struct{}
 
 func (c *PostgresReadOnlyConstraint) Check(op *Operation, params map[string]interface{}, workspace *config.Workspace) error {
@@ -228,6 +313,9 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 			if _, err := regexp.Compile(def.Pattern); err != nil {
 				return fmt.Errorf("operation %s param %s: invalid pattern: %w", id, name, err)
 			}
+		}
+		if err := checkJiraFields(id, op); err != nil {
+			return err
 		}
 		if mp := op.Multipart; mp != nil {
 			_, hasName := op.Params[mp.FilenameParam]
@@ -504,6 +592,15 @@ func (r *OperationRegistry) CheckConstraints(op *Operation, params map[string]in
 				}
 			}
 			c := &JQLScopeConstraint{Projects: projects}
+			if err := c.Check(op, params, workspace); err != nil {
+				return err
+			}
+		case "jira_fields":
+			allowed, ok := stringList(constraint["allowed"])
+			if !ok {
+				allowed = nil // fails closed in Check
+			}
+			c := &JiraFieldsConstraint{Allowed: allowed}
 			if err := c.Check(op, params, workspace); err != nil {
 				return err
 			}
