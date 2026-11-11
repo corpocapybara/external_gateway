@@ -98,6 +98,7 @@ body_template: |
 | `type: int` | `maxResults`, `per_page` | Integer (Go type conversion handled) |
 | `type: float` | Numeric thresholds | Float64 |
 | `type: object` | `fields` | A JSON object, rendered into `{{name}}` as raw JSON (place it unquoted in the body template). Absent keys are simply not sent, so optional fields need no empty-string placeholder |
+| `type: list` | `labels`, jira.search `fields` | A JSON array, rendered into `{{name}}` as raw JSON (place it unquoted). No validation of its own: guard it with a constraint (e.g. `jira_fields`) |
 | `keys: [a, b]` | `[resolution]` | For `type: object`: every key the agent sends must be listed, otherwise the request is denied |
 | `pattern: '^KEY-[0-9]+$'` | Issue key scoped to one project | For `type: string`: the value must match this Go regexp (anchor it with `^`/`$`) |
 | `required: true` | `project_id` | Request fails if missing |
@@ -141,6 +142,38 @@ constraints:
   - type: jql_scope
     projects: [DESK]
 ```
+
+### jira_fields
+For Jira searches. Lets the caller choose which fields Jira returns, from an allowlist. It checks only the `fields`
+param: absent passes (the param's `default` is sent); present must be a non-empty JSON array of strings, each in
+`allowed`. Refusals are rule `constraint`, with one of two details:
+- `parameter fields must be a non-empty JSON array of field names (allowed: summary, status)` (null, a string, an
+  object, `[]`, a non-string item);
+- `field "*all" is not allowed (allowed: summary, status)` (the first item not listed; Jira's `*all`,
+  `*navigable` and `-field` forms are refused unless listed literally).
+
+```yaml
+params:
+  fields:
+    type: list
+    default: [summary, status]
+body_template: |
+  {"jql":"{{jql}}","maxResults":{{maxResults}},"fields":{{fields}}}
+constraints:
+  - type: jira_fields
+    allowed: [summary, status, customfield_10333]
+response:
+  allow_fields:
+    - issues[].fields.summary
+    - issues[].fields.status
+    - issues[].fields.customfield_10333
+```
+
+The ops file fails to load (`operation <id>: jira_fields ...`) when `allowed` is missing, empty, not a list or holds
+a non-string; when the op does not declare `fields` as `type: list`; or when a set `default` is not a non-empty
+list of names from `allowed`. An op built in code with a bad `allowed` refuses every request that sends `fields`.
+Response shaping is unchanged: every allowed field needs an `allow_fields` entry, or its value is stripped from the
+reply even though Jira returned it.
 
 ### tunnel
 Ensures a required VPN/tunnel is up before executing. Referenced via `requires_tunnel` in the environment config (not in the operation definition).
