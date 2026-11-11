@@ -44,16 +44,56 @@ see versions). `config.thp.yaml`: role dev-bot += create, link, link_delete, ver
 versions, editmeta. Backups of both files go to the scratchpad before editing.
 
 ## Tests
-`go test ./internal/server -run TestExampleJiraOps` (new file `internal/server/example_jira_ops_test.go`): loads
-`config.example/operations.yaml` through `policy.NewRegistry`, a config whose `jira` site points at an
-`httptest` server recording method, path and body, and a granted agent; calls each op through the HTTP handler and
-asserts exact method, path and body (the two bodies named in the acceptance compared as exact strings after
-`json.Compact`). Denials (edit ABC-1, create project {id:10100}, update.issuelinks, update as a string) assert 403
-and the right `rule`, and that the recorder saw no request. jira.link_delete's happy path GETs then DELETEs.
+Needs T0013 merged first (`jira_key_scope`, `precheck`); the T0014 branch is cut from master after it.
+Wall time of `go test ./internal/server` is measured before and after and reported; one call per case, no loops.
 
-Manual (owner: no live writes): after an elevated `deploy/update.ps1`, reads only — versions, editmeta, issue with
-links, capabilities — plus two denied writes (403, nothing sent). Recorded in the `tested` move note.
+`go test ./internal/server -run TestExampleJiraOps` (new file `internal/server/example_jira_ops_test.go`) builds
+its own fixture, not `newEnvFixture` (whose ops map and role are hand-made): `policy.NewRegistry(
+"../../config.example/operations.yaml")`; a config with workspace `thp`, `Policy.JiraProjects: [THP]`, a site
+`jira` with ONE environment whose `base_url` is a recording `httptest` server (method, path, `RawQuery`, body per
+request; handler set per case), an agent whose role grants the six ops, `audit.Init(t.TempDir(), 1)`; calls go
+through `ServeHTTP` with the Bearer token.
+- Happy paths, exact method + path + body, empty `RawQuery`:
+  - create: body exactly `{"fields":{"issuetype":{"name":"Bug"},"project":{"key":"THP"},"summary":"s"},"update":{}}`
+    (json.Marshal sorts keys);
+  - edit with only `update`: `{"fields":{},"update":{"fixVersions":[{"add":{"name":"9.21.0"}}]}}`; edit with only
+    `fields`: `"update":{}` defaulted;
+  - link: `{"type":{"name":"Blocks"},"inwardIssue":{"key":"THP-1"},"outwardIssue":{"key":"THP-2"}}`;
+  - link_delete: GET `/rest/api/2/issueLink/10` (answered with in-scope keys) then DELETE, 204 passed through
+    (the asserted status/body is whatever `executeOp` renders for an empty 204 today, read once and pinned);
+  - versions: GET `/rest/api/3/project/THP/versions`, empty body; the fake also returns `self` and
+    `description`, and the test asserts `allow_fields` strips them;
+  - editmeta: GET `/rest/api/3/issue/THP-1/editmeta`, empty body.
+- Denials, each asserting the recorder saw no request: edit key ABC-1 (403 constraint); create
+  `fields.project {id:10100}` (403 constraint); create without `fields.project` (403 constraint, required);
+  edit `update {issuelinks:[...]}` (403 constraint); edit `fields.project {key:THP}` (403 constraint, absent on
+  edit); link inward OPS-1 (403 constraint); editmeta key ABC-1 (403 constraint); versions project OPS (403
+  validation, enum); `update` as a JSON string, as null, as an array (403 validation).
+- Passthrough, documented not tested: edit with neither object sends `{"fields":{},"update":{}}` (Jira 400s);
+  link inward == outward; link_delete id `007`.
+- Undeclared params: `executeHttpConnector` (`server.go:788-809`) sends any param not in path or body as a
+  query string, on every op in every workspace. That is gateway-wide behaviour, not this todo's; recorded as its
+  own todo. The happy-path `RawQuery` assertions keep these ops from adding any.
+
+`/help`: the generic Examples line for `jira.create` (`internal/server/server.go:1907`, old project/summary
+params) is removed; `TestHelpExamples` asserts no `jira.create` line in a jira workspace's Examples block.
+
+Manual (owner: no live writes), after an elevated `deploy/update.ps1`, recorded in the `tested` note: versions
+THP returns names; editmeta on a named THP issue returns fields; `jira.issue` on a named THP issue that has links
+returns `fields.issuelinks[].id`; edit key ABC-1 and create `fields.project.key ABC` return 403 constraint, and
+the deployed audit log shows a deny and no allow for those request ids; `GET /capabilities?workspace=thp` with
+the dev-bot token lists the five new grants; `Select-String` on the deployed `config.thp.yaml` shows readonly's
+two.
+
+## Notes on scope
+- `jira.versions`' enum and the constraint both leave the project unscoped when `jira_projects` is empty (same
+  fallback as T0013); thp sets it.
+- `env`: the example ops declare none (the example Jira site has one environment). The thp copies keep an
+  optional `env` string param like thp's `jira.issue` and `jira.edit` today (`config.thp.yaml` jira site:
+  `default_env: prod`, plus a corpo env); the T0013 pre-check passes `env` through to its GET.
+- `jira.link` `type` stays free text (JSON-escaped, Jira rejects unknown types); the acceptance asks no more.
+- `.ai/OPERATIONS.md`: both tables that list `jira.create`/`jira.edit` (~lines 228-229, 271) are updated.
 
 ## Risk
 High: agent-facing op API (create's params change shape). Callers of the example `jira.create` in docs are updated
-in the same change; no Go code calls its old params (checked by grep in refinement r2).
+in the same change; the only Go reference to its old params is the generic `/help` example, removed here.

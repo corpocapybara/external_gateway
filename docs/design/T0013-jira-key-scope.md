@@ -55,9 +55,17 @@ what Jira deletes).
    - `required`: each path must be present (`missing required path P`).
    - `absent`: each path must not be present at all, any value including null (`path P is not allowed`).
    - Absent issue/project paths pass (an edit without a parent is fine).
+   - A walk that meets a non-object before the last segment (e.g. `fields` is a string, `fields.project` is
+     null or an array) is a deny for every list, `absent` and `required` included (`path P: Y is not an
+     object`), never "absent": a probe through a non-object must not pass.
    - Error order is fixed (absent, required, holders, issue_keys, project_keys; each in config order) so a
      request is always told the same thing.
-2. `CheckConstraints` gets `case "jira_key_scope":` building the struct. `projects` resolves like `jql_scope`
+   - Defaults are applied after constraints (`server.go:549`), so a param default is never scoped; the load
+     check below refuses a default other than `{}` on any param that is the first segment of a listed path.
+2. `CheckConstraints` gets `case "jira_key_scope":` (after T0003's `case "jira_fields":`) building the struct
+   from the constraint map on every call, as `jira_fields` does: no parse cache on the op, so an `Operation`
+   literal built by a test is checked exactly like a loaded one. A malformed map at check time (paths not a
+   string list, missing `projects`) is an error, so `Check` fails closed. `projects` resolves like `jql_scope`
    (`$workspace.jira_projects` → `ws.Policy.JiraProjects`); `Restrict = len(Projects) > 0`, so an empty or unset
    workspace list leaves the project part unrestricted (matches `scopedIssueKey`,
    `internal/server/jira_worklog.go:407`) while shape, holder and absent checks still run. A literal list is never
@@ -65,12 +73,16 @@ what Jira deletes).
 3. Load checks in `loadFromFile` via `validateJiraKeyScope(id, op)`, each failing with `operation <id>: ...`:
    `projects` missing; a literal list that is empty or has a non-string/empty item; a `$workspace.` name other
    than `jira_projects`; any path whose first segment is not a declared param, or with an empty segment or a
-   `[`; a `required` path not in `issue_keys` or `project_keys`. Paths are parsed once and kept on the op
-   (`op.keyScopes`, unexported) so `Check` does no parsing; the constraint map stays the source for dry-run
-   messages.
+   `[`; a `required` path not in `issue_keys` or `project_keys`; a path in `absent` that is also in another
+   list; a default other than `{}` on a first-segment param. Called from `loadFromFile` after T0003's
+   `checkJiraFields`.
 4. `Operation` gets `Precheck string \`yaml:"precheck"\``. Load check: `precheck` other than `""` or
-   `jira_issue_link` is an error; `jira_issue_link` needs connector `http-rest`, a declared `id` param and a
-   `jira_key_scope` constraint (its `projects` is what scopes the link ends).
+   `jira_issue_link` is an error; `jira_issue_link` needs connector `http-rest`, no `slack_file_content` and no
+   `multipart` (those route around `executeHttpConnector`), a declared `id` param with pattern `^[0-9]+$`, and
+   a `jira_key_scope` constraint (its `projects` is what scopes the link ends).
+5. The key regex is `policy.JiraIssueKeyRe` (exported, `^([A-Z][A-Z0-9_]*)-[0-9]+$` per the acceptance) and the
+   pre-check uses it. `internal/server/jira_worklog.go:44` keeps its own stricter `-[1-9][0-9]*` pattern:
+   aliasing would change worklog behaviour, which is out of scope.
 
 Constraint errors already become `403 {"error":"denied","rule":"constraint"}` with an audit deny in
 `executeOp` (`internal/server/server.go:534`) and `handleDryRun` (`:459`); no server change for the constraint.
@@ -86,9 +98,11 @@ Constraint errors already become `403 {"error":"denied","rule":"constraint"}` wi
    param leaks into its query string. Outcomes:
    - transport error: returned as the op's error (existing error JSON, audited allow with status 0, like any
      upstream failure) and the op request is not sent;
-   - GET status >= 400: return that status and body; the op request is not sent (3xx cannot reach here: Go's
-     client follows redirects, and a final 3xx with no Location falls into the non-JSON / missing-key deny);
-   - body not JSON, or `inwardIssue.key` / `outwardIssue.key` missing or not a string, or either out of scope
+   - GET status >= 400: return that status and body; the op request is not sent;
+   - GET status 1xx/3xx (the httprest client does not follow redirects, `internal/connectors/httprest/
+     connector.go:25-45`): `ConstraintDenied` ("issue link <id>: unexpected status N"); only 2xx goes on;
+   - 2xx body not JSON, `inwardIssue`/`outwardIssue` missing, null or not an object, their `key` missing or not
+     a string, or either key out of scope
      (same regex and `Projects`/`Restrict` as the op's `jira_key_scope`, resolved by a helper
      `policy.JiraKeyScopeFor(op, ws)`): return `&policy.ConstraintDenied{Detail: "issue link <id>: <reason>"}`;
    - both in scope: fall through and send the op's request; its status and body are returned unchanged, a DELETE
@@ -99,18 +113,39 @@ Constraint errors already become `403 {"error":"denied","rule":"constraint"}` wi
 4. Dry-run does not run the pre-check (it never calls upstream); its response is unchanged.
 
 ## Tests
-- `go test ./internal/policy -run TestJiraScope`: table over `CheckConstraints` with a workspace holding
-  `jira_projects [THP]` and one with none; every named case from the acceptance, asserting the error names the path.
+Wall time of `go test ./internal/policy ./internal/server` is measured before and after and reported; all
+cases are table rows against one httptest server, no loops or sleeps.
+- `go test ./internal/policy -run TestJiraScope`: table over `CheckConstraints` (on `Operation` literals) with a
+  workspace holding `jira_projects [THP]` and one with none; every named case from the acceptance, asserting
+  the error names the path. Extra rows: leaf array / bool / "" for issue and project keys; full-width
+  `ＴＨＰ-１`; holder null and holder array; walk through a non-object for an `absent` and a `required` path;
+  `update` omitted (no spurious deny).
 - `go test ./internal/policy -run TestJiraScopeLoad`: one YAML per load error, asserting `loadFromFile` fails and
   the message names the op; one valid file loads. Includes the precheck load errors: no `id` param, `id` without
-  pattern `^[0-9]+$`, no `jira_key_scope`, unknown precheck name, non-http-rest connector.
-- Transport-error case in `TestJiraLinkDeletePrecheck` (upstream closed): asserts the existing error JSON, one
-  audit allow with status 0, and no op request.
-- `go test ./internal/server -run TestJiraLinkDeletePrecheck`: `httptest` upstream recording each request; a test
-  config whose Jira site points at it; cases: both ends in scope (GET then DELETE, upstream 204 returned), DELETE
-  returns 404 (returned), inward out of scope / outward out of scope / key missing / key a number (403
-  constraint, one audit deny, only the GET recorded), GET 404 (404 returned, only the GET recorded). Audit is
-  read back from the test logger.
+  pattern `^[0-9]+$`, no `jira_key_scope`, unknown precheck name, non-http-rest connector, precheck with
+  `multipart`; plus empty path segment, `[` in a path, a path in both `absent` and `issue_keys`, a non-`{}`
+  default on a first-segment param.
+- `go test ./internal/server -run TestJiraLinkDeletePrecheck`: its own fixture (not `newEnvFixture`, whose
+  upstream is fixed): a recording `httptest` server whose handler is set per case, a workspace with
+  `jira_projects [THP]` and a `jira` site with two environments (`prod`, `stg`, `default_env: prod`) on two
+  recording servers, an op `jira.link_delete` as in the YAML above, a granted agent. Cases, each asserting the
+  recorded request sequence:
+  - both ends in scope: GET then DELETE, upstream 204 returned; the GET has an empty `RawQuery` although the call
+    carried an extra param;
+  - `env: stg`: both GET and DELETE hit the stg server, none the prod one;
+  - DELETE answers 404: 404 returned;
+  - inward out of scope, outward out of scope, key missing, key a number, `{}` body, `inwardIssue: null`,
+    non-JSON 200 body, GET 302: 403 constraint, only the GET recorded, one audit deny and no allow for the
+    request id;
+  - GET 404: 404 returned, only the GET recorded;
+  - transport error (the upstream closed before the call): the existing error JSON, one audit allow with
+    status 0, nothing recorded;
+  - id `12\n` and id as a JSON number: 403 validation, nothing recorded;
+  - dry-run of jira.edit-like op with key ABC-1: 403 constraint (proves dry-run denies too).
+  Audit readback: `audit.Logger` gets `func (l *Logger) Dir() string`; the test reads every `audit_*.log` in `audit.GetLogger().Dir()` and filters by the response's `X-Request-ID`, since
+  `audit.Init` is process-global and the directory is shared across the package's tests.
+- A very large GET body is read whole (connector behaviour today); accepted: the upstream is the workspace's own
+  Jira, and no stress test is added.
 
 ## Docs
 `.ai/OPERATIONS.md`: a `jira_key_scope` section (fields, semantics of empty `jira_projects`, one example) and a
