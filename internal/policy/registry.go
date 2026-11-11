@@ -641,8 +641,13 @@ func (r *OperationRegistry) CheckConstraints(op *Operation, params map[string]in
 		default:
 			// Loaded ops are already filtered by checkConstraintTypes; this
 			// fails closed for an op built in code with a missing or unknown type.
-			if _, known := constraintTypes[constraintType]; !known {
+			kind, known := constraintTypes[constraintType]
+			if !known {
 				return fmt.Errorf("unknown constraint type %q on %s", constraintType, op.ID)
+			}
+			// A type listed as checked but given no case above must not pass unchecked.
+			if kind == constraintChecked {
+				return fmt.Errorf("constraint type %q on %s has no check", constraintType, op.ID)
 			}
 		}
 	}

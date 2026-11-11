@@ -116,6 +116,14 @@ func TestCheckConstraintsUnknownTypeFailsClosed(t *testing.T) {
 	if noEffect != 5 {
 		t.Errorf("checked %d no-effect types, want 5", noEffect)
 	}
+
+	// A type listed as checked but missing its case in CheckConstraints fails closed.
+	constraintTypes["test_checked_no_case"] = constraintChecked
+	defer delete(constraintTypes, "test_checked_no_case")
+	err := check(map[string]interface{}{"type": "test_checked_no_case"})
+	if want := `constraint type "test_checked_no_case" on a.b has no check`; err == nil || err.Error() != want {
+		t.Errorf("checked type without a case: error = %v, want %q", err, want)
+	}
 }
 
 func TestExampleOpsLoad(t *testing.T) {
