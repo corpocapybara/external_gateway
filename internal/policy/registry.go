@@ -33,6 +33,9 @@ type Operation struct {
 	Multipart   *MultipartSpec           `yaml:"multipart"`
 	SlackFileContent bool                `yaml:"slack_file_content"`
 	Constraints []map[string]interface{} `yaml:"constraints"`
+	// Precheck names a server-side check run before the op's request (only
+	// "jira_issue_link": scope both ends of an issue link by id).
+	Precheck string `yaml:"precheck"`
 	Response    ResponsePolicy
 }
 
@@ -323,6 +326,9 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 		if err := checkJiraFields(id, op); err != nil {
 			return err
 		}
+		if err := validateJiraKeyScope(id, op); err != nil {
+			return err
+		}
 		if mp := op.Multipart; mp != nil {
 			_, hasName := op.Params[mp.FilenameParam]
 			_, hasContent := op.Params[mp.ContentParam]
@@ -607,6 +613,15 @@ func (r *OperationRegistry) CheckConstraints(op *Operation, params map[string]in
 				allowed = nil // fails closed in Check
 			}
 			c := &JiraFieldsConstraint{Allowed: allowed}
+			if err := c.Check(op, params, workspace); err != nil {
+				return err
+			}
+		case "jira_key_scope":
+			// Built on every call (no parse cache): a malformed map fails closed.
+			c, err := parseJiraKeyScope(op.ID, constraint, workspace)
+			if err != nil {
+				return err
+			}
 			if err := c.Check(op, params, workspace); err != nil {
 				return err
 			}
