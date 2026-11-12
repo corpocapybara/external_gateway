@@ -89,7 +89,8 @@ list, so the message stays true; the precheck itself is refused by the rule abov
 
 ## Outcomes
 Refusals (ConstraintDenied, no download): id not listed (also absent/empty list), key mismatch, type not allowed,
-listed size over cap. Errors (status-error reply): input pattern, env/auth before any request, issue call failure,
+listed size over cap. Errors (status-error reply): input pattern, env/auth before any request (incl. basic without
+`user`, unresolvable secret), issue call failure (non-200, 3xx, over cap, bad JSON), listed filename empty/`.`/`..`,
 download failure (non-200, 3xx, over cap), Content-Type class mismatch.
 
 ## Tests (`internal/server/jira_attachment_test.go`, plus a registry test)
