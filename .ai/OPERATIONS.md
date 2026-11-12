@@ -411,6 +411,7 @@ field names). The `jira.create` / `jira.edit` rows in the globex/acme tables bel
 | jenkins.jobs | http-rest | jenkins | List jobs/folders (`env`: dev/staging) |
 | jenkins.job | http-rest | jenkins | Get job status + recent builds (+ child jobs for folders) |
 | jenkins.build | http-rest | jenkins | Get build result/duration/culprits |
+| jenkins.test_report | http-rest | jenkins | JUnit report of one build: counts, `suites[].cases[]` name/status/errorDetails; `tree` adds `errorStack` (404 when none published) |
 | jenkins.console | http-rest | jenkins | Get build console log (plain text) |
 | jenkins.build_trigger | http-rest | jenkins | Start a build (**write**) |
 | jenkins.build_with_params | http-rest | jenkins | Start a parameterized build, `PUBLISH` pinned to `false` (**write**) |
