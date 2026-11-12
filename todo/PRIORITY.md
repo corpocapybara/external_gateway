@@ -14,7 +14,6 @@ none
 
 ## P2
 
-- T0009 · draft · connectors · M — No Thunderpick admin-panel connector; agents capture the admin session token from the page
 - T0010 · draft · connectors · M — `postgres.schema` has no `schema` param
 - T0011 · draft · ops-config · M — `jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags
 - T0020 · draft · server · S — Undeclared request params leak upstream as query strings, also on write ops
@@ -28,5 +27,6 @@ none
 
 - T0001 · draft · ops-config · M — No Grafana op: prod logs and metrics go through the browser
 - T0002 · draft · ops-config · M — `kibana.search` has no stg/dev `base_url`, and thp's docs call `kibana.*` dead
+- T0009 · draft · connectors · M — No Thunderpick admin-panel connector; agents capture the admin session token from the page
 - T0024 · draft · unset · M — Define flow rules per bucket in todo/_config.yaml (ToDo T0146)
 - T0029 · draft · unset · M — Add GitLab note award_emoji op to egw
