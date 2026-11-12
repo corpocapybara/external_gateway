@@ -425,6 +425,8 @@ field names). The `jira.create` / `jira.edit` rows in the globex/acme tables bel
 | gitlab.mr_update | http-rest | gitlab | Replace an MR's description (**write**) |
 | gitlab.mr_create | http-rest | gitlab | Open an MR for a pushed branch: `project_id`, `source_branch`, `target_branch`, `title`, `remove_source_branch` (bool, default true); no description (**write**, 201) |
 | gitlab.mr_note | http-rest | gitlab | Reply on an existing MR thread: `project_id`, `mr_iid` (int), `discussion_id` (from `gitlab.mr_discussions`), `body` (**write**, 201) |
+| gitlab.mr_note_awards | http-rest | gitlab | Emoji reactions on one MR note: `project_id`, `mr_iid` (int), `note_id` (digits, string; from `gitlab.mr_discussions`); returns `name`, `user.username` |
+| gitlab.mr_note_award | http-rest | gitlab | Award thumbsup to one MR note: `project_id`, `mr_iid` (int), `note_id` (digits, string), `name` (enum `thumbsup`, default); GitLab's reply passes through, so check `gitlab.mr_note_awards` first to skip a duplicate by the same user (**write**) |
 | gitlab.mr_discussion_resolve | http-rest | gitlab | Resolve or unresolve a whole MR thread: `project_id`, `mr_iid` (int), `discussion_id` (40-hex), `resolved` (bool) (**write**); returns `id`, `notes[].resolved` |
 | gitlab.commits | http-rest | gitlab | List commits |
 | gitlab.branches | http-rest | gitlab | List branches |
