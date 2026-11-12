@@ -1344,6 +1344,29 @@ func (s *Server) executePostgresConnector(ws *config.Workspace, op *policy.Opera
 		port = env.ProxyPort
 	}
 
+	// Dispatch on the action suffix (postgres.query, pg.query, warehouse.query …),
+	// not the full op ID — the op is already routed here by op.Connector, so a DB
+	// site named anything other than "postgres" must still work.
+	action := op.ID
+	if i := strings.LastIndex(op.ID, "."); i >= 0 {
+		action = op.ID[i+1:]
+	}
+
+	// postgres.schema's allow-list check needs no connection, so a refused
+	// table never reaches the database.
+	var describeSchema, describeTable string
+	if action == "schema" {
+		describeTable, _ = params["table"].(string)
+		if describeTable == "" {
+			return 0, nil, fmt.Errorf("table parameter required")
+		}
+		schemaParam, _ := params["schema"].(string)
+		var err error
+		if describeSchema, err = pgDescribeSchema(ws.Policy.PgAllowedTables, db.Schema, schemaParam, describeTable); err != nil {
+			return 0, nil, err
+		}
+	}
+
 	wsName, secretName := parseSecretRef(env.SecretRef)
 	secret, err := secrets.ResolveWithWorkspaceCheck(wsName, secretName, workspace)
 	if err != nil {
@@ -1358,14 +1381,6 @@ func (s *Server) executePostgresConnector(ws *config.Workspace, op *policy.Opera
 		return 0, nil, fmt.Errorf("connecting to postgres: %w", err)
 	}
 	defer pgConn.Close()
-
-	// Dispatch on the action suffix (postgres.query, pg.query, warehouse.query …),
-	// not the full op ID — the op is already routed here by op.Connector, so a DB
-	// site named anything other than "postgres" must still work.
-	action := op.ID
-	if i := strings.LastIndex(op.ID, "."); i >= 0 {
-		action = op.ID[i+1:]
-	}
 
 	var result *postgres.QueryResult
 	switch action {
@@ -1386,15 +1401,8 @@ func (s *Server) executePostgresConnector(ws *config.Workspace, op *policy.Opera
 			postgres.FilterTableRows(result, ws.Policy.PgAllowedTables, db.Schema)
 		}
 	case "schema":
-		tableName, _ := params["table"].(string)
-		if tableName == "" {
-			return 0, nil, fmt.Errorf("table parameter required")
-		}
-		if !postgres.TableAllowed(ws.Policy.PgAllowedTables, db.Schema, tableName) {
-			return 0, nil, fmt.Errorf("table %q is not permitted by pg_allowed_tables", tableName)
-		}
-		result, err = pgConn.ExecuteQuery(context.Background(),
-			"SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema = "+postgres.QuoteLiteral(db.Schema)+" AND table_name = "+postgres.QuoteLiteral(tableName)+" ORDER BY ordinal_position")
+		// Table and schema were checked against pg_allowed_tables before Connect.
+		result, err = pgConn.ExecuteQuery(context.Background(), describeColumnsSQL(describeSchema, describeTable))
 	default:
 		return 0, nil, fmt.Errorf("unknown postgres operation: %s", op.ID)
 	}
