@@ -71,6 +71,7 @@ type Server struct {
 	oauthRefreshMu sync.Mutex
 	tunnelCheckerFactory func(*config.Config) policy.TunnelChecker
 	slackFilesBase string
+	creds          *credCache
 }
 
 func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logger zerolog.Logger) *Server {
@@ -82,6 +83,7 @@ func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logg
 		httpClient: httprest.NewConnector(),
 		emailConn: email.NewConnector(),
 		opsPath:  opsPath,
+		creds:    newCredCache(),
 	}
 	s.state.Store(&runtimeState{cfg: cfg, reg: reg})
 	s.configChecksum.Store(checksum)
@@ -288,6 +290,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		"workspace":      workspace,
 		"operations":     ops,
 		"config_checksum": s.configChecksum.Load().(string),
+		"credentials":    s.credentialStatus(workspace, ws, wsOps),
 		"features": map[string]string{
 			"postgres_ast_parsing":    "semicolon-multi-statement-detect",
 			"response_field_filter":   "enabled",
@@ -2156,6 +2159,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, fmt.Sprintf("delete failed: %v", err), http.StatusInternalServerError)
 				return
 			}
+			s.creds.clear()
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 			return
@@ -2196,6 +2200,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("failed: %v", err), http.StatusInternalServerError)
 			return
 		}
+		s.creds.clear()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 
@@ -2357,6 +2362,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		checksum := computeChecksum(cfg.ConfigPath)
 		s.state.Store(&runtimeState{cfg: cfg, reg: newReg})
 		s.configChecksum.Store(checksum)
+		s.creds.clear()
 		s.logger.Info().Str("checksum", checksum).Msg("config and ops hot-reloaded")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
