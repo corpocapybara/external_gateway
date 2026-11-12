@@ -14,7 +14,7 @@ none
 
 ## P2
 
-- T0010 · in-testing · server · S — `postgres.schema` has no `schema` param
+- T0010 · tested · server · S — `postgres.schema` has no `schema` param
 - T0011 · designed · ops-config · M — `jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags
 - T0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - T0022 · designed · server · S — jql_scope with a non-string, non-list projects value fails open
