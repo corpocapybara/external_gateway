@@ -16,7 +16,7 @@ none
 
 - T0001 · draft · ops-config · M — No Grafana op: prod logs and metrics go through the browser
 - T0002 · draft · ops-config · M — `kibana.search` has no stg/dev `base_url`, and thp's docs call `kibana.*` dead
-- T0006 · in-progress · server · M — An expired GitLab PAT fails silently until a call returns `invalid_token`
+- T0006 · in-review · server · M — An expired GitLab PAT fails silently until a call returns `invalid_token`
 - T0007 · draft · ops-config · M — No Jenkins test-report op
 - T0008 · draft · ops-config · M — `corpjira` can't download attachment content
 - T0009 · draft · connectors · M — No Thunderpick admin-panel connector; agents capture the admin session token from the page
