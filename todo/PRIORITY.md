@@ -28,3 +28,4 @@ none
 ## P3
 
 - T0024 · draft · unset · M — Define flow rules per bucket in todo/_config.yaml (ToDo T0146)
+- T0029 · draft · unset · M — Add GitLab note award_emoji op to egw
