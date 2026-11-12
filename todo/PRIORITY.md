@@ -23,7 +23,7 @@ none
 - T0029 · designed · ops-config · S — Add GitLab note award_emoji op to egw
 - T0030 · designed · ops-config · S — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
 - T0031 · draft · ops-config · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
-- T0032 · draft · server · S — postgres.tables has no schema param, so tables outside the configured schema cannot be listed
+- T0032 · draft · server · S — postgres.tables has no schema param, so tables outside the configured schema cannot be listed · blocked by T0010
 - T0033 · draft · unset · S — Switch this project's todo ids to the EG prefix (todo migrate-prefix --to EG)
 
 ## P3
