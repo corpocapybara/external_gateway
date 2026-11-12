@@ -24,7 +24,7 @@ none
 - T0021 · draft · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - T0022 · draft · server · S — jql_scope with a non-string, non-list projects value fails open
 - T0023 · draft · server · S — A null operation in the ops YAML panics loadFromFile
-- T0026 · draft · ops-config · S — jenkins.test_report default tree returns every case (1.5 MB on a green 6,569-test build)
+- T0026 · in-progress · ops-config · S — jenkins.test_report default tree returns every case (1.5 MB on a green 6,569-test build)
 
 ## P3
 
