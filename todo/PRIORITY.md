@@ -30,4 +30,4 @@ none
 
 ## P3
 
-none
+- T0024 · draft · unset · M — Define flow rules per bucket in todo/_config.yaml (ToDo T0146)
