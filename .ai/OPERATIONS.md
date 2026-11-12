@@ -90,6 +90,27 @@ body_template: |
   {"name":"gateway-login-{{now}}"}
 ```
 
+## Jira attachment content (`jira_attachment_content`, T0008)
+
+`jira_attachment_content: true` on an http-rest op serves one attachment's content. The op needs required params
+`key` (issue key) and `id` (attachment id); give them patterns that pin the project (e.g. `^SRTHP-[0-9]+$`,
+`^[0-9]+$`). egw reads `/rest/api/2/issue/{key}?fields=attachment`, checks that `id` (exact string) is listed
+on that issue and that the issue answers under the same key, then downloads `/secure/attachment/{id}/{filename}`
+from the site's `base_url` (the upstream `content` URL is never used; redirects are not followed). Basic (with
+`user`) or bearer auth only; `proxy_host` sites are not supported. Path, method, `body_template`,
+`response.allow_fields`, `multipart`, `slack_file_content` and `precheck` do not apply and are refused at load.
+
+- Types: `image/png|jpeg|gif|webp` and `application/pdf` come back as `encoding: base64`; text types (`text/*`
+  except `text/html`, JSON, XML, YAML) as `encoding: text` (invalid UTF-8 becomes U+FFFD). Anything else is refused.
+- Cap: 1 MB (1,048,576 bytes) for the attachment and for the issue JSON.
+- Refusals (403 `rule: constraint`, no download): id not on the issue, issue answered under another key, type not
+  served, listed size over the cap.
+- Errors (`status: error` reply): bad key/id, auth or env not usable, upstream non-200 (including 3xx), body over
+  the cap, unusable filename (empty, `.`, `..`), a download Content-Type outside the listed type's class (a png
+  served as `application/octet-stream` fails).
+- Reply: `{"attachment": {id, filename, mimeType, size}, "encoding", "content"}`. Taint redaction still runs on
+  the whole reply, so text that happens to contain a gateway secret is redacted.
+
 ## Parameter types & features
 
 | Feature | Example | Notes |
@@ -408,6 +429,7 @@ field names). The `jira.create` / `jira.edit` rows in the globex/acme tables bel
 | gitlab.branches | http-rest | gitlab | List branches |
 | gitlab.projects | http-rest | gitlab | List/search projects |
 | gitlab.whoami | http-rest | gitlab | Get current user |
+| corpjira.attachment_content | http-rest | corpjira | Content of one attachment of an `SRTHP-` issue: `key`, `id` (from `corpjira.attachments`); images/PDF base64, text as text, 1 MB cap (thp, gitignored; see Jira attachment content) |
 | jenkins.jobs | http-rest | jenkins | List jobs/folders (`env`: dev/staging) |
 | jenkins.job | http-rest | jenkins | Get job status + recent builds (+ child jobs for folders) |
 | jenkins.build | http-rest | jenkins | Get build result/duration/culprits |
