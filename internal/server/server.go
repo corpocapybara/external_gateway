@@ -1796,7 +1796,7 @@ func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 		"  GET /healthz                        liveness check",
 		"  GET /help[?workspace=<name>]        this page",
 		"  GET /whoami                         your identity + grants",
-		"  GET /capabilities?workspace=<name>  operation schemas",
+		"  GET /capabilities?workspace=<name>  operation schemas, credential status",
 		"  POST /v1/workspaces/<w>/op/<id>     execute operation",
 		"  POST /v1/workspaces/<w>/op/<id>?dry_run=true  validate only",
 		"  POST /feedback                      report bug / feature / todo (needs token)",
