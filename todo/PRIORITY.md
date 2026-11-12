@@ -23,6 +23,7 @@ none
 - T0021 · draft · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - T0022 · draft · server · S — jql_scope with a non-string, non-list projects value fails open
 - T0023 · draft · server · S — A null operation in the ops YAML panics loadFromFile
+- T0027 · draft · unset · S — Commit .claude/worktrees/ and .scratch/ ignores in .gitignore
 
 ## P3
 
