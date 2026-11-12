@@ -235,8 +235,8 @@ func validateJiraKeyScope(id string, op *Operation) error {
 	switch op.Precheck {
 	case "":
 	case PrecheckJiraIssueLink:
-		if op.Connector != "http-rest" || op.SlackFileContent || op.Multipart != nil {
-			return fmt.Errorf("operation %s: precheck jira_issue_link needs an http-rest op without slack_file_content or multipart", id)
+		if op.Connector != "http-rest" || op.SlackFileContent || op.Multipart != nil || op.JiraAttachmentContent {
+			return fmt.Errorf("operation %s: precheck jira_issue_link needs an http-rest op without slack_file_content, multipart or jira_attachment_content", id)
 		}
 		if def, ok := op.Params["id"]; !ok || def.Pattern != "^[0-9]+$" || def.Type != "string" || !def.Required {
 			return fmt.Errorf("operation %s: precheck jira_issue_link needs an id param that is a required string with pattern ^[0-9]+$", id)

@@ -32,6 +32,9 @@ type Operation struct {
 	Headers     map[string]string        `yaml:"headers"`
 	Multipart   *MultipartSpec           `yaml:"multipart"`
 	SlackFileContent bool                `yaml:"slack_file_content"`
+	// JiraAttachmentContent serves one Jira attachment's content (base64 or text)
+	// through a dedicated handler, scoped by issue key + attachment id (T0008).
+	JiraAttachmentContent bool `yaml:"jira_attachment_content"`
 	Constraints []map[string]interface{} `yaml:"constraints"`
 	// Precheck names a server-side check run before the op's request (only
 	// "jira_issue_link": scope both ends of an issue link by id).
@@ -332,6 +335,9 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 		if err := validateJiraKeyScope(id, op); err != nil {
 			return err
 		}
+		if err := checkJiraAttachmentContent(id, op); err != nil {
+			return err
+		}
 		if mp := op.Multipart; mp != nil {
 			_, hasName := op.Params[mp.FilenameParam]
 			_, hasContent := op.Params[mp.ContentParam]
@@ -343,6 +349,25 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 		r.Operations[id] = op
 	}
 
+	return nil
+}
+
+// checkJiraAttachmentContent enforces the shape the jira_attachment_content
+// handler relies on: it builds both upstream requests itself, so the op carries
+// no request or response shaping of its own, and it needs key and id.
+func checkJiraAttachmentContent(id string, op *Operation) error {
+	if !op.JiraAttachmentContent {
+		return nil
+	}
+	if op.Connector != "http-rest" || op.SlackFileContent || op.Multipart != nil || op.BodyTemplate != "" ||
+		len(op.Response.AllowFields) > 0 || op.Precheck != "" {
+		return fmt.Errorf("operation %s: jira_attachment_content needs an http-rest op without slack_file_content, multipart, body_template, response.allow_fields or precheck", id)
+	}
+	for _, name := range []string{"key", "id"} {
+		if def, ok := op.Params[name]; !ok || !def.Required {
+			return fmt.Errorf("operation %s: jira_attachment_content needs a required %s param", id, name)
+		}
+	}
 	return nil
 }
 
