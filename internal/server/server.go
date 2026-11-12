@@ -1395,11 +1395,10 @@ func (s *Server) executePostgresConnector(ws *config.Workspace, op *policy.Opera
 	case "tables":
 		// The internal catalog query is not agent SQL, so it runs unscoped; its
 		// result is filtered to the allow-list instead.
-		result, err = pgConn.ExecuteQuery(context.Background(),
-			"SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = "+postgres.QuoteLiteral(db.Schema)+" ORDER BY table_name")
-		if err == nil {
-			postgres.FilterTableRows(result, ws.Policy.PgAllowedTables, db.Schema)
-		}
+		schemaParam, _ := params["schema"].(string)
+		result, err = pgListTables(func(q string) (*postgres.QueryResult, error) {
+			return pgConn.ExecuteQuery(context.Background(), q)
+		}, ws.Policy.PgAllowedTables, db.Schema, schemaParam)
 	case "schema":
 		// Table and schema were checked against pg_allowed_tables before Connect.
 		result, err = pgConn.ExecuteQuery(context.Background(), describeColumnsSQL(describeSchema, describeTable))

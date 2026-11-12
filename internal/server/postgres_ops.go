@@ -26,6 +26,26 @@ func pgDescribeSchema(allowed []string, dbSchema, schemaParam, table string) (st
 	return schema, nil
 }
 
+// pgListTables runs postgres.tables: it lists the resolved schema's tables via
+// exec and filters them to pg_allowed_tables on that same schema, so the list
+// and the allow-list check can never disagree on the schema.
+func pgListTables(exec func(sql string) (*postgres.QueryResult, error), allowed []string, dbSchema, schemaParam string) (*postgres.QueryResult, error) {
+	schema := pgResolveSchema(dbSchema, schemaParam)
+	res, err := exec(listTablesSQL(schema))
+	if err != nil {
+		return nil, err
+	}
+	postgres.FilterTableRows(res, allowed, schema)
+	return res, nil
+}
+
+// listTablesSQL builds the information_schema lookup for postgres.tables; the
+// agent-supplied schema goes through QuoteLiteral.
+func listTablesSQL(schema string) string {
+	return "SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = " +
+		postgres.QuoteLiteral(schema) + " ORDER BY table_name"
+}
+
 // describeColumnsSQL builds the information_schema lookup for postgres.schema.
 // Both values are agent-supplied, so both go through QuoteLiteral.
 func describeColumnsSQL(schema, table string) string {
