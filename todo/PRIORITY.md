@@ -6,7 +6,7 @@ same commit as the todo change (todo rules, section "Without the tool").
 
 ## P0
 
-- T0025 · draft · unset · M — Let egw write Jira fix versions and custom fields
+none
 
 ## P1
 
