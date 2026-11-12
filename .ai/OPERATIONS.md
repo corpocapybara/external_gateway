@@ -107,7 +107,8 @@ from the site's `base_url` (the upstream `content` URL is never used; redirects 
   served, listed size over the cap.
 - Errors (`status: error` reply): bad key/id, auth or env not usable, upstream non-200 (including 3xx), body over
   the cap, unusable filename (empty, `.`, `..`), a download Content-Type outside the listed type's class (a png
-  served as `application/octet-stream` fails).
+  served as `application/octet-stream` fails; a download without a Content-Type is accepted). Project scope rests on the
+  op's `key` pattern or a `jira_key_scope` constraint: the loader does not require one, so always pin it.
 - Reply: `{"attachment": {id, filename, mimeType, size}, "encoding", "content"}`. Taint redaction still runs on
   the whole reply, so text that happens to contain a gateway secret is redacted.
 

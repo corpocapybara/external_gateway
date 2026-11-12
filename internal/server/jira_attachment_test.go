@@ -367,6 +367,30 @@ func TestJiraAttachmentRedirectNotFollowed(t *testing.T) {
 	wantRequests(t, elsewhere)
 }
 
+// The secret is passed as Credentials, so the connector taints it and the reply's
+// redaction rewrites it even inside attachment text (design §Security).
+func TestJiraAttachmentSecretTaintedInReply(t *testing.T) {
+	m := newMockJira(t, false)
+	m.issueBody = issueJSON("SRTHP-1", attEntry{ID: "10", Filename: "f.txt", MimeType: "text/plain"})
+	m.dlCT, m.dlBody = "text/plain", []byte("token=tAInt3dS3cretVal ok")
+	h := newCredHarness(t, map[string]string{"ws1": attSite(bearerEnv(m.srv.URL))}, []string{"jira.att"}, attOps)
+	h.store.Set("ws1", "jira", []byte("tAInt3dS3cretVal"))
+	code, out := attCall(t, h, "SRTHP-1", "10")
+	c, _ := out["content"].(string)
+	if code != 200 || strings.Contains(c, "tAInt3dS3cretVal") || !strings.HasSuffix(c, " ok") {
+		t.Fatalf("secret not redacted: %d %q", code, c)
+	}
+}
+
+func TestJiraAttachmentEmptySecret(t *testing.T) {
+	m := newMockJira(t, false)
+	h := newAttHarness(t, bearerEnv(m.srv.URL))
+	h.store.Set("ws1", "jira", []byte(" \n"))
+	code, out := attCall(t, h, "SRTHP-1", "10")
+	wantError(t, code, out, "is empty")
+	wantRequests(t, m)
+}
+
 func TestJiraAttachmentBodyAtCapAccepted(t *testing.T) {
 	m := newMockJira(t, false)
 	m.issueBody = issueJSON("SRTHP-1", attEntry{ID: "10", Filename: "f.txt", MimeType: "text/plain"})

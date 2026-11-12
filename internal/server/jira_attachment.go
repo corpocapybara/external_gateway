@@ -62,6 +62,9 @@ func jiraAuthHeader(env *config.Environment, workspace string) (string, *connect
 		return "", nil, fmt.Errorf("resolving credentials for %s: %w", env.SecretRef, err)
 	}
 	secret := strings.TrimSpace(string(raw))
+	if secret == "" {
+		return "", nil, fmt.Errorf("secret %s is empty", env.SecretRef)
+	}
 	if env.Auth.Type == "basic" {
 		return "Basic " + base64Auth(env.User, secret), &connectors.Credentials{Username: env.User, Password: secret}, nil
 	}
