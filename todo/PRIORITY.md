@@ -16,7 +16,6 @@ none
 
 - T0010 · draft · connectors · M — `postgres.schema` has no `schema` param
 - T0011 · draft · ops-config · M — `jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags
-- T0020 · draft · server · S — Undeclared request params leak upstream as query strings, also on write ops
 - T0021 · draft · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - T0022 · draft · server · S — jql_scope with a non-string, non-list projects value fails open
 - T0023 · draft · server · S — A null operation in the ops YAML panics loadFromFile
