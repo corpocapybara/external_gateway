@@ -567,6 +567,8 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 
 	if op.Connector == "http-rest" && op.SlackFileContent {
 		upstreamStatus, responseBody, err = s.executeSlackFileContent(ws, op, params, workspace)
+	} else if op.Connector == "http-rest" && op.JiraAttachmentContent {
+		upstreamStatus, responseBody, err = s.executeJiraAttachmentContent(ws, op, params, workspace)
 	} else if op.Connector == "http-rest" {
 		upstreamStatus, responseBody, err = s.executeHttpConnector(ws, op, params, workspace)
 	} else if op.Connector == "postgres" {
