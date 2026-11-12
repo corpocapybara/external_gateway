@@ -24,7 +24,6 @@ none
 - T0022 · draft · server · S — jql_scope with a non-string, non-list projects value fails open
 - T0023 · draft · server · S — A null operation in the ops YAML panics loadFromFile
 - T0027 · draft · unset · S — Commit .claude/worktrees/ and .scratch/ ignores in .gitignore
-- T0028 · tested · ops-config · S — thp postgres: allow betting.preferred_markets and betting.market_templates
 
 ## P3
 
