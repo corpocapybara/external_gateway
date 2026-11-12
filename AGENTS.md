@@ -70,7 +70,12 @@ See `docs/SLACK.md` for full details.
 
 ## Capabilities endpoint
 
-`GET /capabilities?workspace=<ws>` (Bearer token, grant in `<ws>`) returns the operations the agent is granted there, config checksum and feature status map; no workspace policy. `GET /help?workspace=<ws>` and `POST /feedback` also need a Bearer token (help: grant in `<ws>`, else 403); only the bare `/help` banner and `/healthz` are public.
+`GET /capabilities?workspace=<ws>` (Bearer token, grant in `<ws>`) returns the operations the agent is granted there, config checksum and feature status map; no workspace policy. Its `credentials` list
+has one entry per GitLab/GitHub token behind a granted, enabled site (`site`, `env`, `state` ok/rejected/unreachable/
+missing, `expires_at`, `days_left`) with a `warning` to ask the owner when the token expires within 7 days, has
+expired, is rejected (401/403) or is missing; cached 1 h after ok, 5 min otherwise, cleared by `/admin/secrets`
+writes and `/admin/reload` (T0006). GitLab is detected only when the base URL contains `gitlab`, GitHub only for
+`api.github.com`; no token, username or scopes are returned. `GET /help?workspace=<ws>` and `POST /feedback` also need a Bearer token (help: grant in `<ws>`, else 403); only the bare `/help` banner and `/healthz` are public.
 
 ## Key files
 
