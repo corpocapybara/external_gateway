@@ -20,7 +20,7 @@ none
 - T0021 · draft · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - T0022 · draft · server · S — jql_scope with a non-string, non-list projects value fails open
 - T0023 · draft · server · S — A null operation in the ops YAML panics loadFromFile
-- T0027 · draft · unset · S — Commit .claude/worktrees/ and .scratch/ ignores in .gitignore
+- T0027 · designed · docs · S — Commit .claude/worktrees/ and .scratch/ ignores in .gitignore
 - T0029 · draft · unset · M — Add GitLab note award_emoji op to egw
 - T0030 · draft · ops-config · M — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
 
