@@ -149,3 +149,31 @@ func TestTableAllowedHelper(t *testing.T) {
 		t.Error("empty allow-list must allow everything")
 	}
 }
+
+func TestFilterTableRowsOtherSchema(t *testing.T) {
+	names := func(r *QueryResult) []string {
+		var out []string
+		for _, row := range r.Rows {
+			out = append(out, row["table_name"].(string))
+		}
+		return out
+	}
+	cases := []struct {
+		allowed []string
+		want    []string
+	}{
+		{[]string{"reporting.*"}, []string{"orders", "items"}},
+		{[]string{"public.*"}, nil},
+		{[]string{"orders"}, nil}, // a bare entry matches only public
+		{[]string{"reporting.orders"}, []string{"orders"}},
+		{nil, []string{"orders", "items"}},
+	}
+	for _, c := range cases {
+		r := &QueryResult{Count: 2, Rows: []map[string]interface{}{{"table_name": "orders"}, {"table_name": "items"}}}
+		FilterTableRows(r, c.allowed, "reporting")
+		got := names(r)
+		if r.Count != len(c.want) || len(r.Rows) != len(c.want) || strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%v: kept %v (Count %d), want %v", c.allowed, got, r.Count, c.want)
+		}
+	}
+}

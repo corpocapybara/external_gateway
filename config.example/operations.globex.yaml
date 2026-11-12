@@ -530,6 +530,11 @@ operations:
       db:
         type: string
         required: true
+      # Optional; omitted means the database's configured schema. Lowercase
+      # identifiers only, so pg_allowed_tables' case folding cannot widen access.
+      schema:
+        type: string
+        pattern: "^[a-z_][a-z0-9_]*$"
     constraints:
       - type: readonly
       - type: allowed_tables
