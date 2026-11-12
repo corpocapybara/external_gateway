@@ -24,6 +24,7 @@ none
 - T0022 · draft · server · S — jql_scope with a non-string, non-list projects value fails open
 - T0023 · draft · server · S — A null operation in the ops YAML panics loadFromFile
 - T0027 · draft · unset · S — Commit .claude/worktrees/ and .scratch/ ignores in .gitignore
+- T0030 · draft · ops-config · M — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
 
 ## P3
 
