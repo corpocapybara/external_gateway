@@ -17,8 +17,8 @@ none
 - T0010 · draft · connectors · M — `postgres.schema` has no `schema` param
 - T0011 · draft · ops-config · M — `jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags
 - T0021 · draft · server · M — kibana_index_scope is never enforced: kibana.search can query any index
-- T0022 · draft · server · S — jql_scope with a non-string, non-list projects value fails open
-- T0023 · draft · server · S — A null operation in the ops YAML panics loadFromFile
+- T0022 · designed · server · S — jql_scope with a non-string, non-list projects value fails open
+- T0023 · designed · server · S — A null operation in the ops YAML panics loadFromFile
 - T0027 · designed · docs · S — Commit .claude/worktrees/ and .scratch/ ignores in .gitignore
 - T0029 · draft · unset · M — Add GitLab note award_emoji op to egw
 - T0030 · draft · ops-config · M — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
