@@ -11,8 +11,9 @@ Todo: `todo/T0008.md` (acceptance there is the contract; this note says how).
   `response.allow_fields` or `precheck`; params `key` and `id` both `required: true` (§Load validation).
 - Handler in a new file `internal/server/jira_attachment.go`; two upstream calls through `s.httpClient.Execute`
   with `MaxBodyBytes` 1,048,576 each, not `restClient.do` (it JSON-decodes and has no cap) (§Handler).
-- Credential headers come from a new helper `jiraAuthHeader(env, workspace)`: basic or bearer with a non-empty
-  `secret_ref`, else an error before any request; `proxy_host` envs are an error too (§Handler).
+- Credential headers come from a new helper `jiraAuthHeader(env, workspace)`: basic (with `user`) or bearer with
+  a non-empty `secret_ref`, else an error before any request; `proxy_host` envs are an error too; the secret is
+  passed as `Credentials` so it is tainted (§Handler).
 - Download URL is built: `base_url + "/secure/attachment/" + id + "/" + url.PathEscape(filename)`; the upstream
   `content` field is never used; redirects are not followed (connector `noRedirect`), so 3xx is an error (§Security).
 - Refusals return `*policy.ConstraintDenied` (403 `rule: constraint`); everything else is a plain error, which
@@ -43,20 +44,27 @@ list, so the message stays true; the precheck itself is refused by the rule abov
 
 ## Handler
 `executeJiraAttachmentContent(ws, op, params, workspace) (int, []byte, error)`:
-1. `key`, `id` strings; `key` must match `policy.JiraIssueKeyRe`, `id` must match `^[0-9]+$`, else error.
-2. Site and env via `resolveEnv`; env `ProxyHost != ""` -> error; `BaseURL` empty or `-` -> error.
-3. `jiraAuthHeader(env, workspace)` -> `Authorization` value or error (other auth type, empty `secret_ref`,
-   unresolved secret). No request happens before this point.
+1. `key`, `id` strings; `key` must match `policy.JiraIssueKeyRe`, `id` must match `^[0-9]+$`, else error. (The
+   op's own param patterns run first in `ValidateParams`; this recheck matters for ops with looser patterns.)
+2. Site and env via `resolveEnv`; env `ProxyHost != ""` -> error; `BaseURL` empty or `-` -> error;
+   `base = strings.TrimSuffix(env.BaseURL, "/")`.
+3. `jiraAuthHeader(env, workspace)` -> `Authorization` value plus a `*connectors.Credentials` (Token for bearer,
+   Password for basic) or error: other auth type, empty `secret_ref`, basic with empty `user`, unresolved secret
+   (`secrets.ResolveWithWorkspaceCheck`, so a cross-workspace ref fails). Secret is `TrimSpace`d. Both requests pass
+   that `Credentials` so the connector taints the secret (connector.go ~112). No request happens before this point.
 4. GET `base + "/rest/api/2/issue/" + key + "?fields=attachment"` with `Accept: application/json`, auth,
-   `Insecure: env.InsecureSkipVerify`, `MaxBodyBytes: 1<<20`. Transport error, status != 200, or bad JSON -> error.
+   `Insecure: env.InsecureSkipVerify`, `MaxBodyBytes: 1<<20`. Transport error (incl. over cap), status != 200
+   (incl. 3xx), or bad JSON -> error.
 5. Decode `{key, fields: {attachment: [{id, filename, mimeType, size}]}}`. `key != requested key` -> refusal
    ("issue <key> answered as <other>"). First entry with `id == param` (string compare); none -> refusal
    ("attachment <id> is not on issue <key>").
-6. Normalise `mimeType` (`strings.ToLower`, cut at `;`, trim); class lookup (§Types); none -> refusal naming the
-   type. `size > 1<<20` -> refusal naming size and cap.
-7. GET the built URL (§Security) with auth only (no Accept), same `Insecure` and cap. Transport error (including
-   the cap) or status != 200 -> error with the status. `Content-Type` header present and its class differs from the
-   listed class -> error.
+6. Normalise `mimeType` (`normMime`: `strings.ToLower`, cut at `;`, trim); class lookup (§Types); none ->
+   refusal naming the type. `size > 1<<20` -> refusal naming size and cap (size is a JSON number; absent or 0
+   relies on the body cap). Listed filename empty, `.` or `..` -> error (`url.PathEscape` keeps those as-is).
+7. GET `base + "/secure/attachment/" + id + "/" + url.PathEscape(filename)` with auth only (no Accept), same
+   `Insecure`, `Credentials` and cap. Transport error (incl. over cap) or status != 200 -> error with the status.
+   `headerLookup(resp.Headers, "Content-Type")` present: normalised with `normMime`, its class must equal the
+   listed class, else error (a png served as `application/octet-stream` is an error: accepted).
 8. Reply `{"attachment": {id, filename, mimeType, size}, "encoding": "base64"|"text", "content": ...}` with status
    200; text content `strings.ToValidUTF8(..., "�")`.
 
@@ -67,7 +75,10 @@ list, so the message stays true; the precheck itself is refused by the rule abov
 
 ## Security
 - Credential only ever goes to `base_url`'s host: both URLs are built from `base_url`; the filename is one escaped
-  segment, so `/`, `..`, `?`, `#` cannot change host or path depth; the connector does not follow redirects.
+  segment (`/`, `?`, `#` are escaped; empty, `.` and `..` are refused), so it cannot change host or path depth;
+  `key` matches the anchored `JiraIssueKeyRe`; the connector does not follow redirects.
+- The secret is tainted (passed as `Credentials`), so the reply's taint redaction can also rewrite text content
+  that happens to contain it; documented in OPERATIONS.md.
 - Scope: the attachment must be listed on the requested issue, the issue must answer under the same key, and the key
   passed the op's pattern and constraints. Residual: an attachment listed on an in-scope issue is readable even if
   Jira stores it elsewhere (Jira does not do this).
@@ -82,20 +93,42 @@ listed size over cap. Errors (status-error reply): input pattern, env/auth befor
 download failure (non-200, 3xx, over cap), Content-Type class mismatch.
 
 ## Tests (`internal/server/jira_attachment_test.go`, plus a registry test)
-Harness: config + ops YAML written to a temp dir as `newCredHarness` does (credential_status_test.go), secret in
-the `credStore`, mock Jira `httptest.Server` counting requests per path.
-- png bytes (incl. 0x00 and 0xFF) -> base64 round-trips exactly through `ServeHTTP`; pdf base64; text with invalid
-  UTF-8 -> U+FFFD; listed `IMAGE/PNG; name=x` accepted; listed png with download `image/jpeg` accepted; missing
-  Content-Type accepted.
-- Exact upstream paths incl. filename `a b/ü.png` -> `/secure/attachment/10/a%20b%2F%C3%BC.png`.
-- Refusals, each 403 `constraint` and zero download requests: id not listed, absent list, key mismatch,
-  `application/zip`, size 1,048,577.
-- Errors, each status-error reply: auth `api-key` and empty `secret_ref` and `proxy_host` (zero requests), issue
-  404, download 404, download 302 to a second server (second server sees zero requests), body 1,048,577 bytes,
-  listed png with download `text/html`.
-- Headers: Bearer and Basic on both calls.
-- Registry: each refused combination in §Load validation fails `NewRegistry` with the op id in the message; a valid
-  op loads.
+Harness: `newCredHarness` (credential_status_test.go) with a per-test sites block (auth, `user`, `secret_ref`,
+`proxy_host`, `base_url` = mock URL), secret via `h.store.Set`; a new helper `opCall(t, h, op, body)` POSTs
+`/v1/workspaces/<ws>/op/<op>` with `credAgentTok` and returns status + decoded body. Mock Jira (`httptest.Server`)
+records every request's `RequestURI` (escaped form, never `r.URL.Path`) and `Authorization`. The test op file
+declares `key` and `id` as required strings with no pattern, so the handler's own rechecks are reachable. Every
+case asserts exact values: refusals 403 with `error: denied`, `rule: constraint`, non-empty `detail`; errors the
+status-error reply with its text; and the exact list of upstream requests (empty for pre-request cases).
+- A1 scope: issue call `RequestURI` exactly `/rest/api/2/issue/SRTHP-1?fields=attachment`; download path for
+  filename `a b/ü.png` exactly `/secure/attachment/10/a%20b%2F%C3%BC.png`; a listed `content` pointing at a second
+  server, which sees zero requests; ids `101` and `1` listed with param `10` -> refusal; listed `010` with param
+  `10` -> refusal; duplicate id 10 -> the first entry's filename is downloaded; base_url with trailing `/` gives
+  single-slash paths.
+- A2 refusals (zero download requests): id not listed; `fields.attachment` absent; `[]`; key mismatch
+  (`SRTHP-2` answered for `SRTHP-1`); `application/zip`; `TEXT/HTML; charset=utf-8`; size 1,048,577. Boundary:
+  size 1,048,576 and size absent are accepted.
+- A3 types: table test of `attachmentClass` over png, jpeg, gif, webp, pdf, text/plain, text/csv, application/json,
+  application/xml, application/yaml, application/x-yaml (accepted) and text/html, application/zip,
+  application/octet-stream, empty (refused); end to end: png bytes with 0x00/0xFF -> `encoding: base64`, exact
+  bytes; pdf -> base64; text `a\xffb` -> `encoding: text`, content exactly `a�b`; listed `IMAGE/PNG; name=x`
+  accepted.
+- A4 errors: before any request (zero requests): auth `api-key`; empty `secret_ref`; secret not in store; secret
+  ref in another workspace; basic with empty `user`; `proxy_host`; base_url `-`; key `x`; id `1/../2`. After the
+  issue call: issue 404; issue 302; issue body 1,048,577 bytes; issue 200 with bad JSON; listed filename `..`
+  (no download). After the download: 404; 302 to a second server (zero requests there, reply names 302); body
+  1,048,577 bytes (and 1,048,576 accepted); class mismatch with the header sent in canonical case: png listed /
+  `text/html` served, pdf listed / `image/png` served, text listed / `image/png` served; Content-Type absent
+  accepted.
+- A5 reply: whole JSON compared: `attachment` {id, filename, mimeType, size}, `encoding`, `content`.
+- A6 headers: bearer -> both calls `Authorization: Bearer s3cr3t` (store value `" s3cr3t\n"`, trimmed); basic ->
+  both calls `Basic base64(u:s3cr3t)`.
+- Insecure: one test with `httptest.NewTLSServer` and `insecure_skip_verify: true` succeeds; without it, error.
+- A7 registry (`internal/policy`), each case fails `NewRegistry` naming the op id, and fails without its rule
+  line: connector `postgres`; with `slack_file_content`; with `multipart`; with `body_template`; with
+  `response.allow_fields`; with `precheck`; `key` missing; `key` `required: false`; `id` missing; `id`
+  `required: false`. A valid op loads. A `jira_issue_link` precheck op with the new field set is refused by the
+  new rule (the guard message names the field).
 
 ## Docs
 `.ai/OPERATIONS.md`: a section for the field and a row for `corpjira.attachment_content` (thp, gitignored).
