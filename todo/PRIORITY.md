@@ -23,6 +23,7 @@ none
 - T0029 · draft · ops-config · S — Add GitLab note award_emoji op to egw
 - T0030 · draft · ops-config · S — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
 - T0031 · draft · ops-config · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
+- T0032 · draft · server · S — postgres.tables has no schema param, so tables outside the configured schema cannot be listed
 
 ## P3
 
