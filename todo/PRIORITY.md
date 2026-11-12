@@ -22,6 +22,7 @@ none
 - T0027 · designed · docs · S — Commit .claude/worktrees/ and .scratch/ ignores in .gitignore
 - T0029 · draft · unset · M — Add GitLab note award_emoji op to egw
 - T0030 · draft · ops-config · M — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
+- T0031 · draft · ops-config · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
 
 ## P3
 
