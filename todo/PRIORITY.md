@@ -23,6 +23,7 @@ none
 - EG0031 · draft · ops-config · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
 - EG0033 · in-review · docs · S — Switch this project's todo ids to the EG prefix (todo migrate-prefix --to EG)
 - EG0035 · draft · unset · M — Project review (rubric v1)
+- EG0036 · draft · server · S — /feedback duplicate check globs todo/T*.md, so it misses every todo once the repo's id_prefix is not T (this repo is EG now)
 
 ## P3
 
