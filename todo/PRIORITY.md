@@ -21,7 +21,7 @@ none
 - EG0027 · designed · docs · S — Commit .claude/worktrees/ and .scratch/ ignores in .gitignore
 - EG0030 · designed · ops-config · S — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
 - EG0031 · draft · ops-config · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
-- EG0033 · in-progress · docs · S — Switch this project's todo ids to the EG prefix (todo migrate-prefix --to EG)
+- EG0033 · in-review · docs · S — Switch this project's todo ids to the EG prefix (todo migrate-prefix --to EG)
 - EG0035 · draft · unset · M — Project review (rubric v1)
 
 ## P3
