@@ -1,4 +1,5 @@
-id_prefix: T
+id_prefix: EG
+former_prefixes: [T]
 priorities: [P0, P1, P2, P3]
 buckets:
   - {name: connectors, owns: "`internal/connectors/` (httprest, postgres, email, formsession, localservice), `internal/secrets/`"}
