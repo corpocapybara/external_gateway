@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// T0008: jira_attachment_content. Design docs/design/T0008-jira-attachment-content.md §Tests.
+// T0008: jira_attachment_content. Design docs/design/EG0008-jira-attachment-content.md §Tests.
 
 const attOps = "operations:\n" +
 	"  jira.att:\n    connector: http-rest\n    site: jira\n    method: GET\n    path: /x\n" +

@@ -86,7 +86,7 @@ type jiraIssueAttachments struct {
 }
 
 // executeJiraAttachmentContent serves one attachment of one issue (T0008, design
-// docs/design/T0008-jira-attachment-content.md). Scope: the attachment must be
+// docs/design/EG0008-jira-attachment-content.md). Scope: the attachment must be
 // listed on the requested issue; both URLs are built from the site's base_url.
 // Refusals are *policy.ConstraintDenied (403); other failures are plain errors.
 func (s *Server) executeJiraAttachmentContent(ws *config.Workspace, op *policy.Operation, params map[string]interface{}, workspace string) (int, []byte, error) {

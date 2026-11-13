@@ -1,7 +1,7 @@
 # T0014 design: thp Jira write ops (create, edit, link, link_delete, versions, editmeta)
 
 Todo: `todo/T0014.md` (acceptance there is the contract; this note says how). Depends on T0013
-(`jira_key_scope`, `precheck: jira_issue_link`; `docs/design/T0013-jira-key-scope.md`).
+(`jira_key_scope`, `precheck: jira_issue_link`; `docs/design/EG0013-jira-key-scope.md`).
 
 ## Decision
 Writes take Jira's own `fields` / `update` objects verbatim and are pinned by `jira_key_scope`, not rebuilt from
