@@ -4,10 +4,13 @@ priorities: [P0, P1, P2, P3]
 buckets:
   - {name: connectors, owns: "`internal/connectors/` (httprest, postgres, email, formsession, localservice), `internal/secrets/`"}
   - {name: server, owns: "`internal/server/`, `internal/policy/`, `internal/redact/`, `internal/audit/`, `internal/config/`, `internal/scheduler/`, `internal/tokencheck/`, `internal/workcal/`"}
-  - {name: ops-config, owns: "`config.example/`, operation and role definitions, per-service ops, connector docs in `docs/*.md`"}
-  - {name: cli-tools, owns: "`cmd/` (egw, egw-admin, egw-desktop, egwctl, tools), `tools/`"}
-  - {name: deploy, owns: "`deploy/*.ps1`, workspace provisioning"}
-  - {name: docs, owns: "`.ai/`, `README.md`, `SECURITY.md`, `CLAUDE.md`", self_contained: true}
+  - {name: ops-config, owns: "`config.example/`, operation and role definitions, per-service ops, connector docs in `docs/*.md`", flow: {test: {tests: [scripted], note: "go test the changed packages and their importers (found by grep); a change no test covers adds one"}}}
+  - {name: cli-tools, owns: "`cmd/` (egw, egw-admin, egw-desktop, egwctl, tools), `tools/`", flow: {test: {tests: [scripted], note: "go test the changed packages and their importers (found by grep); a change no test covers adds one"}}}
+  - {name: deploy, owns: "`deploy/*.ps1`, workspace provisioning", flow: {test: {tests: [scripted], note: "go test the changed packages and their importers (found by grep); a change no test covers adds one"}, review: {owner_signoff: review, note: "the owner looks at the review output before the review passes: ask in chat"}}}
+  - {name: docs, owns: "`.ai/`, `README.md`, `SECURITY.md`, `CLAUDE.md`", self_contained: true, flow: {test: {tests: [none], note: "no code: record none / no code changed in test.command and test.line"}}}
 review_lanes: [correctness, tests, scope, design]
 web: {port: 8768}
 done_branch: master
+flow:
+  test: {tests: [scripted, e2e], note: "go test only the changed packages and their importers (found by grep); e2e: a live op call through the running gateway, recorded as test.kind=e2e"}
+  review: {owner_signoff: none}
