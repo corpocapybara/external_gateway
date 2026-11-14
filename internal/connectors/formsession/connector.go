@@ -1,34 +1,51 @@
+// Package formsession logs in to a site with a form POST (email + password)
+// and keeps the `connect.sid` session cookie it gets back. Data requests go
+// through the server's http-rest path with that cookie (EG0042); this package
+// only logs in and caches sessions.
 package formsession
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/external_gateway/internal/connectors"
 )
 
+// SessionCookieName is the cookie a successful login sets (Express/CodiMD).
+const SessionCookieName = "connect.sid"
+
+// loginDrainLimit caps how much of a login response body is read (and discarded).
+const loginDrainLimit = 1 << 20
+
 type Connector struct {
-	client      *http.Client
-	sessionCookie string
-	baseURL     string
+	client   *http.Client
+	insecure *http.Client
 }
 
-type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+// noRedirect stops the client at the first response, so a login's 302 and its
+// Set-Cookie are seen, and a data request's redirect to /login is a signal
+// rather than a followed hop (same rule as httprest).
+func noRedirect(req *http.Request, via []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 func NewConnector() *Connector {
 	return &Connector{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:       30 * time.Second,
+			CheckRedirect: noRedirect,
+		},
+		insecure: &http.Client{
+			Timeout:       30 * time.Second,
+			CheckRedirect: noRedirect,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
 		},
 	}
 }
@@ -37,87 +54,64 @@ func (c *Connector) Name() string {
 	return "form-session"
 }
 
-func (c *Connector) Login(ctx context.Context, baseURL, email, password string) error {
-	loginURL := fmt.Sprintf("%s/login", baseURL)
+// Login POSTs email and password to <baseURL>/login and returns the session
+// cookie value. Errors never contain the password, the cookie or the URL.
+func (c *Connector) Login(ctx context.Context, baseURL, email, password string, insecure bool) (string, error) {
+	loginURL := strings.TrimRight(baseURL, "/") + "/login"
 	data := url.Values{}
 	data.Set("email", email)
 	data.Set("password", password)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", loginURL, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, loginURL, strings.NewReader(data.Encode()))
 	if err != nil {
-		return fmt.Errorf("creating login request: %w", err)
+		return "", errors.New("form-session login: invalid base_url")
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := c.client.Do(req)
+	client := c.client
+	if insecure {
+		client = c.insecure
+	}
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("executing login: %w", err)
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			return "", fmt.Errorf("form-session login: %w", urlErr.Err)
+		}
+		return "", fmt.Errorf("form-session login: %w", err)
 	}
 	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, loginDrainLimit))
 
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		return "", fmt.Errorf("form-session login refused (status %d)", resp.StatusCode)
+	case resp.StatusCode >= 500:
+		return "", fmt.Errorf("form-session login failed (status %d)", resp.StatusCode)
+	case resp.StatusCode >= 300 && resp.StatusCode < 400 && NeedsLogin(resp.StatusCode, resp.Header.Get("Location")):
+		return "", errors.New("form-session login refused")
+	}
 	for _, cookie := range resp.Cookies() {
-		if cookie.Name == "connect.sid" {
-			c.sessionCookie = cookie.Value
-			c.baseURL = baseURL
-			return nil
+		if cookie.Name == SessionCookieName && cookie.Value != "" {
+			return cookie.Value, nil
 		}
 	}
-
-	return fmt.Errorf("session cookie not found in response")
+	return "", errors.New("form-session login: no session cookie")
 }
 
-func (c *Connector) Execute(ctx context.Context, req *connectors.Request) (*connectors.Response, error) {
-	if c.sessionCookie == "" {
-		return nil, fmt.Errorf("not logged in - call Login first")
+// NeedsLogin reports whether an upstream answer means the session is gone: a
+// 401, or a redirect whose Location path ends in /login (absolute or relative,
+// query ignored). A 403 or a redirect elsewhere is an ordinary answer.
+func NeedsLogin(status int, location string) bool {
+	if status == http.StatusUnauthorized {
+		return true
 	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.Path, bytes.NewReader(req.Body))
+	if status < 300 || status >= 400 || location == "" {
+		return false
+	}
+	u, err := url.Parse(location)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return false
 	}
-
-	httpReq.AddCookie(&http.Cookie{Name: "connect.sid", Value: c.sessionCookie})
-	for k, v := range req.Headers {
-		httpReq.Header.Set(k, v)
-	}
-
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	limit := req.MaxBodyBytes
-	if limit <= 0 {
-		limit = DefaultMaxBodyBytes
-	}
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-	if int64(len(respBody)) > limit {
-		return nil, fmt.Errorf("response exceeds %d bytes", limit)
-	}
-
-	headers := make(map[string]string)
-	for k, v := range resp.Header {
-		if len(v) > 0 {
-			headers[k] = v[0]
-		}
-	}
-
-	return &connectors.Response{
-		StatusCode: resp.StatusCode,
-		Headers:    headers,
-		Body:       respBody,
-	}, nil
-}
-
-// DefaultMaxBodyBytes caps a response body when the request sets no MaxBodyBytes.
-const DefaultMaxBodyBytes int64 = 20 << 20
-
-func UnmarshalJSON[T any](data []byte) (T, error) {
-	var result T
-	err := json.Unmarshal(data, &result)
-	return result, err
+	return strings.HasSuffix(u.Path, "/login")
 }
