@@ -318,6 +318,10 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 	}
 
 	for id, op := range cfg.Operations {
+		// `a.b:` with no body unmarshals to a nil *Operation (EG0023).
+		if op == nil {
+			return fmt.Errorf("operation %s: empty definition", id)
+		}
 		for name, def := range op.Params {
 			if def.Pattern == "" {
 				continue
