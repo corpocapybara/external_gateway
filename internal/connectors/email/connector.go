@@ -2,12 +2,15 @@ package email
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"time"
@@ -18,14 +21,32 @@ import (
 )
 
 type Config struct {
-	ImapHost   string
-	ImapPort   int
-	ImapTLS    bool
-	SmtpHost   string
-	SmtpPort   int
-	SmtpTLS    bool
-	User       string
-	Password   string
+	ImapHost string
+	ImapPort int
+	ImapTLS  bool
+	SmtpHost string
+	SmtpPort int
+	// SmtpImplicitTLS dials TLS from the first byte (port 465); otherwise the
+	// connection starts in plain text and must complete STARTTLS before AUTH.
+	SmtpImplicitTLS bool
+	User            string
+	// Password is the account password (basic) or the OAuth access token (oauth2).
+	Password string
+	// AuthMode is AuthBasic (default, also when empty) or AuthOAuth2 (XOAUTH2).
+	AuthMode string
+	// RootCAs verifies the IMAP and SMTP servers' certificates; nil uses the
+	// system roots. Only tests set it.
+	RootCAs *x509.CertPool
+}
+
+// ErrAuthRejected marks an error where the server answered a login attempt and
+// refused the credentials (IMAP NO/BAD with the connection kept, SMTP 535).
+var ErrAuthRejected = errors.New("email: authentication rejected")
+
+func (cfg *Config) oauth2() bool { return cfg.AuthMode == AuthOAuth2 }
+
+func (cfg *Config) tlsConfig(host string) *tls.Config {
+	return &tls.Config{ServerName: host, RootCAs: cfg.RootCAs}
 }
 
 type Connector struct{}
@@ -88,9 +109,10 @@ func (c *Connector) Search(cfg *Config, mailbox, criteria string) ([]map[string]
 	seqset.AddRange(from, mbox.Messages)
 
 	messages := make(chan *imap.Message, 10)
-	items := []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchInternalDate}
+	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchFlags, imap.FetchInternalDate}
+	done := make(chan error, 1)
 	go func() {
-		imapClient.Fetch(seqset, items, messages)
+		done <- imapClient.Fetch(seqset, items, messages)
 	}()
 
 	var result []map[string]interface{}
@@ -100,6 +122,9 @@ func (c *Connector) Search(cfg *Config, mailbox, criteria string) ([]map[string]
 			continue
 		}
 		result = append(result, entry)
+	}
+	if err := <-done; err != nil {
+		return nil, fmt.Errorf("fetching %s: %w", mailbox, err)
 	}
 
 	return result, nil
@@ -230,61 +255,89 @@ func (c *Connector) Send(cfg *Config, to, subject, body string) error {
 	if err := checkHeaderValue("from", cfg.User); err != nil {
 		return err
 	}
-	if cfg.SmtpTLS {
-		return sendTLS(cfg, to, subject, body)
-	}
-	return sendPlain(cfg, to, subject, body)
+	return sendSMTP(cfg, to, subject, body)
 }
 
+// VerifySMTP connects and authenticates without sending.
 func (c *Connector) VerifySMTP(cfg *Config) (string, error) {
-	addr := net.JoinHostPort(cfg.SmtpHost, strconv.Itoa(cfg.SmtpPort))
-	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	client, err := dialSMTP(cfg)
 	if err != nil {
-		return "", fmt.Errorf("dial: %w", err)
-	}
-	client, err := smtp.NewClient(conn, cfg.SmtpHost)
-	if err != nil {
-		conn.Close()
-		return "", fmt.Errorf("smtp client: %w", err)
+		return "", err
 	}
 	defer client.Close()
-	if cfg.SmtpTLS {
-		if err := client.StartTLS(&tls.Config{ServerName: cfg.SmtpHost}); err != nil {
-			return "", fmt.Errorf("starttls: %w", err)
-		}
-	}
-	auth := smtp.PlainAuth("", cfg.User, cfg.Password, cfg.SmtpHost)
-	if err := client.Auth(auth); err != nil {
-		return "", fmt.Errorf("auth: %w", err)
+	if err := smtpAuth(client, cfg); err != nil {
+		return "", err
 	}
 	return "ok", nil
 }
 
-func sendPlain(cfg *Config, to, subject, body string) error {
-	addr := fmt.Sprintf("%s:%d", cfg.SmtpHost, cfg.SmtpPort)
-	auth := smtp.PlainAuth("", cfg.User, cfg.Password, cfg.SmtpHost)
-	msg := buildMessage(cfg.User, to, subject, body)
-	return smtp.SendMail(addr, auth, cfg.User, []string{to}, []byte(msg))
-}
-
-func sendTLS(cfg *Config, to, subject, body string) error {
-	addr := fmt.Sprintf("%s:%d", cfg.SmtpHost, cfg.SmtpPort)
-	tlsCfg := &tls.Config{ServerName: cfg.SmtpHost}
-
-	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: dialTimeout}, "tcp", addr, tlsCfg)
-	if err != nil {
-		return fmt.Errorf("tls dial: %w", err)
+// dialSMTP connects to the SMTP server: implicit TLS when SmtpImplicitTLS,
+// otherwise plain text upgraded with STARTTLS, which is mandatory (no AUTH is
+// ever sent in the clear). The connection gets a deadline so a stalled server
+// cannot hang the gateway.
+func dialSMTP(cfg *Config) (*smtp.Client, error) {
+	addr := net.JoinHostPort(cfg.SmtpHost, strconv.Itoa(cfg.SmtpPort))
+	dialer := &net.Dialer{Timeout: dialTimeout}
+	var conn net.Conn
+	var err error
+	if cfg.SmtpImplicitTLS {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, cfg.tlsConfig(cfg.SmtpHost))
+		if err != nil {
+			return nil, fmt.Errorf("smtp tls dial: %w", err)
+		}
+	} else {
+		conn, err = dialer.Dial("tcp", addr)
+		if err != nil {
+			return nil, fmt.Errorf("smtp dial: %w", err)
+		}
 	}
-
+	conn.SetDeadline(time.Now().Add(commandTimeout))
 	client, err := smtp.NewClient(conn, cfg.SmtpHost)
 	if err != nil {
-		return fmt.Errorf("smtp client: %w", err)
+		conn.Close()
+		return nil, fmt.Errorf("smtp client: %w", err)
+	}
+	if !cfg.SmtpImplicitTLS {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			client.Close()
+			return nil, errors.New("smtp server does not offer STARTTLS")
+		}
+		if err := client.StartTLS(cfg.tlsConfig(cfg.SmtpHost)); err != nil {
+			client.Close()
+			return nil, fmt.Errorf("smtp starttls: %w", err)
+		}
+	}
+	return client, nil
+}
+
+// smtpAuth authenticates with AUTH XOAUTH2 (oauth2) or AUTH PLAIN (basic). A
+// 535 reply is wrapped as ErrAuthRejected.
+func smtpAuth(client *smtp.Client, cfg *Config) error {
+	var auth smtp.Auth
+	if cfg.oauth2() {
+		auth = &smtpXOAuth2{user: cfg.User, token: cfg.Password}
+	} else {
+		auth = smtp.PlainAuth("", cfg.User, cfg.Password, cfg.SmtpHost)
+	}
+	if err := client.Auth(auth); err != nil {
+		var tpErr *textproto.Error
+		if errors.As(err, &tpErr) && tpErr.Code == 535 {
+			return fmt.Errorf("smtp auth: %w: %v", ErrAuthRejected, err)
+		}
+		return fmt.Errorf("smtp auth: %w", err)
+	}
+	return nil
+}
+
+func sendSMTP(cfg *Config, to, subject, body string) error {
+	client, err := dialSMTP(cfg)
+	if err != nil {
+		return err
 	}
 	defer client.Close()
 
-	auth := smtp.PlainAuth("", cfg.User, cfg.Password, cfg.SmtpHost)
-	if err := client.Auth(auth); err != nil {
-		return fmt.Errorf("auth: %w", err)
+	if err := smtpAuth(client, cfg); err != nil {
+		return err
 	}
 	if err := client.Mail(cfg.User); err != nil {
 		return fmt.Errorf("mail from: %w", err)
@@ -301,7 +354,11 @@ func sendTLS(cfg *Config, to, subject, body string) error {
 	if _, err := w.Write([]byte(msg)); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
-	return w.Close()
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("data close: %w", err)
+	}
+	client.Quit()
+	return nil
 }
 
 func buildMessage(from, to, subject, body string) string {
@@ -321,7 +378,7 @@ func dialImap(cfg *Config) (*client.Client, error) {
 	var err error
 
 	if cfg.ImapTLS {
-		imapClient, err = client.DialWithDialerTLS(dialer, addr, &tls.Config{ServerName: cfg.ImapHost})
+		imapClient, err = client.DialWithDialerTLS(dialer, addr, cfg.tlsConfig(cfg.ImapHost))
 	} else {
 		imapClient, err = client.DialWithDialer(dialer, addr)
 	}
@@ -339,18 +396,49 @@ func dialImap(cfg *Config) (*client.Client, error) {
 			return nil, fmt.Errorf("imap capability: %w", err)
 		}
 		if ok {
-			if err := imapClient.StartTLS(&tls.Config{ServerName: cfg.ImapHost}); err != nil {
+			if err := imapClient.StartTLS(cfg.tlsConfig(cfg.ImapHost)); err != nil {
 				imapClient.Terminate()
 				return nil, fmt.Errorf("imap starttls: %w", err)
 			}
 		}
 	}
 
-	if err := imapClient.Login(cfg.User, cfg.Password); err != nil {
+	var authErr error
+	if cfg.oauth2() {
+		authErr = imapClient.Authenticate(&imapXOAuth2{user: cfg.User, token: cfg.Password})
+	} else {
+		authErr = imapClient.Login(cfg.User, cfg.Password)
+	}
+	if authErr != nil {
+		rejected := imapAuthRejected(imapClient, authErr)
 		imapClient.Logout()
-		return nil, fmt.Errorf("imap login: %w", err)
+		if rejected {
+			return nil, fmt.Errorf("imap login: %w: %v", ErrAuthRejected, authErr)
+		}
+		return nil, fmt.Errorf("imap login: %w", authErr)
 	}
 	return imapClient, nil
+}
+
+// imapAuthRejected reports whether a Login/Authenticate error is the server
+// refusing the credentials. go-imap v1.2.1 returns NO, BAD and its own
+// closed-connection error as untyped errors, so this decides by connection
+// state: the server answered and kept the connection (LoggedOut() still open;
+// go-imap returns its closed error only after that channel closed), and the
+// error is no network, EOF or LOGINDISABLED error. A client-side SASL error that
+// leaves the connection open also counts (costs at most one token refresh).
+func imapAuthRejected(c *client.Client, err error) bool {
+	select {
+	case <-c.LoggedOut():
+		return false
+	default:
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, client.ErrLoginDisabled) {
+		return false
+	}
+	return true
 }
 
 func formatAddresses(addrs []*imap.Address) string {
