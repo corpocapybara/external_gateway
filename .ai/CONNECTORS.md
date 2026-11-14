@@ -42,8 +42,9 @@ In `server.go`, the operation-execution path routes to the appropriate connector
 
 `"form-session"` also goes to `executeHttpConnector` (EG0042): it logs in with
 `formsession.Connector.Login` and sends the session cookie in place of an auth header
-(see "Form Session Connector" below). An `op.Connector` value that matches none of the
-above falls through with an empty body and status `0`.
+(see "Form Session Connector" below). Loading an ops file refuses an op whose `connector`
+is missing, empty or none of the above (`operation a.b: unknown connector "http_rest"`,
+EG0041); the accepted names are `knownConnectors` in `internal/policy/connectors.go`.
 
 ## HTTP REST Connector (`httprest`)
 
