@@ -1,6 +1,8 @@
 package server
 
 import (
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -42,17 +44,45 @@ func TestExampleHotmailConfig(t *testing.T) {
 		if op.Connector != "email" || op.Site != "hotmail" {
 			t.Fatalf("hotmail.%s: connector %q site %q", action, op.Connector, op.Site)
 		}
+		// Same params and response shaping as the email.X op it mirrors.
+		ref := reg.Operations["email."+action]
+		if ref == nil || !reflect.DeepEqual(op.Params, ref.Params) || !reflect.DeepEqual(op.Response, ref.Response) ||
+			len(op.Response.AllowFields) == 0 {
+			t.Fatalf("hotmail.%s params/response differ from email.%s or are empty", action, action)
+		}
 	}
 
+	emailRoles := 0
 	for name, role := range cfg.Roles {
 		granted := map[string]bool{}
 		for _, op := range role.Operations {
 			granted[op] = true
 		}
 		for _, op := range role.Operations {
-			if action, ok := strings.CutPrefix(op, "email."); ok && !granted["hotmail."+action] {
-				t.Errorf("role %s grants %s but not hotmail.%s", name, op, action)
+			if action, ok := strings.CutPrefix(op, "email."); ok {
+				emailRoles++
+				if !granted["hotmail."+action] {
+					t.Errorf("role %s grants %s but not hotmail.%s", name, op, action)
+				}
 			}
 		}
+	}
+	if emailRoles == 0 {
+		t.Fatal("no role grants an email.X op; the grant check proved nothing")
+	}
+
+	// The agent hash is the 64-zero placeholder (owner 2026-11-14) and the agent
+	// reaches the hotmail ops through its dev-bot grant.
+	if len(cfg.Agents) != 1 || cfg.Agents[0].TokenSHA != strings.Repeat("0", 64) {
+		t.Fatalf("example agent hash is not the 64-zero placeholder: %+v", cfg.Agents)
+	}
+	reached := false
+	for _, g := range cfg.Agents[0].Grants {
+		if g.Workspace == "globex" && slices.Contains(cfg.Roles[g.Role].Operations, "hotmail.send") {
+			reached = true
+		}
+	}
+	if !reached {
+		t.Fatal("the example agent has no grant reaching hotmail.send in globex")
 	}
 }

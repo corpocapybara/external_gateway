@@ -183,6 +183,23 @@ func TestEmailOAuth2RefreshRetry(t *testing.T) {
 		}
 	})
 
+	t.Run("rejected again after refresh: retry's error, one refresh", func(t *testing.T) {
+		imap := emailtest.StartIMAP(t, emailtest.IMAPOptions{TLS: tl.Server, ValidToken: "newer"})
+		te := newTokenEndpoint(t, 0)
+		h := hotmailHarness(t, "oauth2", imap.Port, emailtest.ClosedPort(t), te.srv.URL)
+		h.store.Set("w", "hotmail", []byte("old"))
+		err := h.listMailboxes(t)
+		if !errors.Is(err, email.ErrAuthRejected) || strings.Contains(err.Error(), "refresh failed") {
+			t.Fatalf("want the retry's rejection, got %v", err)
+		}
+		if n := te.calls.Load(); n != 1 {
+			t.Fatalf("token endpoint calls = %d, want 1", n)
+		}
+		if n := imap.AuthAttempts(); n != 2 {
+			t.Fatalf("IMAP auth attempts = %d, want 2", n)
+		}
+	})
+
 	t.Run("basic auth rejected: no refresh", func(t *testing.T) {
 		imap := emailtest.StartIMAP(t, emailtest.IMAPOptions{TLS: tl.Server, ValidToken: "new"})
 		te := newTokenEndpoint(t, 0)
