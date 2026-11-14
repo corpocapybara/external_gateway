@@ -19,7 +19,7 @@ none
 - EG0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - EG0022 · designed · server · S — jql_scope with a non-string, non-list projects value fails open
 - EG0023 · designed · server · S — A null operation in the ops YAML panics loadFromFile
-- EG0030 · in-review · ops-config · S — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
+- EG0030 · in-testing · ops-config · S — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
 - EG0031 · draft · ops-config · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
 - EG0035 · draft · unset · M — Project review (rubric v1)
 - EG0036 · draft · server · S — /feedback duplicate check globs todo/T*.md, so it misses every todo once the repo's id_prefix is not T (this repo is EG now)
@@ -32,4 +32,4 @@ none
 - EG0002 · draft · ops-config · M — `kibana.search` has no stg/dev `base_url`, and thp's docs call `kibana.*` dead
 - EG0009 · draft · connectors · M — No Thunderpick admin-panel connector; agents capture the admin session token from the page
 - EG0024 · draft · unset · M — Define flow rules per bucket in todo/_config.yaml (ToDo TD0146)
-- EG0034 · reviewed · connectors · S — WinCredStore.Resolve panics when a credential lookup returns nil without an error
+- EG0034 · in-testing · connectors · S — WinCredStore.Resolve panics when a credential lookup returns nil without an error
