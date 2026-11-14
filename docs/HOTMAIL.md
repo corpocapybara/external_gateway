@@ -64,12 +64,11 @@ device code, you sign in in a browser, and it stores the access token and the re
 $clientId  = "<application-client-id>"
 $workspace = "<ws>"                      # the workspace whose config has the hotmail site
 $admin     = "http://127.0.0.1:8443/admin/secrets"   # your workspace's port
-$adminTok  = "<admin token>"            # only if admin_token_sha256 is configured, else ""
+$adminTok  = "<admin token>"            # required: /admin/* is refused when admin_token_sha256 is unset
 $authority = "https://login.microsoftonline.com/consumers/oauth2/v2.0"
 $scope     = "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access"
 
-$headers = @{}
-if ($adminTok) { $headers["Authorization"] = "Bearer $adminTok" }
+$headers = @{ Authorization = "Bearer $adminTok" }
 # Check the admin token before signing in: a store refused after the sign-in throws the tokens away.
 Invoke-RestMethod -Uri "$admin/status?workspace=$workspace&check=0" -Headers $headers | Out-Null
 
@@ -168,7 +167,7 @@ Invoke-RestMethod -Method Post -Uri "$base/hotmail.search" -Headers $h -ContentT
 ## Verify
 
 ```powershell
-$h = @{ Authorization = "Bearer <admin token>" }   # omit if no admin token is configured
+$h = @{ Authorization = "Bearer <admin token>" }
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:<port>/admin/diag" -Headers $h -ContentType "application/json" `
   -Body '{"workspace":"<ws>","site":"hotmail"}'
 ```
