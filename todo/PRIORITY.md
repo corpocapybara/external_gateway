@@ -30,5 +30,5 @@ none
 - EG0001 · draft · ops-config · M — No Grafana op: prod logs and metrics go through the browser
 - EG0002 · draft · ops-config · M — `kibana.search` has no stg/dev `base_url`, and thp's docs call `kibana.*` dead
 - EG0009 · draft · connectors · M — No Thunderpick admin-panel connector; agents capture the admin session token from the page
-- EG0024 · in-progress · docs · S — Define flow rules per bucket in todo/_config.yaml (ToDo TD0146)
+- EG0024 · in-review · docs · S — Define flow rules per bucket in todo/_config.yaml (ToDo TD0146)
 - EG0043 · draft · server · S — Back off form-session logins after a failed login
