@@ -302,7 +302,7 @@ external_gateway/
 │       ├── postgres/     # Read-only SQL with safety guards
 │       ├── localservice/ # WireGuard + TCP connectivity checks
 │       ├── email/        # IMAP read + SMTP send
-│       ├── formsession/  # Form-based login with session cookie capture (defined, not wired)
+│       ├── formsession/  # Form-based login + session cache for form-session ops (CodiMD)
 │       └── connector.go  # Connector interface + request/response types
 ├── deploy/
 │   ├── update.ps1        # Quick deploy (build + copy + restart)
@@ -365,7 +365,7 @@ Agent ──Bearer token──> AuthN ──> Policy (grants) ──> Operation 
 | Jenkins | ✓ | [CSRF crumb](.ai/PITFALLS.md#jenkins-csrf-crumb-required-for-post-operations) auto-fetched before POST ops |
 | Admin diagnostics | ✓ | [POST /admin/diag](#api-reference) — IMAP/SMTP/HTTP auth test, no password exposure |
 | MCP | ✓ | Streamable HTTP — `tools/list` + `tools/call` |
-| Form-session | ✓ | Connector defined, not wired to any operation |
+| Form-session | ✓ | Login with `user` + `secret_ref` password, session cookie per workspace/site/env, one re-login on 401 or redirect to `/login` ([CONNECTORS](.ai/CONNECTORS.md)) |
 | Capabilities examples | ✓ | `/capabilities` returns PowerShell example call per operation |
 | Hotmail/Outlook | ✗ | Requires XOAUTH2 — [basic auth rejected](.ai/PITFALLS.md#hotmailoutlook-consumer-accounts-require-xoauth2) |
 | Kibana SSO proxy | ✗ | [Upvote/Grafana proxy](.ai/PITFALLS.md#kibana-prod-behind-grafana-upvote-sso-proxy) blocks Basic Auth |
