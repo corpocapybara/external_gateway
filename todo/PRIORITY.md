@@ -18,7 +18,7 @@ none
 - EG0011 · designed · ops-config · M — `jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags
 - EG0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - EG0022 · designed · server · S — jql_scope with a non-string, non-list projects value fails open
-- EG0023 · in-progress · server · S — A null operation in the ops YAML panics loadFromFile
+- EG0023 · in-review · server · S — A null operation in the ops YAML panics loadFromFile
 - EG0030 · in-testing · ops-config · S — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
 - EG0031 · draft · ops-config · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
 - EG0035 · draft · unset · M — Project review (rubric v1)
