@@ -6,7 +6,7 @@ same commit as the todo change (todo rules, section "Without the tool").
 
 ## P0
 
-- EG0039 · reviewed · connectors · M — Connector to hotmail account
+- EG0039 · tested · connectors · M — Connector to hotmail account
 - EG0040 · designed · ops-config · S — Hotmail live hookup in the cc workspace (tokens, config, deploy, end-to-end) · blocked by EG0039
 
 ## P1
