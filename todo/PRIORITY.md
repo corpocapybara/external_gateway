@@ -6,7 +6,7 @@ same commit as the todo change (todo rules, section "Without the tool").
 
 ## P0
 
-none
+- EG0039 · draft · connectors · M — Connector to hotmail account
 
 ## P1
 
