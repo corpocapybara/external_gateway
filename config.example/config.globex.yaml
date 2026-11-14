@@ -59,6 +59,10 @@ roles:
       - email.search
       - email.read
       - email.send
+      - hotmail.list_mailboxes
+      - hotmail.search
+      - hotmail.read
+      - hotmail.send
       - wireguard.status
       - wireguard.test
 
@@ -92,7 +96,9 @@ roles:
 
 agents:
   - id: agent-globex
-    token_sha256: ""  # TODO: Set after generating token
+    # Placeholder: replace with the SHA-256 (hex) of the agent token. No token hashes
+    # to all zeros, so an unedited copy admits no agent.
+    token_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
     grants:
       - workspace: globex
         role: dev-bot
@@ -144,6 +150,24 @@ workspaces:
             auth:
               type: basic
             secret_ref: secret://globex/email
+      # Outlook.com / Hotmail: IMAP and SMTP with XOAUTH2 (basic auth is refused).
+      # secret_ref holds the OAuth access token (about 1 h); the gateway refreshes
+      # it with the refresh token on a rejected login. Setup: docs/HOTMAIL.md.
+      hotmail:
+        environments:
+          prod:
+            host: outlook.office365.com
+            imap_port: 993
+            smtp_host: smtp-mail.outlook.com
+            smtp_port: 587  # STARTTLS
+            user: you@hotmail.com  # TODO: Set the mailbox address
+            auth:
+              type: oauth2
+            secret_ref: secret://globex/hotmail
+            oauth:
+              token_url: https://login.microsoftonline.com/consumers/oauth2/v2.0/token
+              client_id: 00000000-0000-0000-0000-000000000000  # TODO: Set the app's client id
+              refresh_secret_ref: secret://globex/hotmail-refresh
       kibana:
         environments:
           umbrella:

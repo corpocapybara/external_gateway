@@ -367,7 +367,7 @@ Agent ──Bearer token──> AuthN ──> Policy (grants) ──> Operation 
 | MCP | ✓ | Streamable HTTP — `tools/list` + `tools/call` |
 | Form-session | ✓ | Login with `user` + `secret_ref` password, session cookie per workspace/site/env, one re-login on 401 or redirect to `/login` ([CONNECTORS](.ai/CONNECTORS.md)) |
 | Capabilities examples | ✓ | `/capabilities` returns PowerShell example call per operation |
-| Hotmail/Outlook | ✗ | Requires XOAUTH2 — [basic auth rejected](.ai/PITFALLS.md#hotmailoutlook-consumer-accounts-require-xoauth2) |
+| Hotmail/Outlook | ✓ | IMAP/SMTP with XOAUTH2 (basic auth is rejected), token auto-refresh — [How To Connect](docs/HOTMAIL.md) |
 | Kibana SSO proxy | ✗ | [Upvote/Grafana proxy](.ai/PITFALLS.md#kibana-prod-behind-grafana-upvote-sso-proxy) blocks Basic Auth |
 | Clockify scheduler | ✗ | Stub — not wired |
 | Slack channel allow-list | ✗ | `slack_channels` exists but [no constraint enforces it](.ai/PITFALLS.md#stalled--incomplete-features) |

@@ -9,7 +9,7 @@ import (
 
 func unreachableCfg() *Config {
 	// Port 1 on loopback: if validation is missing, Send fails with a dial error instead.
-	return &Config{SmtpHost: "127.0.0.1", SmtpPort: 1, SmtpTLS: false, User: "me@example.com"}
+	return &Config{SmtpHost: "127.0.0.1", SmtpPort: 1, User: "me@example.com"}
 }
 
 func TestSendRejectsHeaderInjection(t *testing.T) {
