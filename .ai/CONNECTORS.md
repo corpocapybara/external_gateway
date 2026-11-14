@@ -32,6 +32,7 @@ In `server.go`, the operation-execution path routes to the appropriate connector
 
 ```
 "http-rest"     → executeHttpConnector       → httprest.Connector
+"form-session"  → executeHttpConnector       → formsession login + httprest.Connector
 "postgres"      → executePostgresConnector    → postgres.Connector
 "local-service" → executeLocalServiceConnector → localservice.Connector
 "mcp"           → executeMcpConnector         (JSON-RPC 2.0 over Streamable HTTP)
@@ -39,8 +40,9 @@ In `server.go`, the operation-execution path routes to the appropriate connector
 "jira-worklog"  → executeJiraWorklog          (Tempo API worklogs + Polish working-hours norm)
 ```
 
-`form-session`/`formsession.Connector` is implemented but **not** in the dispatch
-chain — no operation routes to it. An `op.Connector` value that matches none of the
+`"form-session"` also goes to `executeHttpConnector` (EG0042): it logs in with
+`formsession.Connector.Login` and sends the session cookie in place of an auth header
+(see "Form Session Connector" below). An `op.Connector` value that matches none of the
 above falls through with an empty body and status `0`.
 
 ## HTTP REST Connector (`httprest`)
@@ -61,7 +63,7 @@ Auth types the server injects before calling this connector (`env.auth.type`): `
 
 **Important**: Credentials are typically passed via `Headers["Authorization"]` set by the server (not via `req.Credentials`). The server resolves secrets and injects the `Authorization` header before calling the connector.
 
-Response bodies are capped at 20 MB (`httprest.DefaultMaxBodyBytes`, also used by `formsession`) unless the request
+Response bodies are capped at 20 MB (`httprest.DefaultMaxBodyBytes`, which also covers `form-session` data requests) unless the request
 sets `MaxBodyBytes`; a larger body fails with "response exceeds N bytes". Redirects are not followed.
 
 ### Response shaping (wired)
@@ -139,7 +141,14 @@ scope check. Issue keys must be in `jira_projects`; update/delete refuse worklog
 
 ## Form Session Connector (`formsession`)
 
-Exists but is **not wired** into any operation. Would handle form-based login to obtain session cookies (intended for CodiMD). Implementation is present in `internal/connectors/formsession/connector.go` but unused.
+Form-based login for session-cookie sites (CodiMD), wired through `executeHttpConnector` (EG0042, design `docs/design/EG0042-form-session-dispatch.md`). Data requests use the http-rest path (path template, query, body, headers, proxy_host, insecure_skip_verify, no redirects, 20 MB cap, `allow_fields` shaping); the package only logs in and caches sessions.
+
+- **Config** (site environment): `base_url`, `user` (login email), `secret_ref` (login password); `auth` is ignored. Missing `user` or `secret_ref` is an error before any login. `proxy_host`/`proxy_port` and `insecure_skip_verify` apply to the login as well.
+- **Login**: POST `<base>/login`, form `email` + `password`, no redirects. Success = a `connect.sid` cookie and neither 401/403/5xx nor a redirect to `/login` (a 302 to `/` with the cookie is the usual answer). The password is resolved with `secrets.ResolveWithWorkspaceCheck` on a cache miss only; the cookie is tainted.
+- **Sessions** (`formsession.Sessions`): one cookie per workspace + site + resolved env, one lock per key (concurrent first calls log in once), failed logins not cached. `/admin/reload` and every `/admin/secrets` write or delete clear them.
+- **Re-login**: a 401, or a 3xx whose `Location` path ends in `/login`, drops the stale cookie, logs in once more and retries once; a second signal or a failed re-login is an error. A 403 or a redirect elsewhere passes through.
+- **Errors** (login, re-login, missing fields) return `status:"error"` and are audited as allow with no upstream status.
+- CodiMD's exact login responses are unverified (tests use httptest only, `internal/server/form_session_test.go`).
 
 ## Adding a new connector
 

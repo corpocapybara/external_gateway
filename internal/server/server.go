@@ -33,6 +33,7 @@ import (
 	"github.com/external_gateway/internal/config"
 	"github.com/external_gateway/internal/connectors"
 	"github.com/external_gateway/internal/connectors/email"
+	"github.com/external_gateway/internal/connectors/formsession"
 	"github.com/external_gateway/internal/connectors/httprest"
 	"github.com/external_gateway/internal/connectors/postgres"
 	"github.com/external_gateway/internal/policy"
@@ -72,6 +73,10 @@ type Server struct {
 	tunnelCheckerFactory func(*config.Config) policy.TunnelChecker
 	slackFilesBase string
 	creds          *credCache
+	// form-session ops (EG0042): the login client and the per workspace/site/env
+	// session cookies, cleared wherever creds is.
+	formLogin      *formsession.Connector
+	formSessions   *formsession.Sessions
 }
 
 func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logger zerolog.Logger) *Server {
@@ -84,6 +89,8 @@ func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logg
 		emailConn: email.NewConnector(),
 		opsPath:  opsPath,
 		creds:    newCredCache(),
+		formLogin:    formsession.NewConnector(),
+		formSessions: formsession.NewSessions(),
 	}
 	s.state.Store(&runtimeState{cfg: cfg, reg: reg})
 	s.configChecksum.Store(checksum)
@@ -569,7 +576,7 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 		upstreamStatus, responseBody, err = s.executeSlackFileContent(ws, op, params, workspace)
 	} else if op.Connector == "http-rest" && op.JiraAttachmentContent {
 		upstreamStatus, responseBody, err = s.executeJiraAttachmentContent(ws, op, params, workspace)
-	} else if op.Connector == "http-rest" {
+	} else if op.Connector == "http-rest" || op.Connector == "form-session" {
 		upstreamStatus, responseBody, err = s.executeHttpConnector(ws, op, params, workspace)
 	} else if op.Connector == "postgres" {
 		upstreamStatus, responseBody, err = s.executePostgresConnector(ws, op, params, workspace)
@@ -712,7 +719,7 @@ func resolveEnv(site config.Site, siteName string, params map[string]interface{}
 // connectors that pick their environment with resolveEnv.
 func checkEnvSelection(ws *config.Workspace, op *policy.Operation, params map[string]interface{}) error {
 	switch op.Connector {
-	case "http-rest", "mcp", "email", "jira-worklog":
+	case "http-rest", "form-session", "mcp", "email", "jira-worklog":
 	default:
 		return nil
 	}
@@ -922,7 +929,16 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		Str("method", op.Method).
 		Msg("executing upstream request")
 
-	if env.Auth.Type == "basic" && env.User != "" {
+	formKey, formCookie := "", ""
+	if op.Connector == "form-session" {
+		// Session-cookie auth (EG0042): auth.type is ignored for form-session ops.
+		formKey = formsession.Key(workspace, op.Site, envName)
+		formCookie, err = s.formSessionCookie(formKey, env, envName, baseURL, workspace)
+		if err != nil {
+			return 0, nil, err
+		}
+		headers["Cookie"] = formsession.SessionCookieName + "=" + formCookie
+	} else if env.Auth.Type == "basic" && env.User != "" {
 		passwd, _ := params["password"].(string)
 		secretName := ""
 		if passwd == "" {
@@ -1016,9 +1032,35 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		return 0, nil, fmt.Errorf("upstream request failed: %w", err)
 	}
 
+	// Form-session re-login (EG0042): on a 401 or a redirect to /login, drop the
+	// stale cookie, log in once more and retry once; a second signal is an error.
+	if op.Connector == "form-session" && formsession.NeedsLogin(resp.StatusCode, resp.Headers["Location"]) {
+		s.formSessions.Invalidate(formKey, formCookie)
+		formCookie, err = s.formSessionCookie(formKey, env, envName, baseURL, workspace)
+		if err != nil {
+			return 0, nil, err
+		}
+		headers["Cookie"] = formsession.SessionCookieName + "=" + formCookie
+		resp, err = s.httpClient.Execute(context.Background(), &connectors.Request{
+			Method:   op.Method,
+			Path:     urlStr,
+			Headers:  headers,
+			Body:     body,
+			Insecure: env.InsecureSkipVerify,
+		})
+		if err != nil {
+			s.logger.Error().Err(err).Str("url", urlStr).Msg("upstream request failed after form-session re-login")
+			return 0, nil, fmt.Errorf("upstream request failed after re-login: %w", err)
+		}
+		if formsession.NeedsLogin(resp.StatusCode, resp.Headers["Location"]) {
+			s.formSessions.Invalidate(formKey, formCookie)
+			return 0, nil, errors.New("form-session: upstream still asks for login after re-login")
+		}
+	}
+
 	// OAuth auto-refresh: if bearer auth returns 401 and OAuth config is present,
 	// use the refresh token to get a new access token, store it, and retry once.
-	if resp.StatusCode == http.StatusUnauthorized && env.Auth.Type == "bearer" && env.OAuth != nil && env.SecretRef != "" {
+	if op.Connector == "http-rest" && resp.StatusCode == http.StatusUnauthorized && env.Auth.Type == "bearer" && env.OAuth != nil && env.SecretRef != "" {
 		s.logger.Info().Str("site", op.Site).Str("url", urlStr).Msg("received 401, attempting OAuth token refresh")
 		if s.refreshOAuthToken(env, workspace) {
 			wsName, secretName := parseSecretRef(env.SecretRef)
@@ -1049,6 +1091,29 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 
 	resp.Body = shapeResponse(resp.StatusCode, resp.Body, op.Response.AllowFields)
 	return resp.StatusCode, resp.Body, nil
+}
+
+// formSessionCookie returns the form-session cookie for key, logging in on a
+// cache miss with the environment's user and its secret_ref password (resolved
+// with the cross-tenant check). The cookie is tainted so responses and log
+// previews redact it.
+func (s *Server) formSessionCookie(key string, env *config.Environment, envName, baseURL, workspace string) (string, error) {
+	if env.User == "" || env.SecretRef == "" {
+		return "", fmt.Errorf("form-session environment %s needs user and secret_ref", envName)
+	}
+	return s.formSessions.Cookie(key, func() (string, error) {
+		wsName, secretName := parseSecretRef(env.SecretRef)
+		password, err := secrets.ResolveWithWorkspaceCheck(wsName, secretName, workspace)
+		if err != nil {
+			return "", err
+		}
+		cookie, err := s.formLogin.Login(context.Background(), baseURL, env.User, string(password), env.InsecureSkipVerify)
+		if err != nil {
+			return "", err
+		}
+		secrets.GetTaintRegistry().Taint([]byte(cookie))
+		return cookie, nil
+	})
 }
 
 // precheckJiraLink GETs the issue link behind an `id` param through the op's own
@@ -2169,6 +2234,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.creds.clear()
+			s.formSessions.Clear()
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 			return
@@ -2210,6 +2276,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.creds.clear()
+		s.formSessions.Clear()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 
@@ -2372,6 +2439,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		s.state.Store(&runtimeState{cfg: cfg, reg: newReg})
 		s.configChecksum.Store(checksum)
 		s.creds.clear()
+		s.formSessions.Clear()
 		s.logger.Info().Str("checksum", checksum).Msg("config and ops hot-reloaded")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{

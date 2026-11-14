@@ -131,6 +131,12 @@ workspaces:
                 schema: public
             secret_ref: secret://globex/pg-staging
             requires_tunnel: vpn1
+      # codimd:                    # form-session: logs in with user + password, keeps connect.sid (no auth block)
+      #   environments:
+      #     prod:
+      #       base_url: https://codimd.example.com
+      #       user: bot@globex.io  # login email
+      #       secret_ref: secret://globex/codimd   # login password
     policy:
       jira_projects:
         - PROJ1
