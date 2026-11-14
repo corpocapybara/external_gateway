@@ -16,6 +16,7 @@ Lazy-load by reading the file relevant to your task.
 | `../docs/TRELLO.md` | Trello auth — API key + token setup, operations, caveats |
 | `../docs/GITHUB.md` | GitHub PAT — classic/fine-grained token setup |
 | `../docs/GMAIL.md` | Gmail app password — enabling 2FA, generating app password |
+| `../docs/HOTMAIL.md` | Hotmail/Outlook.com XOAUTH2 — Entra app, device-code tokens, config, known issues |
 | `../docs/GDOCS.md` | Google Docs OAuth — token acquisition, operations, caveats |
 | `../docs/ONEDRIVE.md` | OneDrive / Microsoft Graph OAuth — token acquisition, operations, caveats |
 | `../docs/CLOCKIFY.md` | Clockify time tracking — all operations with examples |

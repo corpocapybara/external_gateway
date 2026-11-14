@@ -128,7 +128,7 @@ The read-only enforcement in `postgres/connector.go` uses `\b` word-boundary reg
 - **No rate limiting**
 - **form-session** (CodiMD) is wired through `executeHttpConnector` (EG0042) but proven against httptest only; CodiMD's real login responses (cookie, 302 target, re-login signal) are unverified
 - **Response shaping array paths**: wildcard `[]` now projects across all elements (fixed 2026-07-10); numeric indices (`[0]`) are still unsupported
-- **Hotmail/Outlook OAuth2**: Removed from the affected workspace (2026-07-16). Consumer Outlook accounts now require XOAUTH2 for both IMAP and SMTP. go-imap `Login()` and net/smtp `PlainAuth` are rejected. Re-add when XOAUTH2 support is implemented.
+- **Hotmail/Outlook OAuth2**: Removed from the affected workspace (2026-07-16) because consumer Outlook accounts require XOAUTH2 for both IMAP and SMTP (go-imap `Login()` and net/smtp `PlainAuth` are rejected). XOAUTH2 is supported since EG0039: `auth.type: oauth2` on the email site, setup in [docs/HOTMAIL.md](../docs/HOTMAIL.md).
 
 ## YAML content issues (2026-07-16)
 
@@ -188,4 +188,4 @@ Without `body_template`, the POST to Clockify's time entry endpoint had an empty
 
 ### Hotmail/Outlook consumer accounts require XOAUTH2
 
-Newer consumer Outlook.com accounts reject basic auth for both IMAP (`"AUTHENTICATE failed."`) and SMTP (`"Unrecognized authentication type"` — AUTH PLAIN not supported). Gmail still works with app passwords via both IMAP and SMTP. Hotmail removed from the affected workspace pending XOAUTH2 support.
+Newer consumer Outlook.com accounts reject basic auth for both IMAP (`"AUTHENTICATE failed."`) and SMTP (`"Unrecognized authentication type"` — AUTH PLAIN not supported). Gmail still works with app passwords via both IMAP and SMTP. XOAUTH2 is supported (EG0039): set `auth.type: oauth2` with an `oauth` block and store the access and refresh tokens as described in [docs/HOTMAIL.md](../docs/HOTMAIL.md).
