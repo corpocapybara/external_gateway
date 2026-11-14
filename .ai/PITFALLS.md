@@ -126,7 +126,7 @@ The read-only enforcement in `postgres/connector.go` uses `\b` word-boundary reg
 - **Postgres proxy/Teleport**: Not implemented — direct connections only
 - **Unit tests**: only `internal/redact/hook_test.go` (response-shaper array projection) exists; the rest of the project is untested
 - **No rate limiting**
-- **formsession connector** exists but is unused
+- **form-session** (CodiMD) is wired through `executeHttpConnector` (EG0042) but proven against httptest only; CodiMD's real login responses (cookie, 302 target, re-login signal) are unverified
 - **Response shaping array paths**: wildcard `[]` now projects across all elements (fixed 2026-07-10); numeric indices (`[0]`) are still unsupported
 - **Hotmail/Outlook OAuth2**: Removed from the affected workspace (2026-07-16). Consumer Outlook accounts now require XOAUTH2 for both IMAP and SMTP. go-imap `Login()` and net/smtp `PlainAuth` are rejected. Re-add when XOAUTH2 support is implemented.
 
