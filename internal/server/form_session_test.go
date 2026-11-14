@@ -367,28 +367,40 @@ func TestFormSessionOpRoundTrip(t *testing.T) {
 }
 
 func TestFormSessionLoginFails(t *testing.T) {
-	cases := map[string]func(w http.ResponseWriter){
-		"200 without cookie": func(w http.ResponseWriter) { w.Write([]byte("login page")) },
-		"401":                func(w http.ResponseWriter) { w.WriteHeader(http.StatusUnauthorized) },
-		"cookie plus 401": func(w http.ResponseWriter) {
-			http.SetCookie(w, &http.Cookie{Name: "connect.sid", Value: fsCookie})
+	withCookie := func(w http.ResponseWriter) {
+		http.SetCookie(w, &http.Cookie{Name: "connect.sid", Value: fsCookie})
+	}
+	// Each case that sets a cookie fails only through the status check, so the
+	// error text pins which branch of Login refused it.
+	cases := map[string]struct {
+		answer   func(w http.ResponseWriter)
+		wantText string
+	}{
+		"200 without cookie": {func(w http.ResponseWriter) { w.Write([]byte("login page")) }, "no session cookie"},
+		"401":                {func(w http.ResponseWriter) { w.WriteHeader(http.StatusUnauthorized) }, "login refused (status 401)"},
+		"cookie plus 401": {func(w http.ResponseWriter) {
+			withCookie(w)
 			w.WriteHeader(http.StatusUnauthorized)
-		},
-		"cookie plus 302 to login": func(w http.ResponseWriter) {
-			http.SetCookie(w, &http.Cookie{Name: "connect.sid", Value: fsCookie})
+		}, "login refused (status 401)"},
+		"cookie plus 302 to login": {func(w http.ResponseWriter) {
+			withCookie(w)
 			w.Header().Set("Location", "/login")
 			w.WriteHeader(http.StatusFound)
-		},
-		"500": func(w http.ResponseWriter) { w.WriteHeader(http.StatusInternalServerError) },
+		}, "form-session login refused"},
+		"500":             {func(w http.ResponseWriter) { w.WriteHeader(http.StatusInternalServerError) }, "login failed (status 500)"},
+		"cookie plus 500": {func(w http.ResponseWriter) { withCookie(w); w.WriteHeader(http.StatusInternalServerError) }, "login failed (status 500)"},
 	}
-	for name, answer := range cases {
-		answer := answer
+	for name, tc := range cases {
+		tc := tc
 		t.Run(name, func(t *testing.T) {
 			u := newFSUpstream(t, fsCookie, false)
-			u.onLogin = func(w http.ResponseWriter, r *http.Request, n int) { answer(w) }
+			u.onLogin = func(w http.ResponseWriter, r *http.Request, n int) { tc.answer(w) }
 			s := newFormSessionServer(t, fsStore("fs1"), fsEnv{ws: "fs1", site: "codimd", env: "prod", url: u.srv.URL})
 			_, out, raw := fsCall(t, s, "fs1", "codimd.note", nil)
 			fsWantError(t, out, raw)
+			if !strings.Contains(raw, tc.wantText) {
+				t.Fatalf("want %q in %s", tc.wantText, raw)
+			}
 			fsWantCounts(t, u, 1, 0)
 			assertNoLeak(t, raw)
 		})
@@ -442,6 +454,22 @@ func TestFormSessionSessionsIsolated(t *testing.T) {
 		fsWantCounts(t, x, 0, 0)
 		assertNoLeak(t, raw)
 	})
+	t.Run("d two envs of one site", func(t *testing.T) {
+		e1, e2 := newFSUpstream(t, "sid-E1-EG42x", false), newFSUpstream(t, "sid-E2-EG42x", false)
+		s := newFormSessionServer(t, fsStore("fs1"),
+			fsEnv{ws: "fs1", site: "codimd", env: "e1", url: e1.srv.URL},
+			fsEnv{ws: "fs1", site: "codimd", env: "e2", url: e2.srv.URL},
+		)
+		for i := 0; i < 2; i++ {
+			for _, env := range []string{"e1", "e2"} {
+				if _, out, raw := fsCall(t, s, "fs1", "codimd.note", map[string]interface{}{"noteId": "n1", "env": env}); out["id"] != "n1" {
+					t.Fatalf("env %s: %s", env, raw)
+				}
+			}
+		}
+		fsWantCounts(t, e1, 1, 2)
+		fsWantCounts(t, e2, 1, 2)
+	})
 }
 
 func TestFormSessionRelogin(t *testing.T) {
@@ -475,10 +503,20 @@ func TestFormSessionRelogin(t *testing.T) {
 		})
 	}
 	t.Run("b always", func(t *testing.T) {
-		u, out, raw := run(t, func(w http.ResponseWriter, r *http.Request, n int) { signal401(w) }, nil)
+		u := newFSUpstream(t, fsCookie, false)
+		u.onData = func(w http.ResponseWriter, r *http.Request, n int) { signal401(w) }
+		s := newFormSessionServer(t, fsStore("fs1"), fsEnv{ws: "fs1", site: "codimd", env: "prod", url: u.srv.URL})
+		_, out, raw := fsCall(t, s, "fs1", "codimd.note", nil)
 		fsWantError(t, out, raw)
+		if !strings.Contains(raw, "still asks for login") {
+			t.Fatalf("want the re-login error: %s", raw)
+		}
 		fsWantCounts(t, u, 2, 2)
 		assertNoLeak(t, raw)
+		// The rejected cookie is not kept: the next call logs in first (and, still
+		// refused, once more): 4 and 4. A kept cookie would give 3 logins, 4 data.
+		fsCall(t, s, "fs1", "codimd.note", nil)
+		fsWantCounts(t, u, 4, 4)
 	})
 	t.Run("c re-login fails", func(t *testing.T) {
 		u, out, raw := run(t, func(w http.ResponseWriter, r *http.Request, n int) { signal401(w) },
@@ -560,7 +598,7 @@ func TestFormSessionConcurrentCalls(t *testing.T) {
 	fsWantCounts(t, u, 1, callers)
 }
 
-func TestFormSessionDroppedOnAdmin(t *testing.T) {
+func TestFormSessionDroppedOnReload(t *testing.T) {
 	for _, tc := range []struct {
 		name, method, path, body string
 		password                 string
