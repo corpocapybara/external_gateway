@@ -30,6 +30,8 @@ func TestDetectKind(t *testing.T) {
 		{"postgres", config.Environment{Host: "db.example"}, KindPostgres},
 		{"gmail", config.Environment{Host: "imap.gmail.com"}, KindIMAP},
 		{"gdocs", config.Environment{OAuth: &config.OAuthRefreshConfig{}}, KindOAuth},
+		// XOAUTH2 email (EG0039): an access token, never tried with IMAP LOGIN, even without an oauth block.
+		{"email", config.Environment{ImapHost: "outlook.office365.com", Auth: config.AuthConfig{Type: "oauth2"}}, KindOAuth},
 		{"kibana", config.Environment{}, KindKibana},
 	}
 	for _, c := range cases {
