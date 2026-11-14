@@ -63,7 +63,7 @@ type Result struct {
 func DetectKind(site string, env config.Environment) Kind {
 	base := strings.ToLower(env.BaseURL)
 	switch {
-	case env.OAuth != nil:
+	case env.OAuth != nil || env.Auth.Type == "oauth2":
 		return KindOAuth
 	case env.Auth.Type == "slack-session":
 		return KindSlack
