@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -70,6 +71,9 @@ type Server struct {
 	configChecksum atomic.Value
 	opsPath       string
 	oauthRefreshMu sync.Mutex
+	// emailRootCAs verifies IMAP/SMTP certificates; nil (system roots) in
+	// production, set only by package-server tests.
+	emailRootCAs *x509.CertPool
 	tunnelCheckerFactory func(*config.Config) policy.TunnelChecker
 	slackFilesBase string
 	creds          *credCache
@@ -2336,14 +2340,10 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 					host = env.ImapHost
 				}
 				if host != "" {
-					emailCfg := &email.Config{ImapHost: host, ImapPort: 993, ImapTLS: true, User: env.User}
-					if env.ImapPort != 0 {
-						emailCfg.ImapPort = env.ImapPort
-					}
-					wsName, sName := parseSecretRef(env.SecretRef)
-					secret, _ := secrets.ResolveWithWorkspaceCheck(wsName, sName, req.Workspace)
-					emailCfg.Password = string(secret)
-					if _, err := s.emailConn.ListMailboxes(emailCfg); err == nil {
+					if err := s.withEmail(&env, req.Workspace, func(cfg *email.Config) error {
+						_, err := s.emailConn.ListMailboxes(cfg)
+						return err
+					}); err == nil {
 						envResult["imap_login"] = "ok"
 					} else {
 						envResult["imap_login"] = "failed"
@@ -2357,15 +2357,11 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 					smtpHost = env.Host
 				}
 				if smtpHost != "" {
-					smtpCfg := &email.Config{SmtpHost: smtpHost, SmtpPort: 587, SmtpTLS: true, User: env.User}
-					if env.SmtpPort != 0 {
-						smtpCfg.SmtpPort = env.SmtpPort
-					}
-					wsName, sName := parseSecretRef(env.SecretRef)
-					secret, _ := secrets.ResolveWithWorkspaceCheck(wsName, sName, req.Workspace)
-					smtpCfg.Password = string(secret)
 					// Just verify SMTP auth, don't actually send
-					if _, err := s.emailConn.VerifySMTP(smtpCfg); err == nil {
+					if err := s.withEmail(&env, req.Workspace, func(cfg *email.Config) error {
+						_, err := s.emailConn.VerifySMTP(cfg)
+						return err
+					}); err == nil {
 						envResult["smtp_login"] = "ok"
 					} else {
 						envResult["smtp_login"] = "failed"
@@ -2504,41 +2500,6 @@ func (s *Server) executeEmailConnector(ws *config.Workspace, op *policy.Operatio
 		return 0, nil, err
 	}
 
-	wsName, secretName := parseSecretRef(env.SecretRef)
-	secret, err := secrets.ResolveWithWorkspaceCheck(wsName, secretName, workspace)
-	if err != nil {
-		return 0, nil, fmt.Errorf("resolving email secret: %w", err)
-	}
-
-	imapHost := env.Host
-	if imapHost == "" {
-		imapHost = env.ImapHost
-	}
-	imapPort := env.ImapPort
-	if imapPort == 0 {
-		imapPort = 993
-	}
-
-	smtpHost := env.SmtpHost
-	if smtpHost == "" {
-		smtpHost = env.Host
-	}
-	smtpPort := env.SmtpPort
-	if smtpPort == 0 {
-		smtpPort = 587
-	}
-
-	emailCfg := &email.Config{
-		ImapHost:   imapHost,
-		ImapPort:   imapPort,
-		ImapTLS:    true,
-		SmtpHost:   smtpHost,
-		SmtpPort:   smtpPort,
-		SmtpTLS:    true,
-		User:       env.User,
-		Password:   string(secret),
-	}
-
 	var result interface{}
 
 	// Email operations are named <site>.<action> (e.g. gmail.list_mailboxes, hotmail.send).
@@ -2550,7 +2511,11 @@ func (s *Server) executeEmailConnector(ws *config.Workspace, op *policy.Operatio
 
 	switch action {
 	case "list_mailboxes":
-		mboxes, err := s.emailConn.ListMailboxes(emailCfg)
+		var mboxes []map[string]interface{}
+		err := s.withEmail(env, workspace, func(cfg *email.Config) (err error) {
+			mboxes, err = s.emailConn.ListMailboxes(cfg)
+			return err
+		})
 		if err != nil {
 			return 0, nil, err
 		}
@@ -2569,7 +2534,11 @@ func (s *Server) executeEmailConnector(ws *config.Workspace, op *policy.Operatio
 			return 0, nil, fmt.Errorf("mailbox %s denied by policy", mailbox)
 		}
 
-		messages, err := s.emailConn.Search(emailCfg, mailbox, criteria)
+		var messages []map[string]interface{}
+		err := s.withEmail(env, workspace, func(cfg *email.Config) (err error) {
+			messages, err = s.emailConn.Search(cfg, mailbox, criteria)
+			return err
+		})
 		if err != nil {
 			return 0, nil, err
 		}
@@ -2589,7 +2558,11 @@ func (s *Server) executeEmailConnector(ws *config.Workspace, op *policy.Operatio
 		if !ok {
 			return 0, nil, fmt.Errorf("uid parameter required")
 		}
-		msg, err := s.emailConn.ReadMessage(emailCfg, mailbox, uint32(uidFloat))
+		var msg map[string]interface{}
+		err := s.withEmail(env, workspace, func(cfg *email.Config) (err error) {
+			msg, err = s.emailConn.ReadMessage(cfg, mailbox, uint32(uidFloat))
+			return err
+		})
 		if err != nil {
 			return 0, nil, err
 		}
@@ -2612,7 +2585,9 @@ func (s *Server) executeEmailConnector(ws *config.Workspace, op *policy.Operatio
 		if denyResource(to, ws.Policy.EmailDeniedSenders, ws.Policy.EmailAllowedSenders) {
 			return 0, nil, fmt.Errorf("recipient %s denied by policy", to)
 		}
-		if err := s.emailConn.Send(emailCfg, to, subject, body); err != nil {
+		if err := s.withEmail(env, workspace, func(cfg *email.Config) error {
+			return s.emailConn.Send(cfg, to, subject, body)
+		}); err != nil {
 			return 0, nil, err
 		}
 		result = map[string]string{"status": "sent", "to": to}

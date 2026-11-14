@@ -5,6 +5,7 @@ go 1.25.7
 require (
 	github.com/danieljoos/wincred v1.1.2
 	github.com/emersion/go-imap v1.2.1
+	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21
 	github.com/google/uuid v1.6.0
 	github.com/kardianos/service v1.3.0
 	github.com/lib/pq v1.12.3
@@ -16,7 +17,8 @@ require (
 
 require (
 	fyne.io/systray v1.11.0 // indirect
-	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21 // indirect
+	github.com/emersion/go-message v0.15.0 // indirect
+	github.com/emersion/go-textwrapper v0.0.0-20200911093747-65d896831594 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
