@@ -31,4 +31,4 @@ none
 - EG0002 · draft · ops-config · M — `kibana.search` has no stg/dev `base_url`, and thp's docs call `kibana.*` dead
 - EG0009 · draft · connectors · M — No Thunderpick admin-panel connector; agents capture the admin session token from the page
 - EG0024 · draft · unset · M — Define flow rules per bucket in todo/_config.yaml (ToDo TD0146)
-- EG0034 · in-progress · connectors · S — WinCredStore.Resolve panics when a credential lookup returns nil without an error
+- EG0034 · in-review · connectors · S — WinCredStore.Resolve panics when a credential lookup returns nil without an error
