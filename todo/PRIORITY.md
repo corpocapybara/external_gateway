@@ -6,7 +6,7 @@ same commit as the todo change (todo rules, section "Without the tool").
 
 ## P0
 
-- EG0040 · in-review · ops-config · S — Hotmail live hookup in the <ws> workspace (tokens, config, deploy, end-to-end)
+- EG0040 · in-testing · ops-config · S — Hotmail live hookup in the <ws> workspace (tokens, config, deploy, end-to-end)
 
 ## P1
 
