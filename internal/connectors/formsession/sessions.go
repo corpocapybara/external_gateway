@@ -19,6 +19,7 @@ type sessionEntry struct {
 	cookie string
 }
 
+// NewSessions returns an empty session cache.
 func NewSessions() *Sessions {
 	return &Sessions{entries: map[string]*sessionEntry{}}
 }
@@ -91,8 +92,12 @@ func (s *Sessions) Clear() {
 }
 
 // SetWaitHook is a test hook: f runs in Cookie after the entry is found and
-// before its lock is taken. Nil in production.
+// before its lock is taken. Test-only (the server package's tests use it, so
+// it cannot live in an _test file); nil in production.
 func (s *Sessions) SetWaitHook(f func()) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	s.waitHook = f
 	s.mu.Unlock()
