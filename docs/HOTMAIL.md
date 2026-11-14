@@ -68,6 +68,11 @@ $adminTok  = "<admin token>"            # only if admin_token_sha256 is configur
 $authority = "https://login.microsoftonline.com/consumers/oauth2/v2.0"
 $scope     = "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access"
 
+$headers = @{}
+if ($adminTok) { $headers["Authorization"] = "Bearer $adminTok" }
+# Check the admin token before signing in: a store refused after the sign-in throws the tokens away.
+Invoke-RestMethod -Uri "$admin/status?workspace=$workspace&check=0" -Headers $headers | Out-Null
+
 $dc = Invoke-RestMethod -Method Post -Uri "$authority/devicecode" -Body @{ client_id = $clientId; scope = $scope }
 Write-Host "Open $($dc.verification_uri) and enter code $($dc.user_code)"
 Start-Process $dc.verification_uri
@@ -85,8 +90,6 @@ while (-not $tok -and (Get-Date) -lt $deadline) {
 }
 if (-not $tok) { throw "device code expired before sign-in" }
 
-$headers = @{}
-if ($adminTok) { $headers["Authorization"] = "Bearer $adminTok" }
 foreach ($pair in @(@("hotmail", $tok.access_token), @("hotmail-refresh", $tok.refresh_token))) {
   $json = @{ workspace = $workspace; name = $pair[0]; value = $pair[1] } | ConvertTo-Json -Compress
   Invoke-RestMethod -Method Post -Uri $admin -Body $json -ContentType "application/json" -Headers $headers | Out-Null
@@ -97,6 +100,9 @@ Remove-Variable tok, body, dc
 
 On the consent screen, sign in with the mailbox account and accept. The token response has `expires_in`
 about 3600 and a `refresh_token` because of `offline_access`.
+
+The admin token is the one whose SHA-256 is the config's `admin_token_sha256`; a keys file that kept a retired
+admin token next to the current one gives `unauthorized` on the status check above.
 
 ## Config
 
@@ -167,9 +173,22 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:<port>/admin/diag" -Header
   -Body '{"workspace":"<ws>","site":"hotmail"}'
 ```
 
-Expected: `secret_resolved: true`, `imap_login: ok`, `smtp_login: ok`. Diag goes through the same refresh path,
-so an expired access token is refreshed here too. `imap_error` / `smtp_error` carry the server's text
-(never the token).
+Expected, one object per environment: `{"prod":{"imap_login":"ok","secret_resolved":true,"smtp_login":"ok"}}`.
+Diag goes through the same refresh path, so an expired access token is refreshed here too. `imap_error` /
+`smtp_error` carry the server's text (never the token).
+
+**Check the refresh.** The gateway's "OAuth access token refreshed and stored" line goes to stderr, which a
+Windows service does not capture, and the audit log records only the op call. Watch the secrets' write times
+instead:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:<port>/admin/secrets/status?workspace=<ws>&check=0" -Headers $h |
+  ForEach-Object secrets | Where-Object name -like "hotmail*" | Select-Object name, last_written
+```
+
+To force a refresh, store the value `invalid` as `hotmail` through `/admin/secrets` and call
+`hotmail.list_mailboxes`: the call succeeds, `hotmail`'s `last_written` moves past the overwrite, and
+`hotmail-refresh`'s moves with it (Microsoft rotates the refresh token on every refresh).
 
 ## Known issues and blockers
 
@@ -191,10 +210,12 @@ so an expired access token is refreshed here too. `imap_error` / `smtp_error` ca
 - **SMTP 587 is STARTTLS only.** Outlook.com does not speak implicit TLS on 587. The connector does mandatory
   STARTTLS on every port except 465 (implicit TLS); this also changed Gmail's send path on 587 from a failing
   implicit-TLS dial to STARTTLS.
-- **Mailbox names.** Outlook.com names the inbox `Inbox` (IMAP treats `INBOX` case-insensitively), the others
-  `Sent`, `Deleted`, `Drafts`, `Junk`, `Archive`, plus localised names in the account's language (for example
-  `Archiwum`) and nested folders as `Inbox/<name>`. Non-ASCII names arrive in modified UTF-7. Use the names
-  `hotmail.list_mailboxes` returns in `mailbox` and in the mailbox policy lists.
+- **Mailbox names.** Outlook.com lists the inbox as `INBOX` (IMAP matches it case-insensitively, so `Inbox`
+  works too) and nested folders as `Inbox/<name>` or `<parent>/<name>`. The others are `Sent`, `Deleted`,
+  `Drafts`, `Junk`, `Outbox`, `Notes`, `Sync Issues/...`, plus localised names in the account's language (for
+  example `Archiwum`, `Zaplanowano`). `hotmail.list_mailboxes` returns non-ASCII names decoded (for example
+  `Inbox/Księgowość`), not in modified UTF-7. Use the names it returns in `mailbox` and in the mailbox
+  policy lists.
 - **Sending limits.** Outlook.com caps outgoing mail per day and per message (a few hundred messages a day for
   a personal account, lower for new accounts; Microsoft does not publish exact figures for every account) and
   may block an account that looks like a spammer. `hotmail.send` takes one recipient per call. Mail from a new
