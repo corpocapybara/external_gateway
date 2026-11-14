@@ -31,5 +31,5 @@ none
 - EG0002 · draft · ops-config · M — `kibana.search` has no stg/dev `base_url`, and thp's docs call `kibana.*` dead
 - EG0009 · draft · connectors · M — No Thunderpick admin-panel connector; agents capture the admin session token from the page
 - EG0024 · draft · unset · M — Define flow rules per bucket in todo/_config.yaml (ToDo TD0146)
-- EG0041 · draft · server · S — Ops YAML loading: refuse an empty-map op (a.b: {}), drop EG0023 ids from comments, name bad ops deterministically
+- EG0041 · draft · server · S — Ops YAML loading refuses an op with an empty or unknown connector and names bad ops in sorted order · blocked by EG0042
 - EG0042 · draft · connectors · M — Wire the form-session connector into op dispatch
