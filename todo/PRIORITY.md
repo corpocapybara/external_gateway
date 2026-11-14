@@ -25,6 +25,7 @@ none
 - EG0038 · draft · unset · S — Remove real workspace name from tracked .ai/OPERATIONS.md and old T ids
 - EG0044 · draft · server · S — OAuth refresh cooldown after a still-rejected retry (email + http-rest)
 - EG0045 · draft · server · S — Skip OAuth refresh when the stored access token already changed (concurrent rejections)
+- EG0046 · draft · server · S — Email connector responses skip allow_fields shaping (hotmail/gmail return attrs, cc, seq)
 
 ## P3
 
