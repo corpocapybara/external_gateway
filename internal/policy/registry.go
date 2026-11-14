@@ -317,10 +317,23 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 		return fmt.Errorf("parsing operations file: %w", err)
 	}
 
-	for id, op := range cfg.Operations {
+	// Sorted, so a file with several bad ops always names the same one (EG0041).
+	ids := make([]string, 0, len(cfg.Operations))
+	for id := range cfg.Operations {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	for _, id := range ids {
+		op := cfg.Operations[id]
 		// `a.b:` with no body unmarshals to a nil *Operation (EG0023).
 		if op == nil {
 			return fmt.Errorf("operation %s: empty definition", id)
+		}
+		// An op whose connector no dispatch branch handles would run as a silent
+		// no-op (empty body, status 0), so it is refused here (EG0041).
+		if !isKnownConnector(op.Connector) {
+			return fmt.Errorf("operation %s: unknown connector %q", id, op.Connector)
 		}
 		for name, def := range op.Params {
 			if def.Pattern == "" {

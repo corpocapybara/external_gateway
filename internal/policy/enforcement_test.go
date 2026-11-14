@@ -3,6 +3,7 @@ package policy
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/external_gateway/internal/config"
@@ -136,12 +137,16 @@ func TestJQLScopeLiteralProjectsOverrideWorkspace(t *testing.T) {
 
 func TestLoadRejectsBadMultipartSpec(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ops.yaml")
-	ops := "operations:\n  x.attach:\n    site: x\n    method: POST\n    path: /a\n    multipart:\n      field: file\n      filename_param: filename\n      content_param: content\n    params:\n      filename:\n        type: string\n"
+	ops := "operations:\n  x.attach:\n    connector: http-rest\n    site: x\n    method: POST\n    path: /a\n    multipart:\n      field: file\n      filename_param: filename\n      content_param: content\n    params:\n      filename:\n        type: string\n"
 	if err := os.WriteFile(path, []byte(ops), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewRegistry(path); err == nil {
+	_, err := NewRegistry(path)
+	if err == nil {
 		t.Fatal("expected a multipart op without its content param to be rejected at load")
+	}
+	if !strings.Contains(err.Error(), "multipart") {
+		t.Fatalf("NewRegistry error %q, want the multipart rule's error", err)
 	}
 }
 
