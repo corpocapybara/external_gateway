@@ -23,6 +23,8 @@ none
 - EG0036 · draft · server · S — /feedback duplicate check globs todo/T*.md, so it misses every todo once the repo's id_prefix is not T (this repo is EG now)
 - EG0037 · draft · unset · S — AGENTS.md: add ToDo section, mark acme/globex as placeholders, fix T ids
 - EG0038 · draft · unset · S — Remove real workspace name from tracked .ai/OPERATIONS.md and old T ids
+- EG0044 · draft · server · S — OAuth refresh cooldown after a still-rejected retry (email + http-rest)
+- EG0045 · draft · server · S — Skip OAuth refresh when the stored access token already changed (concurrent rejections)
 
 ## P3
 
