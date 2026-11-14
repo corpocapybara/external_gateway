@@ -6,14 +6,14 @@
 - D2: `email.Config` gets `AuthMode`, `SmtpImplicitTLS` (replaces `SmtpTLS`) and `RootCAs`; one `emailConfig(env, secret, rootCAs)` in the server builds it for ops and diag (§D2).
 - D3: XOAUTH2 lives in `internal/connectors/email/xoauth2.go`: a go-sasl `sasl.Client` for IMAP and a `net/smtp.Auth` for SMTP; on a server challenge both answer an empty response; the SMTP Auth refuses to start without TLS (§D3).
 - D4: SMTP: one `dialSMTP` for Send and VerifySMTP; implicit TLS iff `SmtpImplicitTLS`, else plain + mandatory STARTTLS before AUTH. `sendPlain` and the opportunistic path go (§D4).
-- D5: `email.ErrAuthRejected` wraps a Login/Authenticate error only while `LoggedOut()` is still open (checked before Logout) and it is no net/EOF/LOGINDISABLED error, and an SMTP `*textproto.Error` 535 from AUTH (§D5).
+- D5: `email.ErrAuthRejected` wraps a Login/Authenticate error only while `LoggedOut()` is open (checked before Logout) and it is no net/EOF/LOGINDISABLED error; SMTP: a 535 from AUTH (§D5).
 - D6: server helper `withEmail(env, workspace, call)` runs the call; on ErrAuthRejected with oauth2 + `oauth` block it calls the unchanged `refreshOAuthToken` once, re-resolves the secret and retries once; a failed refresh returns `%w: OAuth token refresh failed` (§D6).
-- D7: `Search` fetches `imap.FetchUid` and returns a Fetch error instead of dropping it (§D7).
+- D7: `Search` fetches `imap.FetchUid` and returns the Fetch error (§D7).
 - D8: `tokencheck.DetectKind` returns `KindOAuth` also for `auth.type: oauth2` (§D8).
 - D9: Concurrent refreshes and a failed rotated-refresh-token store keep today's behaviour; documented, not changed (§D9).
 - D10: Tests run in-process on 127.0.0.1 with one generated ECDSA cert (SAN 127.0.0.1) per test package; no sleeps, one closed-port helper; wall time before/after reported (§D10).
-- D11: Example config and ops in `config.example/*.globex.yaml`; `docs/HOTMAIL.md` plus INDEX, README and both PITFALLS entries; no real address or client id committed (§D11).
-- D12: Additions beyond acceptance: Fetch error returned, SMTP deadline, XOAUTH2 only over TLS (§D12).
+- D11: Example config and ops in `config.example/*.globex.yaml`, agent hash a 64-zero placeholder (owner); `docs/HOTMAIL.md` plus INDEX, README and both PITFALLS entries; no real address or client id committed (§D11).
+- D12: In acceptance (owner 2026-11-14): XOAUTH2 only over TLS (tested); SMTP deadline, Search Fetch error (untested) (§D12).
 
 ## Acceptance (restated, from todo/EG0039.md)
 
@@ -25,9 +25,10 @@
 6. Search UIDs; TestSearchReturnsUID, TestSearchEmptyMailbox.
 7. Diag imap_login and smtp_login via the helper; TestDiagEmailOAuth2.
 8. tokencheck DetectKind for oauth2 without oauth block.
-9. Example config and ops; TestExampleHotmailConfig.
+9. Example config and ops; the example agent's empty `token_sha256` becomes a 64-zero placeholder; TestExampleHotmailConfig loads the file itself.
 10. docs/HOTMAIL.md, INDEX, README, PITFALLS; no real values committed.
-11. Affected packages' tests pass, wall time reported, fast in-process tests.
+11. XOAUTH2 only over TLS (IMAP guard, SMTP Auth Start); SMTP deadline and Search Fetch error without tests; TestImapXOAuth2RefusedWithoutTLS, TestSmtpXOAuth2AuthRequiresTLS.
+12. Affected packages' tests pass, wall time reported, fast in-process tests.
 
 ## Anchors
 
@@ -152,11 +153,17 @@ an Entra directory; Register the app; Get the tokens (device code script, stores
 response object without echoing); Config; Operations; Verify (`/admin/diag`); Known issues and blockers. `.ai/INDEX.md`
 gets a HOTMAIL.md row; README.md's Hotmail/Outlook row and both Hotmail entries in `.ai/PITFALLS.md` (the "Hotmail/Outlook
 OAuth2" bullet and the "Hotmail/Outlook consumer accounts require XOAUTH2" section) say XOAUTH2 is supported and
-link the doc. The real mailbox, directory and client id stay in `.ai/LOCAL.md`.
+link the doc. The real mailbox, directory and client id stay in `.ai/LOCAL.md`. The example agent's
+`token_sha256: ""` becomes 64 zeros with a comment to replace it with the SHA-256 of the agent token (owner
+2026-11-14, chosen over a test-only temp copy): `config.Validate` refuses an empty hash, and no known token hashes to
+all zeros, so a deployed but unedited example still admits no agent.
 
-**D12 — additions beyond acceptance.** Small, each closing a gap found while designing: Search returns the Fetch
-error instead of dropping it (D7); the SMTP connection gets a `commandTimeout` deadline (D4); XOAUTH2 refuses to send a
-token without TLS on SMTP (`Start` checks `server.TLS`) and IMAP (D3).
+**D12 — hardening, now in acceptance** (owner 2026-11-14). Small, each closing a gap found while designing: XOAUTH2
+refuses to send a token without TLS on IMAP (D3 guard) and SMTP (`Start` checks `server.TLS`), both tested; the SMTP
+connection gets a `commandTimeout` deadline (D4) and Search returns the Fetch error instead of dropping it (D7), both
+without a test by owner decision (a deadline test would wait out the timeout; a mid-stream Fetch failure needs a
+broken server for one line). The SMTP guard is unreachable through `dialSMTP` (STARTTLS is mandatory before AUTH), so
+its test calls `Start` directly.
 
 ## Test plan
 
@@ -188,11 +195,15 @@ token without TLS on SMTP (`Start` checks `server.TLS`) and IMAP (D3).
   counting calls; `s.emailRootCAs` set to the test pool.
 - TestDetectKind row (internal/tokencheck): site `email`, `ImapHost` set, `auth.type` oauth2, no oauth block → KindOAuth
   (KindIMAP before the change, so the row fails without it).
-- TestExampleHotmailConfig (internal/server): `config.Validate` refuses the example's empty agent `token_sha256`, so
-  the test copies `../../config.example/config.globex.yaml` into `t.TempDir()` with every `token_sha256: ""` replaced
-  by a 64-hex placeholder, then runs `config.Load` on the copy and `policy.NewRegistry` on
+- TestExampleHotmailConfig (internal/server): runs `config.Load` on `../../config.example/config.globex.yaml` itself
+  (loads once its agent hash is the 64-zero placeholder, D11) and `policy.NewRegistry` on
   `../../config.example/operations.globex.yaml`, and asserts the hotmail site and env fields, the four ops with
   `site: hotmail`, and that every role listing an `email.X` op lists `hotmail.X`.
+- TestImapXOAuth2RefusedWithoutTLS (internal/connectors/email): plain (non-TLS) in-process go-imap server without
+  STARTTLS, `AllowInsecureAuth` on and the XOAUTH2 fake registered; `ImapTLS: false`, AuthMode oauth2: the error says
+  "refusing XOAUTH2 without TLS" and the fake's `Next` was never called.
+- TestSmtpXOAuth2AuthRequiresTLS: the XOAUTH2 `smtp.Auth`'s `Start` with `ServerInfo{TLS: false}` returns an error
+  (no token in its text); with `TLS: true` it returns `"XOAUTH2"` and the exact XOAUTH2 string.
 - Docs: `git grep` for the LOCAL.md address and client id returns nothing (run by the implementer, not a Go test).
 
 ## Not changed
