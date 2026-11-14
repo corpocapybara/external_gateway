@@ -32,3 +32,4 @@ none
 - EG0009 · draft · connectors · M — No Thunderpick admin-panel connector; agents capture the admin session token from the page
 - EG0024 · draft · unset · M — Define flow rules per bucket in todo/_config.yaml (ToDo TD0146)
 - EG0041 · designed · server · S — Ops YAML loading refuses an op with an empty or unknown connector and names bad ops in sorted order
+- EG0043 · draft · server · S — Back off form-session logins after a failed login
