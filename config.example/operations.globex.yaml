@@ -1185,6 +1185,84 @@ operations:
         - status
         - to
 
+  # === Hotmail / Outlook.com Operations (XOAUTH2, docs/HOTMAIL.md) ===
+  hotmail.list_mailboxes:
+    connector: email
+    site: hotmail
+    params:
+      env:
+        type: string
+        required: true
+    response:
+      allow_fields:
+        - mailboxes[].name
+
+  hotmail.search:
+    connector: email
+    site: hotmail
+    params:
+      env:
+        type: string
+        required: true
+      mailbox:
+        type: string
+        default: INBOX
+      criteria:
+        type: string
+    response:
+      allow_fields:
+        - messages[].uid
+        - messages[].subject
+        - messages[].from
+        - messages[].date
+        - messages[].flags
+
+  hotmail.read:
+    connector: email
+    site: hotmail
+    params:
+      env:
+        type: string
+        required: true
+      mailbox:
+        type: string
+        default: INBOX
+      uid:
+        type: int
+        required: true
+    response:
+      allow_fields:
+        - uid
+        - subject
+        - from
+        - to
+        - date
+        - body
+        - flags
+
+  hotmail.send:
+    connector: email
+    site: hotmail
+    params:
+      env:
+        type: string
+        required: true
+      to:
+        type: string
+        required: true
+      subject:
+        type: string
+        maxlen: 998
+        required: true
+      body:
+        type: string
+        maxlen: 100000
+        required: true
+    response:
+      allow_fields:
+        - status
+        - to
+
   # === WireGuard Operations (read-only) ===
   wireguard.status:
     connector: local-service
