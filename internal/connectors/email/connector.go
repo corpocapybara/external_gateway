@@ -400,6 +400,10 @@ func dialImap(cfg *Config) (*client.Client, error) {
 				imapClient.Terminate()
 				return nil, fmt.Errorf("imap starttls: %w", err)
 			}
+		} else if cfg.oauth2() {
+			// Never send a bearer token in the clear.
+			imapClient.Logout()
+			return nil, errors.New("imap: refusing XOAUTH2 without TLS")
 		}
 	}
 
