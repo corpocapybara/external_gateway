@@ -5,16 +5,18 @@ Task/TaskCreate tools or any in-session task list: "todo" and "the ToDo tool" me
 One todo = one file `todo/<ID>.md`. `todo/PRIORITY.md` lists every open todo in the order to take it (priority,
 then `order`, then id). Work from the repo's main checkout, never inside a worktree.
 
-**The tool is available** when the `todo` command is on PATH (a shim for `todo.py`; run it from your own folder,
-e.g. `todo list`). Then edit todos and handovers **only** through it (`todo list|show|new|set|move|…`); never by
-hand or with plain git.
+**The tool is available** when the `todo` command is on PATH (a shim that runs
+`python -I -X utf8 C:/dev/_tools/todo/todo.py`; run it from your own folder, e.g. `todo list`). Then edit todos and
+handovers **only** through it (`todo list|show|new|set|move|…`); never by hand or with plain git. **DESIGN.md**,
+cited below by section, is the tool's design, `C:/dev/_tools/todo/DESIGN.md`.
 The tool rewrites `PRIORITY.md` in every todo commit. **CLI edits** (`new set move block unblock subtask`) are pending:
 written to the working tree, not committed. Run `todo commit` when your CLI edits are done (every web or other
 tool commit flushes them too). Every rule above the last section applies **only while the tool is running**;
 **without the tool** agents use plain `todo/<ID>.md` files: see the last section.
 
 **From another repo** (cwd in a different repo, or in none) only `todo new --repo <repo>` writes (reads run, other
-writes are refused): a draft with `from_repo` and bucket `unset`, committed at once, or queued while the target
+writes are refused): a draft with `from_repo`, bucket `unset` and, without `--priority`, P2 (the target's last when
+it has no P2; TD0251), committed at once, or queued while the target
 has a merge, rebase, cherry-pick or revert in progress and committed by its next write. `todo list --inbox` shows them.
 The one write that starts in the home repo and writes another is `todo move-repo ID --to R --bucket B` (TD0147): it
 recreates a `draft` to `designed` todo in R under R's next id, in its state (`from_repo`, `moved_from`), then removes
@@ -30,28 +32,30 @@ Each move goes one step. A todo that needs no design (test below) goes to `desig
 | State | Means | Needs (cumulative) |
 |---|---|---|
 | `draft` | Someone wrote it down (a found-work report, the owner, a `TODO` note). A title (a short summary) is enough; other fields may be missing or rough. | — |
-| `refined` | Refinement review done (below); acceptance still open to the design step | non-empty `acceptance` |
-| `designed` | Design written and passed the design critics, or no design needed (`design: none`, test below); **acceptance frozen** | `design` link and `design_review` passed (any number of rounds); or `design: [none]`: never `size: L`, `size: S` or a move note with the reason |
-| `in-progress` | Dispatched | `branch`; no live `blockers`; never `size: L` (split it: `todo.py split`) |
+| `refined` | Refinement review done (below); acceptance still open to the design step | non-empty `acceptance`; `refine_review` passed (agent moves; below) |
+| `designed` | Design written and passed the design critics, or no design needed (`design: none`, test below); **acceptance frozen** | `design` link and `design_review` passed (any number of rounds); or `design: [none]`: never `size: L`, size S or smaller (`XXS`, `XS`, `S`) or a move note with the reason |
+| `in-progress` | Dispatched | `branch`; no live `blockers`; never `size: L` (split it: `todo split`) |
 | `in-review` | Review lanes running | — |
-| `reviewed` | Review lanes passed | `review` block: `head`, `lanes` |
+| `reviewed` | Review lanes passed | `review` block: `head` (`none` without git, plus `proof`), `lanes` (`[none]`: no-panel tier) |
 | `in-testing` | Tests running on the reviewed head | — |
-| `tested` | Tests passed on the reviewed head | `test` block: `head` equal to `review.head`, then `command`, `line` (scripted) or `kind: e2e`, `runner`, `steps`, `line` |
+| `tested` | Tests passed on the reviewed head | `test` block: `head` equal to `review.head` (`none` without git, plus `proof`), then `command`, `line` (scripted, or `kind: perf`) or `kind: e2e`, `runner`, `steps`, `line`, or `kind: note`, `steps`, `line` |
 
-**Starting work: `todo.py assign ID`** (owner 2026-11-11). The first step of any work on a todo, in any state
-(refine, design, implement), is `todo.py assign ID`: it claims the todo for this session and shows the cog. Refused:
-another session holds it; do not work on it: stop and report (an orchestrator skips it and goes on). The message
-names the `work clear` command for a finished holder; use it only on the owner's word or when that session is known
-to be gone. "Needs --session" (no session id, e.g. opencode until TD0098): carry on without the claim. **When the
-session's step is done** (the todo moved on: refined, designed, tested or done) **or it stops working on the todo**,
-it releases the claim: `todo.py work clear ID --session <its session id, env CLAUDE_CODE_SESSION_ID>`, so the next
-session (e.g. the IMPLEMENT launch after a refinement) can assign it. The release (and a handover's) folds the
-todo's state commits made since the claim into one (TD0200, DESIGN.md 17).
+**Starting work: `todo assign ID`** (owner 2026-11-11). The first step of any work on a todo, in any state (refine,
+design, implement), is `todo assign ID`: it claims the todo for this session and shows the cog. Refused: another
+session holds it; do not work on it: stop and report (an orchestrator skips it and goes on). Only when the brief or
+the owner says this session takes over from that holder: `todo assign ID --takeover` takes the claim (TD0295). The
+message names the `work clear` command for a finished holder; use it only on the owner's word or when that session is
+known to be gone. `assign` and `work clear` take the session id from `--session`, else env `CLAUDE_CODE_SESSION_ID` or
+`OPENCODE_SESSION_ID`; "needs --session" (neither set): carry on without the claim. **When the session's step is
+done** (the todo moved on: refined, designed, tested or done) **or it stops working on the todo**, it releases the
+claim: `todo work clear ID`, so the next session (e.g. the IMPLEMENT launch after a refinement) can assign it. The
+release (and a handover's) folds the todo's state commits since the claim into one (TD0200, DESIGN.md 17).
 
 **`draft` → `refined`: the refinement review.** The orchestrator refines the todo through the tool. It may
 dispatch refiner agents (**at most 3 per wave**); they return proposed fields and **never write**, and the
 orchestrator is the single writer during the wave. Refining means:
-1. Set every field: `priority` from the project's goals, `bucket` from the files it touches (a draft from
+1. Set every field: `priority` from the project's goals (where the config lists them, `P!` is for really important
+   work, at most 5 open per repo once TD0286 lands, and `P4` for trivial / nice-to-have work), `bucket` from the files it touches (a draft from
    another repo arrives with `bucket: unset`, which must be replaced), `size`. Decide
    the **risk**: high when it touches a public API, persistence/schema, concurrency or another bucket, else low.
 2. Write acceptance as checkable outcomes (an observable behaviour, an exact test or command, a file). Each one
@@ -83,8 +87,13 @@ defect they find in unchanged text is reported as "missed in round 1". The move 
 `risk: high (<reasons>)` or `risk: low`, and ends with the **design verdict** (owner 2026-11-11): `design: needed
 (<which point below holds>)` or `design: not needed (<why none holds>)`, by the no-design test
 below. When not needed, the refining session sets `design=none` and moves the todo on to `designed` at once (that
-move's note repeats the reason), so only todos that need a design reach the design step. The tool enforces only non-empty
-acceptance; the critic is this rule's job.
+move's note repeats the reason), so only todos that need a design reach the design step.
+
+**The tool refuses an agent's move to `refined` without a passed round** (TD0253): record it as
+`todo move ID refined --evidence refine_review.result=passed --evidence refine_review.rounds=N --note "..."`. The
+result is never defaulted and only `passed` is accepted; a todo that skips `refined` (e.g. on to `designed` with
+`design: none` in the same commit) is refused the same way. Human moves (`--by human`, the web page) need no block.
+Todos refined before the gate (2026-11-14) need none either; `designed` -> `refined` keeps the block.
 
 **Lanes scale with the refinement's verdict** (trial, owner 2026-11-10). A todo of `size` M or L, or with
 `risk: high`, gets two lanes in parallel in round 1 of every review: the refinement critic, the design critics and
@@ -96,6 +105,10 @@ takes the core map's one-lane or no-panel tier, and `risk: high` takes the core 
 the round-1 model with bigger caps (core rule). Move notes give rounds, lanes and the r2+ finding classes; after ~10
 refinements compare with 2026-11-10 (mean ~4 rounds, S and M alike) and keep or drop the trial.
 
+**Lane briefs** (T0097): the code-review lanes' briefs are `.ai/shared/rules/review-lanes.md`. Run a lane as the
+installed `review-<lane>` agent where the tool has one, else as a general read-only agent briefed with that lane's
+section of `review-lanes.md`.
+
 **`refined` → `designed` with `design: none`** (no design needed) right away when none of these holds:
 - more than one plausible approach with a real trade-off;
 - a new model, formula or derivation to work out;
@@ -106,16 +119,22 @@ Never for `size: L`. Otherwise the todo goes to design. The design step, too: wo
 `todo move-repo`; work in two projects -> `todo split ... --to-repo R`.
 
 **A written design** is a Markdown file at `docs/design/<ID>-<slug>.md` (repo-relative), linked from the todo's
-`design` field (e.g. `todo.py set <ID> design=docs/design/<ID>-<slug>.md` or `todo.py move <ID> designed --evidence
-design=docs/design/<ID>-<slug>.md ...`). Create the file with the template in DESIGN.md §18 (TD0159): right after its
-title comes `## Decisions in brief`, at most 2,000 characters, one line per owner decision and frozen choice, each
-naming the section that explains it. The link target must exist at that repo-relative path; when set through the todo
-tool, design-link existence is validated against the staged/index set of the write (not just the working tree), so
-ensure the design document is present in the committed/staged state the tool validates (for example, commit or stage
-the design file so it is included as the tool expects) before or as part of linking it. The design critics check that
-`## Decisions in brief` is there, within 2,000 characters and in line with the rest of the doc. They also resolve
-each anchor in its `## Anchors` against the current tree (the file exists and grep finds the symbol in it) and report
-as blocking a line-number anchor or one that does not resolve.
+`design` field (e.g. `todo set <ID> design=docs/design/<ID>-<slug>.md` or `todo move <ID> designed --evidence
+design=docs/design/<ID>-<slug>.md ...`). Its headings, in order (template: DESIGN.md §18, TD0159): `# <ID> design:
+<title>`, `## Decisions in brief` (at most 2,000 characters, one line per owner decision and frozen choice, each
+naming the section that explains it), `## Acceptance` (restated), `## Anchors` (repo-relative file and symbol, never
+a line number), `## Decisions` (D1, D2, …), `## Test plan` (one named test per acceptance line), `## Not changed`.
+**Commit the design file in the main checkout before you link it**: a todo write checks the link against HEAD plus
+its own changes, so a file that is only staged or untracked is refused (`design link … does not exist`). Without git
+the file must exist on disk. The design critics check that `## Decisions in brief` is there, within 2,000 characters
+and in line with the rest of the doc. They also resolve each anchor in its `## Anchors` against the current tree (the
+file exists and grep finds the symbol in it) and report as blocking a line-number anchor or one that does not resolve.
+
+**Read a design doc by section** (TD0250). Refiners, critics, implementers and the subagents they brief read a
+design doc's `## Decisions in brief` first, then only the section a question needs: list the headings with
+`grep -n '^## ' <doc>` and read that heading's line range, or grep for the symbol or anchor. Never read a whole
+design doc for one fact. A doc without `## Decisions in brief` (most older ones) and DESIGN.md are read the same
+way, headings first. Only writing or reviewing that design itself reads the whole doc.
 
 **Acceptance freezes when the todo lands in `designed`** (owner 2026-11-10; also the legacy `no-design-needed`).
 While it is `refined` the freeze is lifted: the design step, or the no-design check, puts every question that touches
@@ -138,10 +157,18 @@ The tools enforce the field and step rules above; the roles below are convention
   to the end** (owner 2026-11-10), without waiting for anyone: records the review lanes' and test verdicts as
   evidence (`reviewed`, `tested`; the tests run after rebasing onto master), merges the branch to master with
   `--no-ff` at once (standing approval; no re-test on the merge, even if master moved: owner 2026-11-10), pushes
-  (when there is a remote), runs `todo done --apply`, then removes its worktree and branch. It runs the affected
-  tests on master after the push and fixes a failure forward. Its todo writes go to the main checkout
+  (when there is a remote), runs `todo done --apply`, then removes its worktree and branch. `todo deliver ID` does all
+  of these, plus the flush and link repair, from `tested` (or from `reviewed` with `--test CMD`); it needs git, and
+  without git there is no branch, merge or push: after `tested` run `todo done --apply`. The implementer runs the
+  affected tests on master after the push itself and fixes a failure forward. Its todo writes go to the main checkout
   (`--repo <main checkout>`), never to a worktree copy. Its worktree goes at `<main checkout>/.worktrees/<id>`,
   never a sibling folder: a path outside the session's folder makes every edit there ask the user (owner 2026-11-11).
+  A merge or checkout that rewrites a hard-linked `.ai/shared` file (this rule file) in the main checkout breaks its
+  link (TD0293). The verdict is `python -I -X utf8 C:/dev/.ai/link.py` (`all links ok`, or one line per broken
+  copy); `python -I -X utf8 C:/dev/.ai/link.py fix` re-links them (`todo deliver`'s `links` step re-links this repo's
+  identical copy and stops on a forked one). Every reading (link.py, `os.path.samefile`, `stat -c %h`,
+  `fsutil hardlink list`) holds only when it was taken, because other sessions re-link: re-check right before
+  reporting, and never report "was never unlinked" from a later reading.
   Before it changes course on a design point (keeps, revives, removes or reworks a part, interface or approach), it
   quotes the section of the project's design doc or the todo's design, or the dated owner decision, that settles it.
   The design decides intent; the code only shows the current state, so leftover code of a retired part is a thing
@@ -149,6 +176,9 @@ The tools enforce the field and step rules above; the roles below are convention
   (TD0125: retired MCP callers treated as live cost ~47 min).
   It, the review-lane briefs and the subagent briefs it writes read the design's `## Decisions in brief` and only
   the sections it names (TD0159); the full design doc is read only to review the design itself.
+  Without git there is no commit to name (TD0239): attach the review verdict and the test output (`todo attach ID
+  FILE`), then record `review.head=none review.proof=<name>` and `test.head=none test.proof=<name>`. The core map's
+  no-panel tier (docs-only, isolated test-only, one-line config) is recorded as `review.lanes=none`, in any project.
   Each phase is a persisted state (TD0145): the implementer moves to `in-review` when it starts the review lanes, to
   `reviewed` when they pass, to `in-testing` when it starts the tests and to `tested` when they pass, and runs
   `todo commit` after each move. A fix found in review stays in `in-review` and is re-reviewed on the new head; a
@@ -170,15 +200,18 @@ The tools enforce the field and step rules above; the roles below are convention
   while it has live children). Human writes carry the trailer `Changed-By: human`.
 
 ## Flow rules
-`todo.py assign ID` and `todo.py show ID` print the project's flow for the todo's bucket (`flow (<bucket|default>,
+`todo assign ID` and `todo show ID` print the project's flow for the todo's bucket (`flow (<bucket|default>,
 <phase>):`, TD0146; DESIGN.md 2.3). Read it at assign and follow it in each phase: `tests` is the kind of test run
 that satisfies the test phase (`none`: record `none` in `test.command`/`line`), `owner_signoff: review` means the owner
-looks at the output before the review passes (ask the owner), the `note` is the project's own instruction. Advisory:
-the tool does not refuse a move for it (TD0151).
+looks at the output before the review passes (ask the owner), the `note` is the project's own instruction. `tests` is
+enforced (TD0151): a move into `tested` (humans too) is refused unless the recorded kind (`test.kind`, absent =
+`scripted`; `none` when `test.command` is `none`; `missing` with no block) is in the list:
+`<ID>: cannot enter tested (flow <bucket> override, todo/_config.yaml:<line>): tests required [...], recorded <kind>`
+(the default's entry: `(flow default, todo/_config.yaml:<line>)`; the line is the entry's `tests` key, TD0304). Owner sign-off and the note stay advisory (TD0172).
 
 ## Removing a todo
 - A todo that should not exist (empty umbrella, duplicate, superseded) is removed with
-  `todo.py remove ID --reason "..." [--repo R]`: one `todo: remove <ID>: <title>` commit with the reason.
+  `todo remove ID --reason "..." [--repo R]`: one `todo: remove <ID>: <title>` commit with the reason.
 - Refused: unknown id, live children (remove or re-parent them first), named as a live blocker (clear it first),
   and `tested` (it leaves through `todo done`).
 - `draft` to `designed` (and the legacy `no-design-needed`): no approval. `in-progress`, `in-review`, `reviewed`,
@@ -191,7 +224,7 @@ the tool does not refuse a move for it (TD0151).
 
 ## Splitting a todo
 - A todo too big for one atomic change is split with
-  `todo.py split ID --reason "..." [--blocks 1,2] --title T --size S [--acceptance A]... --title T2 --size S2 ...`:
+  `todo split ID --reason "..." [--blocks 1,2] --title T --size S [--acceptance A]... --title T2 --size S2 ...`:
   one `todo: split <ID> into <IDs>: <title>` commit (trailers `Split-From`, `Split-Into`, `Split-State`,
   `Split-Reason`) deletes it and adds 2+ todos in its state. Every part states its size; bucket, priority, parent,
   order, blockers, design and branch carry over; dependents are re-pointed in the same commit (`blocks`).
@@ -205,10 +238,10 @@ the tool does not refuse a move for it (TD0151).
   only from `draft`, `refined` or `designed`, one R per split, at least one part stays home, no live blockers, no
   `--after`/`--blocks` naming it. R is written first (R's next id, `from_repo`, `split_from`; a design doc stays home and
   the part lands `refined`), then the split here. If the second write fails, the command prints a
-  `todo.py remove <Rid> ... --repo R` to run from a folder in R. Every such split needs the user's OK on the sentence,
+  `todo remove <Rid> ... --repo R` to run from a folder in R. Every such split needs the user's OK on the sentence,
   in any state (it ends `foreign #2 to <R>`).
 
-## Found work
+## Test runs
 A worker brief forbids measurement runs and full-suite runs unless the todo is a perf todo: it runs only the affected
 tests (every test that could exercise a changed file; the full suite only when the change touches what every test
 runs through; none when it touches no code: global "Tests stay quick"); stress runs live in an opt-in script. A `tested` record without a run says so in its
@@ -224,6 +257,10 @@ continue independent work and name it in the closing report.
 A non-scripted end-to-end run (an agent or a person driving the app, e.g. through a browser extension) is enough
 for `tested` (TD0144): record it as `test.kind=e2e` with `test.runner` (who drove it, e.g. `claude via Claude in
 Chrome`), `test.steps` (what was tried; commas are kept) and `test.line` (the observed result), and no `command`.
+A manual check with no command and no app run (e.g. a docs or rules change read through) is `test.kind=note`
+(TD0256): `test.steps` (what was checked) and `test.line` (the result), no `command` and no `runner`.
+
+## Found work
 A worker that finds new work outside its todo lists it in its closing report: title, why, proposed acceptance.
 The orchestrator creates the todo (`draft`) from that report. Scope found inside a todo never widens that todo's
 frozen acceptance; it becomes a new todo.
@@ -232,7 +269,7 @@ frozen acceptance; it becomes a new todo.
 Handovers live at `handovers/<descr>_<YYYY-MM-DD>.md` in the main checkout. Create one with
 `todo handover new <descr>`; the body is prose. `--todo ID` (repeatable) names the todos it is about, and the
 writing session's claims on them are released once the note is written (TD0140; session from `--session`, else
-`CLAUDE_CODE_SESSION_ID`), so the next session's `todo.py assign` succeeds; a claim also lapses after 1 h
+`CLAUDE_CODE_SESSION_ID`), so the next session's `todo assign` succeeds; a claim also lapses after 1 h
 without a Bash/PowerShell call.
 
 Front-matter keys, all present:
@@ -312,12 +349,49 @@ todo handover new parser-fix --todo T0042 --branch agent/t0042-crlf
 todo commit
 ```
 
+`bucket`: edits the config's buckets in one commit at once (the guard denies a hand edit); rename carries every todo,
+remove is refused while a todo uses the bucket unless `--move-to` names another.
+
+```
+todo bucket add tools --owns "scripts/ and bin/"
+todo bucket rename web web-ui
+todo bucket remove old --move-to core
+```
+
+`flow set` (TD0314): sets fields of the project's default flow, or of a bucket's with `--bucket`, in one commit at
+once (the guard denies a hand edit); `tests` takes a comma-separated list, an empty value clears the field.
+
+```
+todo flow set test.tests=scripted
+todo flow set --bucket web test.tests=scripted,e2e test.note="run the page tests too"
+todo flow set --bucket web test.note=
+```
+
+`show --git` (TD0297): the todo, then its branch's commits on top of the done branch (`git log --oneline`, at most
+30, then `... K more`); `git: no branch` / `git: branch <name> not found` when there are none to show.
+
+```
+todo show T0042 --git
+```
+
+`deliver` (TD0171): from `tested` (or `reviewed` with `--test CMD`, which rebases and tests first) merges the branch
+with `--no-ff`, **pushes** (when there is a remote), removes the worktree and branch and runs `done --apply`; no
+separate `git push` is needed.
+
+```
+todo deliver T0042
+todo deliver T0042 --test "python -I -X utf8 run_tests.py test_parse.py"
+```
+
 `done`: a dry run without `--apply`.
 
 ```
 todo done
 todo done --apply
 ```
+
+Other commands: `attach ID PATH` (store a file with the todo), `fold PARENT` (fold an empty one-child wrapper into
+its child), `stats` (counts), `audit` (acceptance changes, human commits), `priority` (rewrite `PRIORITY.md`), `serve`.
 
 ## Without the tool
 When the tool is not running, none of the process above applies (owner 2026-11-10): no states, roles, review
