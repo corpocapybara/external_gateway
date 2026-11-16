@@ -58,13 +58,13 @@ Workspace and name must match `^[A-Za-z0-9_-]+$`; the admin API refuses anything
 - `-admin` — admin API address (default: `http://127.0.0.1:8443/admin`)
 - `-token` — admin bearer token (required if `admin_token_sha256` is set in config; see below)
 
-**Note**: The default admin address is port 8443 (Globex). For Acme secrets, use `-admin http://127.0.0.1:8444/admin`.
+**Note**: The default admin address is port 8443 (the egw-admin default). For any other workspace, use `-admin http://127.0.0.1:<port>/admin`.
 
 ### Via direct API call
 
 ```powershell
 $body = @{workspace = "acme"; name = "kibana-prod"; value = "password"} | ConvertTo-Json -Compress
-Invoke-RestMethod -Uri "http://127.0.0.1:8444/admin/secrets" -Method Post -Body $body -ContentType "application/json"
+Invoke-RestMethod -Uri "http://127.0.0.1:<port>/admin/secrets" -Method Post -Body $body -ContentType "application/json"
 ```
 
 ### Admin API authentication
@@ -80,7 +80,7 @@ Write-Host "Token: $adminToken`nSHA256: $hash"
 
 # Then set admin_token_sha256: <hash> in config.<ws>.yaml, deploy, restart
 # Use the token for admin calls:
-Invoke-RestMethod -Uri "http://127.0.0.1:8444/admin/secrets" -Method Post `
+Invoke-RestMethod -Uri "http://127.0.0.1:<port>/admin/secrets" -Method Post `
   -Body $body -ContentType "application/json" `
   -Headers @{"Authorization" = "Bearer $adminToken"}
 ```
@@ -88,7 +88,7 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8444/admin/secrets" -Method Post `
 With `egw-admin.exe`, pass the same token via `-token` (it sets the `Authorization: Bearer` header for you):
 
 ```powershell
-.\egw-admin.exe -workspace acme -name gitlab -value "glpat-xxx" -admin http://127.0.0.1:8444/admin -token $adminToken
+.\egw-admin.exe -workspace acme -name gitlab -value "glpat-xxx" -admin http://127.0.0.1:<port>/admin -token $adminToken
 ```
 
 If `admin_token_sha256` is empty or unset, every admin call fails with `401 unauthorized` (fail-closed since commit `cf41f75`, `authenticateAdmin` in `internal/server/server.go`). Set it before using `egw-admin`.
@@ -99,7 +99,7 @@ If `admin_token_sha256` is empty or unset, every admin call fails with `401 unau
 which removes `egw/<ws>/<name>` from the SYSTEM account's Credential Manager.
 
 ```powershell
-.\egw-admin.exe -workspace acme -name gitlab -action delete -admin http://127.0.0.1:8444/admin -token $adminToken
+.\egw-admin.exe -workspace acme -name gitlab -action delete -admin http://127.0.0.1:<port>/admin -token $adminToken
 ```
 
 ## Secret naming convention

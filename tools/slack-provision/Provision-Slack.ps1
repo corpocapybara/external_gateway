@@ -21,7 +21,7 @@
 
 .EXAMPLE
   # First-time: wire Slack into the acme gateway, deploy, and verify
-  .\Provision-Slack.ps1 -Workspace acme -Port 8444 -SlackDomain your-slack-subdomain -Deploy -Verify
+  .\Provision-Slack.ps1 -Workspace acme -Port <port> -SlackDomain your-slack-subdomain -Deploy -Verify
 
 .EXAMPLE
   # See which Slack workspaces are signed in (masked tokens)
@@ -29,7 +29,7 @@
 
 .EXAMPLE
   # Rotate an existing secret pair (Slack must be quit; no deploy needed)
-  .\Provision-Slack.ps1 -Workspace globex -Port 8443 -SlackDomain your-slack-subdomain
+  .\Provision-Slack.ps1 -Workspace globex -Port <port> -SlackDomain your-slack-subdomain
 #>
 [CmdletBinding()]
 param(

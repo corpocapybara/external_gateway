@@ -12,10 +12,10 @@ A hardened, compiled proxy that lets LLM agents call external services (Jira, Gi
 & "C:\Program Files\Go\bin\go.exe" build -o egwctl.exe    ./cmd/egwctl/
 
 # 2. Run in foreground (pick a workspace)
-.\egw.exe --config config.example.yaml --ops operations.example.yaml --port 8443
+.\egw.exe --config config.example.yaml --ops operations.example.yaml --port <port>
 
 # 3. Test it
-Invoke-RestMethod http://127.0.0.1:8443/healthz
+Invoke-RestMethod http://127.0.0.1:<port>/healthz
 
 # 4. Set up secrets (gateway must be running)
 .\egw-admin.exe -workspace example -name jira -value "your-jira-token"
@@ -151,7 +151,7 @@ Flags: `-workspace`, `-name`, `-value` (reads from stdin if empty), `-action` (s
 
 ```powershell
 $body = @{workspace = "acme"; name = "kibana-prod"; value = "password"} | ConvertTo-Json
-Invoke-RestMethod -Uri "http://127.0.0.1:8444/admin/secrets" -Method Post `
+Invoke-RestMethod -Uri "http://127.0.0.1:<port>/admin/secrets" -Method Post `
   -Body $body -ContentType "application/json"
 ```
 
@@ -165,9 +165,11 @@ See `docs/` for per-service token/credential guides and `.ai/SECRETS.md` for arc
 
 ### Foreground (development)
 
+Each workspace needs its own `<port>`:
+
 ```powershell
-.\egw.exe --config config.acme.yaml --ops operations.acme.yaml --port 8443
-.\egw.exe --config config.globex.yaml --ops operations.globex.yaml --port 8444
+.\egw.exe --config config.acme.yaml --ops operations.acme.yaml --port <port>
+.\egw.exe --config config.globex.yaml --ops operations.globex.yaml --port <port>
 ```
 
 ### Windows Service (production)
@@ -179,7 +181,7 @@ See `docs/` for per-service token/credential guides and `.ai/SECRETS.md` for arc
   --ops "C:\Program Files\external_gateway\acme\operations.yaml" --svc-name egw-acme
 
 .\egw.exe --install --config "C:\Program Files\external_gateway\globex\config.yaml" `
-  --ops "C:\Program Files\external_gateway\globex\operations.yaml" --svc-name egw-globex --port 8444
+  --ops "C:\Program Files\external_gateway\globex\operations.yaml" --svc-name egw-globex --port <port>
 ```
 
 **Manage:**
@@ -208,19 +210,19 @@ Default port is 8443. Default `--svc-name` is `external_gateway`.
 
 ```powershell
 Health check:
-Invoke-RestMethod http://127.0.0.1:8443/healthz
+Invoke-RestMethod http://127.0.0.1:<port>/healthz
 
 Who am I (needs auth):
-Invoke-RestMethod http://127.0.0.1:8443/whoami `
+Invoke-RestMethod http://127.0.0.1:<port>/whoami `
   -Headers @{"Authorization" = "Bearer <agent-token>"}
 
 List capabilities:
-Invoke-RestMethod "http://127.0.0.1:8443/capabilities?workspace=acme" `
+Invoke-RestMethod "http://127.0.0.1:<port>/capabilities?workspace=acme" `
   -Headers @{"Authorization" = "Bearer <agent-token>"}
 
 Execute an operation:
 $body = @{env = "prod"; project_id = "acmeco/core"} | ConvertTo-Json
-$r = Invoke-RestMethod "http://127.0.0.1:8444/v1/workspaces/acme/op/gitlab.branches" `
+$r = Invoke-RestMethod "http://127.0.0.1:<port>/v1/workspaces/acme/op/gitlab.branches" `
   -Method Post -Body $body -ContentType "application/json" `
   -Headers @{"Authorization" = "Bearer <token>"}
 ```
@@ -271,7 +273,7 @@ All endpoints that return JSON. Operations require `Authorization: Bearer <token
 ### egwctl CLI
 
 ```powershell
-.\egwctl.exe -server "http://127.0.0.1:8443" -token "<token>" healthz
+.\egwctl.exe -server "http://127.0.0.1:<port>" -token "<token>" healthz
 .\egwctl.exe -token "<token>" whoami
 .\egwctl.exe -token "<token>" capabilities
 .\egwctl.exe -token "<token>" -workspace acme -op gitlab.branches -params '{"env":"prod","project_id":"acmeco/core"}'

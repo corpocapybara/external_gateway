@@ -84,7 +84,7 @@ These operations cover the Authentik API needs of `SRSP-wire-md-to-authentik.md`
 
 ```powershell
 $token = "<agent-token>"
-$base = "http://127.0.0.1:8443/v1/workspaces/globex/op"
+$base = "http://127.0.0.1:<port>/v1/workspaces/globex/op"
 
 # Who am I?
 Invoke-RestMethod -Uri "$base/authentik.whoami" -Method Post `

@@ -63,7 +63,7 @@ device code, you sign in in a browser, and it stores the access token and the re
 ```powershell
 $clientId  = "<application-client-id>"
 $workspace = "<ws>"                      # the workspace whose config has the hotmail site
-$admin     = "http://127.0.0.1:8443/admin/secrets"   # your workspace's port
+$admin     = "http://127.0.0.1:<port>/admin/secrets"   # your workspace's port
 $adminTok  = "<admin token>"            # required: /admin/* is refused when admin_token_sha256 is unset
 $authority = "https://login.microsoftonline.com/consumers/oauth2/v2.0"
 $scope     = "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access"

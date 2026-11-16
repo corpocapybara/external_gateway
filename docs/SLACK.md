@@ -94,8 +94,8 @@ Notes:
 Stored via `egw-admin` (fed by **stdin**, never `-value`, so the secret never hits argv):
 
 ```powershell
-$xoxc | .\egw-admin.exe -workspace acme -name slack-xoxc -admin http://127.0.0.1:8444/admin
-$xoxd | .\egw-admin.exe -workspace acme -name slack-xoxd -admin http://127.0.0.1:8444/admin
+$xoxc | .\egw-admin.exe -workspace acme -name slack-xoxc -admin http://127.0.0.1:<port>/admin
+$xoxd | .\egw-admin.exe -workspace acme -name slack-xoxd -admin http://127.0.0.1:<port>/admin
 ```
 
 ## Operations (Acme `dev-bot` role)
@@ -163,14 +163,14 @@ enters the gateway binary's dependency graph.
 .\Provision-Slack.ps1 -ListTeams
 
 # first-time (ELEVATED, Slack quit): wire Slack into gateway, deploy, verify
-.\Provision-Slack.ps1 -Workspace acme -Port 8444 -SlackDomain your-slack-subdomain -Deploy -Verify
+.\Provision-Slack.ps1 -Workspace acme -Port <port> -SlackDomain your-slack-subdomain -Deploy -Verify
 
 # rotate when the session expires (Slack quit; no deploy)
-.\Provision-Slack.ps1 -Workspace acme -Port 8444 -SlackDomain your-slack-subdomain
+.\Provision-Slack.ps1 -Workspace acme -Port <port> -SlackDomain your-slack-subdomain
 
 # switch the connected workspace / refresh just the token — cookie is shared, so
 # no cookie re-extraction, no Slack quit, no elevation
-.\Provision-Slack.ps1 -Workspace acme -Port 8444 -SlackDomain your-slack-subdomain -TokenOnly -Verify
+.\Provision-Slack.ps1 -Workspace acme -Port <port> -SlackDomain your-slack-subdomain -TokenOnly -Verify
 ```
 
 ### What the tool does under the hood
@@ -204,7 +204,7 @@ Durable gotchas discovered while building this, in case the store layout changes
 
 ```powershell
 $h = @{ Authorization = "Bearer <Acme token>" }
-Invoke-RestMethod -Uri http://127.0.0.1:8444/v1/workspaces/acme/op/slack.auth_test `
+Invoke-RestMethod -Uri http://127.0.0.1:<port>/v1/workspaces/acme/op/slack.auth_test `
   -Method Post -Headers $h -ContentType application/json -Body '{}'
 # expect: {"ok":true,"team":"Globex …","user":"…", ...}
 ```
@@ -218,8 +218,8 @@ and redeploy.
 Both gateway workspaces have a `slack` site wired (site config + `slack.*` ops + `dev-bot`
 grants):
 
-- **Globex** (`:8443`) → Globex Slack (`your-slack-subdomain`)
-- **Acme** (`:8444`) → Acme Slack (`your-slack-subdomain`)
+- **Globex** (`:<port>`) → Globex Slack (`your-slack-subdomain`)
+- **Acme** (`:<port>`) → Acme Slack (`your-slack-subdomain`)
 
 The gateway workspace is only an isolation boundary — it need not match the Slack team
 name; the team is whichever token is provisioned into `secret://<ws>/slack-xoxc`. Each

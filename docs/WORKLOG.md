@@ -59,7 +59,7 @@ which issue, usually an epic, takes the time. It starts empty and is changed onl
 
 ```powershell
 $h = @{ Authorization = "Bearer <token>" }
-$u = "http://127.0.0.1:8444/v1/workspaces/<ws>/op"
+$u = "http://127.0.0.1:<port>/v1/workspaces/<ws>/op"
 Invoke-RestMethod "$u/jira.worklog_report" -Method Post -Headers $h -ContentType application/json -Body '{"period":"month"}'
 Invoke-RestMethod "$u/jira.worklog_activity_set" -Method Post -Headers $h -ContentType application/json -Body '{"name":"code-review","key":"ACME-1234"}'
 Invoke-RestMethod "$u/jira.worklog_add" -Method Post -Headers $h -ContentType application/json -Body '{"activity":"code-review","hours":1.5,"comment":"MR !42"}'
