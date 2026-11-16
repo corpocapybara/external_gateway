@@ -9,7 +9,7 @@ import (
 )
 
 // A guessed parameter name used to come back as a bare "unknown parameter: fields",
-// so the agent guessed again (2026-W44: 20+ such retries in acme sessions). The deny
+// so the agent guessed again (2026-W44: 20+ such retries in one workspace's sessions). The deny
 // now names the operation's parameters, so one retry fixes the call.
 func TestValidationDenyNamesOperationParams(t *testing.T) {
 	f := newEnvFixture(t)

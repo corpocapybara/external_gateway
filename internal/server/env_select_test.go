@@ -23,7 +23,7 @@ func (f fakeTunnelChecker) CheckTunnel(ctx context.Context, name string) (bool, 
 }
 
 // envFixture is a workspace whose jira site has a cloud env and a VPN-only env,
-// mirroring config.acme.yaml, with one upstream per env counting its hits.
+// mirroring a live workspace config, with one upstream per env counting its hits.
 type envFixture struct {
 	srv       *Server
 	prod, vpn *atomic.Int32

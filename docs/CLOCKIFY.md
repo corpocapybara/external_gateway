@@ -79,4 +79,4 @@ Clockify accepts ISO 8601: `yyyy-MM-ddTHH:mm:ssZ` (UTC). Seconds precision is su
 - `clockify.add` requires at least `description` and a valid `project_id` (or omit project_id to create an entry without a project)
 - `clockify.edit_entry` requires the entry `id` — get it from `clockify.entries` or `clockify.today`
 - Time entries without project assignment work; omit `project_id` from the body
-- The `X-Api-Key` secret is stored as `secret://globex/clockify` in Windows Credential Manager
+- The `X-Api-Key` secret is stored as `secret://<ws>/clockify` in Windows Credential Manager

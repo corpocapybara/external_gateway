@@ -48,7 +48,6 @@ A workspace is a config file + an operations file, named by an opaque token `<x>
 |-----------|--------|------------|
 | Acme | `config.acme.yaml` | `operations.acme.yaml` |
 | Globex | `config.globex.yaml` | `operations.globex.yaml` |
-| **GLOBEX** | `config.globex.yaml` (gitignored) | `operations.globex.yaml` (gitignored) |
 
 `<x>` is the single source of truth: deploy dir, `egw-<x>` service, Credential
 Manager namespace `egw/<x>/…`, the `/v1/workspaces/<x>/…` API path, and the port
@@ -56,12 +55,10 @@ Manager namespace `egw/<x>/…`, the `/v1/workspaces/<x>/…` API path, and the 
 abort) all derive from it. Add a workspace by dropping in a `config.<x>.yaml` —
 `deploy/*.ps1` discover the rest. See `.ai/RULES.md` (Workspace convention section).
 
-> **GLOBEX workspace** (`config.globex.yaml` / `operations.globex.yaml`) is gitignored — it's a
-> live workspace deployed to `C:\Program Files\external_gateway\globex\`. The source of
-> truth is the pair of `.globex.yaml` files in this directory; copy them to Program Files
-> and `Restart-Service egw-globex` to deploy. Operations include Jira, Bitbucket
-> (branches, commits, commit_comments, PR, diff, etc.), Clockify, Slack, PostgreSQL,
-> Kibana, and WireGuard status. Full op list: `operations.globex.yaml`.
+> **Live workspaces** (`config.<ws>.yaml` / `operations.<ws>.yaml`) are gitignored. Each is
+> deployed to `C:\Program Files\external_gateway\<ws>\`; the pair in this directory is the
+> source of truth: copy them to Program Files and `Restart-Service egw-<ws>` to deploy.
+> Which workspaces are live is recorded in the gitignored `.ai/LOCAL.md`.
 
 ### Key config fields
 

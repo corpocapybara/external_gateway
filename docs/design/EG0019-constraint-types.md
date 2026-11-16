@@ -61,7 +61,7 @@ reported is arbitrary; each op's own error is deterministic.
 Blast radius: `cmd/egw/main.go` NewRegistry error stops the service at start; `/admin/reload`
 (`internal/server/server.go` ~2286) returns 500 `ops reload failed: ...` and keeps the old registry (it stores the
 new state only after a successful load); `cmd/egw-desktop/configedit.go:106` shows the error before publishing.
-Every committed `config.example/operations*.yaml` and the local gitignored `operations.globex/.acme/.<ws>.yaml` use only
+Every committed `config.example/operations*.yaml` and the local gitignored `operations.<ws>.yaml` files use only
 the 9 types (config.example by TestExampleOpsLoad; the local files by a throwaway load, recorded in the move note).
 
 ### Request-time default

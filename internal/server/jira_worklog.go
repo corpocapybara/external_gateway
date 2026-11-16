@@ -80,7 +80,7 @@ func (s *Server) newJiraClient(ws *config.Workspace, op *policy.Operation, param
 		return nil, fmt.Errorf("site %s not found in workspace", op.Site)
 	}
 	// Worklog ops speak the Jira Cloud v3 API, so they run on the site's default
-	// environment only (the ACME jira site's corpo env is Jira Server).
+	// environment only (a live jira site's corpo env is Jira Server).
 	if e, _ := params["env"].(string); e != "" && site.DefaultEnv != "" && e != site.DefaultEnv {
 		return nil, fmt.Errorf("worklog operations run on environment %q only", site.DefaultEnv)
 	}
@@ -407,7 +407,7 @@ func paramHours(params map[string]interface{}) (int, bool, error) {
 func scopedIssueKey(ws *config.Workspace, key string) error {
 	m := jiraIssueKeyRe.FindStringSubmatch(key)
 	if m == nil {
-		return fmt.Errorf("parameter key must be an issue key like ACME-123")
+		return fmt.Errorf("parameter key must be an issue key like PROJ-123")
 	}
 	if len(ws.Policy.JiraProjects) > 0 && !containsStr(ws.Policy.JiraProjects, m[1]) {
 		return fmt.Errorf("project %s is not in the workspace's jira_projects", m[1])
