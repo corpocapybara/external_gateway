@@ -20,7 +20,7 @@ none
 - EG0044 · draft · server · S — OAuth refresh cooldown after a still-rejected retry (email + http-rest)
 - EG0048 · refined · deploy · M — Rewrite git history to purge every leakcheck term (real workspace names, Jira key, hosts), then force-push · blocked by EG0030, EG0049, EG0058
 - EG0054 · draft · server · S — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
-- EG0058 · in-review · cli-tools · S — leakcheck history: scan every commit's blobs, paths, messages, identities, tags and notes for leak terms
+- EG0058 · reviewed · cli-tools · S — leakcheck history: scan every commit's blobs, paths, messages, identities, tags and notes for leak terms
 
 ## P3
 
