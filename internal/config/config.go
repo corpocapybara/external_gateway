@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -142,6 +143,10 @@ type OAuthRefreshConfig struct {
 	ClientID         string `yaml:"client_id"`
 	ClientSecretRef  string `yaml:"client_secret_ref"`
 	RefreshSecretRef string `yaml:"refresh_secret_ref"`
+	// RefreshCooldown is how long a rejected call skips the token endpoint after a
+	// failed refresh or a still-rejected retry (EG0044): nil = 5 min, 0 = off,
+	// negative is refused by Validate. A Go duration string ("5m").
+	RefreshCooldown *time.Duration `yaml:"refresh_cooldown"`
 }
 
 type WorkspacePolicy struct {
@@ -268,6 +273,11 @@ func (c *Config) Validate() error {
 		for siteName, site := range ws.Sites {
 			if _, ok := site.Environments[site.DefaultEnv]; site.DefaultEnv != "" && !ok {
 				return fmt.Errorf("workspace %s site %s: default_env %q is not one of its environments", wsName, siteName, site.DefaultEnv)
+			}
+			for envName, env := range site.Environments {
+				if env.OAuth != nil && env.OAuth.RefreshCooldown != nil && *env.OAuth.RefreshCooldown < 0 {
+					return fmt.Errorf("workspace %s site %s env %s: oauth.refresh_cooldown %s is negative", wsName, siteName, envName, *env.OAuth.RefreshCooldown)
+				}
 			}
 		}
 	}

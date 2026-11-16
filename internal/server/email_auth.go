@@ -53,7 +53,9 @@ func emailConfig(env *config.Environment, secret []byte, rootCAs *x509.CertPool)
 // For an oauth2 env with an oauth block, a rejected login refreshes the access
 // token once (refreshOAuthToken: serialised, stores a rotated refresh token,
 // flushes the cache; skipped when another call already replaced the token) and
-// retries call once with the stored token.
+// retries call once with the stored token. A failed refresh or a still-rejected
+// retry starts the refresh cooldown, during which a rejected login returns at
+// once without a token call (EG0044).
 func (s *Server) withEmail(env *config.Environment, workspace string, call func(*email.Config) error) error {
 	run := func() (*email.Config, error) {
 		wsName, secretName := parseSecretRef(env.SecretRef)
@@ -69,9 +71,17 @@ func (s *Server) withEmail(env *config.Environment, workspace string, call func(
 		cfg.AuthMode != email.AuthOAuth2 || env.OAuth == nil {
 		return err
 	}
-	if !s.refreshOAuthToken(env, workspace, cfg.Password) {
+	switch res := s.refreshOAuthToken(env, workspace, cfg.Password); res.outcome {
+	case refreshCooling:
+		return fmt.Errorf("%w: refresh skipped (cooldown)", err)
+	case refreshFailed:
 		return fmt.Errorf("%w: OAuth token refresh failed", err)
+	default:
+		_, err = run()
+		if errors.Is(err, email.ErrAuthRejected) {
+			// Still rejected with a fresh token: hold off the token endpoint (EG0044).
+			s.oauthCooldown.start(cooldownKey(workspace, env), res.gen, cooldownWindow(env))
+		}
+		return err
 	}
-	_, err = run()
-	return err
 }
