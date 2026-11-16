@@ -71,6 +71,9 @@ type Server struct {
 	configChecksum atomic.Value
 	opsPath       string
 	oauthRefreshMu sync.Mutex
+	// oauthCooldown skips the token endpoint for an access token whose refresh
+	// failed or whose retry was still rejected (EG0044); cleared wherever creds is.
+	oauthCooldown  *oauthCooldown
 	// emailRootCAs verifies IMAP/SMTP certificates; nil (system roots) in
 	// production, set only by package-server tests.
 	emailRootCAs *x509.CertPool
@@ -93,6 +96,7 @@ func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logg
 		emailConn: email.NewConnector(),
 		opsPath:  opsPath,
 		creds:    newCredCache(),
+		oauthCooldown: newOAuthCooldown(),
 		formLogin:    formsession.NewConnector(),
 		formSessions: formsession.NewSessions(),
 	}
@@ -1066,7 +1070,8 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 	// use the refresh token to get a new access token, store it, and retry once.
 	if op.Connector == "http-rest" && resp.StatusCode == http.StatusUnauthorized && env.Auth.Type == "bearer" && env.OAuth != nil && env.SecretRef != "" {
 		s.logger.Info().Str("site", op.Site).Str("url", urlStr).Msg("received 401, attempting OAuth token refresh")
-		if s.refreshOAuthToken(env, workspace, strings.TrimPrefix(headers["Authorization"], "Bearer ")) {
+		// Cooling or failed: no retry, the first 401 goes back to the agent.
+		if res := s.refreshOAuthToken(env, workspace, strings.TrimPrefix(headers["Authorization"], "Bearer ")); res.outcome == refreshRetry {
 			wsName, secretName := parseSecretRef(env.SecretRef)
 			if secret, err := secrets.ResolveWithWorkspaceCheck(wsName, secretName, workspace); err == nil {
 				headers["Authorization"] = "Bearer " + strings.TrimSpace(string(secret))
@@ -1082,6 +1087,9 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 					return 0, nil, fmt.Errorf("upstream request failed after token refresh: %w", err)
 				}
 				s.logger.Info().Str("site", op.Site).Int("status", resp.StatusCode).Msg("retry after OAuth token refresh")
+				if resp.StatusCode == http.StatusUnauthorized {
+					s.oauthCooldown.start(cooldownKey(workspace, env), res.gen, cooldownWindow(env))
+				}
 			}
 		}
 	}
@@ -1565,31 +1573,64 @@ func parseSecretRef(ref string) (workspace, name string) {
 	return rest[:slashIdx], rest[slashIdx+1:]
 }
 
+// refreshOutcome is what a caller of refreshOAuthToken does next.
+type refreshOutcome int
+
+const (
+	refreshFailed  refreshOutcome = iota // the refresh failed (and started a cooldown): no retry; the zero value
+	refreshCooling                       // inside the cooldown window: no token call, no retry
+	refreshRetry                         // refreshed, or another call already did: retry with the stored token
+)
+
+// refreshResult carries the cooldown generation read when the refresh began; a
+// caller whose retry is still rejected hands it back to oauthCooldown.start
+// (gen is used only with refreshRetry).
+type refreshResult struct {
+	outcome refreshOutcome
+	gen     uint64
+}
+
 // refreshOAuthToken gets a new access token for env and stores it; usedToken is
-// the access token the rejected call presented. It reports whether the caller
-// should retry once with the stored token.
-func (s *Server) refreshOAuthToken(env *config.Environment, workspace, usedToken string) bool {
+// the access token the rejected call presented. Its outcome tells the caller
+// whether to retry once with the stored token (EG0044).
+func (s *Server) refreshOAuthToken(env *config.Environment, workspace, usedToken string) refreshResult {
 	// Serialize refreshes so two concurrent 401s don't each spend (and race on
 	// storing) a rotating refresh token.
 	s.oauthRefreshMu.Lock()
 	defer s.oauthRefreshMu.Unlock()
+	// Read after the lock: a call that waited across an admin clear uses the new
+	// generation (and sees the new token below).
+	gen := s.oauthCooldown.generation()
+	key := cooldownKey(workspace, env)
 
 	// A concurrent rejection may have refreshed while this call waited for the
 	// lock: when the stored token is no longer the one the call used, retry with
 	// it instead of refreshing again (EG0045). Set forgets the cached key, so this
 	// read sees the other refresh's token. A failed read refreshes as before.
+	// Checked before the cooldown, so a token fixed meanwhile is used at once.
 	wsName, secretName := parseSecretRef(env.SecretRef)
 	if stored, err := secrets.ResolveWithWorkspaceCheck(wsName, secretName, workspace); err == nil &&
 		strings.TrimSpace(string(stored)) != strings.TrimSpace(usedToken) {
 		s.logger.Info().Str("secret_ref", env.SecretRef).Msg("OAuth access token already refreshed; retrying without a refresh")
-		return true
+		return refreshResult{refreshRetry, gen}
+	}
+
+	if s.oauthCooldown.cooling(key) {
+		s.logger.Info().Str("secret_ref", env.SecretRef).Msg("OAuth token refresh skipped (cooldown)")
+		return refreshResult{refreshCooling, gen}
+	}
+	// Every failure below starts the cooldown, so a dead refresh token is not
+	// presented to the token endpoint on every rejected call.
+	fail := func() refreshResult {
+		s.oauthCooldown.start(key, gen, cooldownWindow(env))
+		return refreshResult{refreshFailed, gen}
 	}
 
 	refWs, refName := parseSecretRef(env.OAuth.RefreshSecretRef)
 	refreshToken, err := secrets.ResolveWithWorkspaceCheck(refWs, refName, workspace)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to resolve OAuth refresh token")
-		return false
+		return fail()
 	}
 	var clientSecret string
 	if env.OAuth.ClientSecretRef != "" {
@@ -1610,20 +1651,20 @@ func (s *Server) refreshOAuthToken(env *config.Environment, workspace, usedToken
 	tokenReq, err := http.NewRequestWithContext(ctx, http.MethodPost, env.OAuth.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		s.logger.Error().Err(err).Msg("building OAuth token refresh request")
-		return false
+		return fail()
 	}
 	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	oauthClient := &http.Client{Timeout: 30 * time.Second}
 	tokenResp, err := oauthClient.Do(tokenReq)
 	if err != nil {
 		s.logger.Error().Err(err).Str("token_url", env.OAuth.TokenURL).Msg("OAuth token refresh request failed")
-		return false
+		return fail()
 	}
 	defer tokenResp.Body.Close()
 	if tokenResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(tokenResp.Body)
 		s.logger.Error().Int("status", tokenResp.StatusCode).Str("body", string(body)).Msg("OAuth token refresh returned non-200")
-		return false
+		return fail()
 	}
 	var tokenData struct {
 		AccessToken  string `json:"access_token"`
@@ -1631,16 +1672,16 @@ func (s *Server) refreshOAuthToken(env *config.Environment, workspace, usedToken
 	}
 	if err := json.NewDecoder(tokenResp.Body).Decode(&tokenData); err != nil {
 		s.logger.Error().Err(err).Msg("failed to decode OAuth token response")
-		return false
+		return fail()
 	}
 	if tokenData.AccessToken == "" {
 		s.logger.Error().Msg("OAuth token response missing access_token")
-		return false
+		return fail()
 	}
 	resolver := secrets.GetResolver()
 	if err := resolver.Set(wsName, secretName, []byte(strings.TrimSpace(tokenData.AccessToken))); err != nil {
 		s.logger.Error().Err(err).Msg("failed to store refreshed OAuth access token")
-		return false
+		return fail()
 	}
 	// Persist a rotated refresh token (Atlassian 3LO, Google offline invalidate the
 	// old one on use) so the next refresh doesn't present a dead token and wedge.
@@ -1651,7 +1692,7 @@ func (s *Server) refreshOAuthToken(env *config.Environment, workspace, usedToken
 	}
 	resolver.FlushCache()
 	s.logger.Info().Str("secret_ref", env.SecretRef).Msg("OAuth access token refreshed and stored")
-	return true
+	return refreshResult{refreshRetry, gen}
 }
 
 func (s *Server) buildBody(template string, params map[string]interface{}) ([]byte, error) {
@@ -2251,6 +2292,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.creds.clear()
+			s.oauthCooldown.clear()
 			s.formSessions.Clear()
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
@@ -2293,6 +2335,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.creds.clear()
+		s.oauthCooldown.clear()
 		s.formSessions.Clear()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -2448,6 +2491,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		s.state.Store(&runtimeState{cfg: cfg, reg: newReg})
 		s.configChecksum.Store(checksum)
 		s.creds.clear()
+		s.oauthCooldown.clear()
 		s.formSessions.Clear()
 		s.logger.Info().Str("checksum", checksum).Msg("config and ops hot-reloaded")
 		w.Header().Set("Content-Type", "application/json")

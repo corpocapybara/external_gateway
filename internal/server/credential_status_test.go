@@ -23,13 +23,27 @@ import (
 
 // credStore is a mutable secret store (admin_hardening_test.go's fakeStore never resolves).
 type credStore struct {
-	mu sync.Mutex
-	m  map[string][]byte
+	mu          sync.Mutex
+	m           map[string][]byte
+	failResolve map[string]bool // "ws/name" whose Resolve fails (Set still writes)
+}
+
+// setFailResolve makes Resolve of ws/name fail (on) or work again.
+func (c *credStore) setFailResolve(ws, name string, on bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.failResolve == nil {
+		c.failResolve = map[string]bool{}
+	}
+	c.failResolve[ws+"/"+name] = on
 }
 
 func (c *credStore) Resolve(ws, name string) ([]byte, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.failResolve[ws+"/"+name] {
+		return nil, fmt.Errorf("secret %s/%s: read failed", ws, name)
+	}
 	if v, ok := c.m[ws+"/"+name]; ok {
 		return v, nil
 	}

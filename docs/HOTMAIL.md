@@ -123,6 +123,7 @@ The site is a normal `email` site with `auth.type: oauth2` and an `oauth` block 
               token_url: https://login.microsoftonline.com/consumers/oauth2/v2.0/token
               client_id: <application-client-id>
               refresh_secret_ref: secret://<ws>/hotmail-refresh
+              # refresh_cooldown: 5m     # optional; default 5m, "0s" turns the cooldown off
 ```
 
 | Secret ref | Value |
@@ -140,6 +141,17 @@ How the gateway uses it:
   the refresh token (no `scope` parameter: Microsoft returns the originally consented scopes), stores the new
   access token and the rotated refresh token, and retries the call once. A failed refresh returns an error
   saying "OAuth token refresh failed".
+- Refresh cooldown (EG0044): when a refresh fails, or the retry with the new token is still refused, the
+  access token cools down for `oauth.refresh_cooldown` (a Go duration string such as `5m` or `90s`; default
+  5 minutes; `"0s"` turns it off; a negative value or a bare number stops the config from loading). During
+  the window a refused login returns at once with an error saying "refresh skipped (cooldown)" and the token
+  endpoint is not called, so a dead or revoked refresh token is not presented on every call (http-rest
+  `oauth` sites pass the upstream 401 through instead). A stored access token that changed meanwhile is still
+  used at once. `/admin/secrets` (set or delete) and `/admin/reload` end every cooldown; a credential-store
+  write made outside `/admin/secrets` (e.g. `cmdkey` or another tool writing the store directly) takes effect
+  only after the window ends or the next `/admin/reload`. Any failed refresh counts, a brief token-endpoint
+  outage too, and so does a retry refused for a reason other than the token; either holds refreshes off for one
+  window.
 - `/admin/status` lists both secrets and does not try `LOGIN` with the access token (the env is an OAuth kind).
 
 ## Operations
