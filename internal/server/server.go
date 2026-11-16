@@ -1066,7 +1066,7 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 	// use the refresh token to get a new access token, store it, and retry once.
 	if op.Connector == "http-rest" && resp.StatusCode == http.StatusUnauthorized && env.Auth.Type == "bearer" && env.OAuth != nil && env.SecretRef != "" {
 		s.logger.Info().Str("site", op.Site).Str("url", urlStr).Msg("received 401, attempting OAuth token refresh")
-		if s.refreshOAuthToken(env, workspace) {
+		if s.refreshOAuthToken(env, workspace, strings.TrimPrefix(headers["Authorization"], "Bearer ")) {
 			wsName, secretName := parseSecretRef(env.SecretRef)
 			if secret, err := secrets.ResolveWithWorkspaceCheck(wsName, secretName, workspace); err == nil {
 				headers["Authorization"] = "Bearer " + strings.TrimSpace(string(secret))
@@ -1565,11 +1565,25 @@ func parseSecretRef(ref string) (workspace, name string) {
 	return rest[:slashIdx], rest[slashIdx+1:]
 }
 
-func (s *Server) refreshOAuthToken(env *config.Environment, workspace string) bool {
+// refreshOAuthToken gets a new access token for env and stores it; usedToken is
+// the access token the rejected call presented. It reports whether the caller
+// should retry once with the stored token.
+func (s *Server) refreshOAuthToken(env *config.Environment, workspace, usedToken string) bool {
 	// Serialize refreshes so two concurrent 401s don't each spend (and race on
 	// storing) a rotating refresh token.
 	s.oauthRefreshMu.Lock()
 	defer s.oauthRefreshMu.Unlock()
+
+	// A concurrent rejection may have refreshed while this call waited for the
+	// lock: when the stored token is no longer the one the call used, retry with
+	// it instead of refreshing again (EG0045). Set forgets the cached key, so this
+	// read sees the other refresh's token. A failed read refreshes as before.
+	wsName, secretName := parseSecretRef(env.SecretRef)
+	if stored, err := secrets.ResolveWithWorkspaceCheck(wsName, secretName, workspace); err == nil &&
+		strings.TrimSpace(string(stored)) != strings.TrimSpace(usedToken) {
+		s.logger.Info().Str("secret_ref", env.SecretRef).Msg("OAuth access token already refreshed; retrying without a refresh")
+		return true
+	}
 
 	refWs, refName := parseSecretRef(env.OAuth.RefreshSecretRef)
 	refreshToken, err := secrets.ResolveWithWorkspaceCheck(refWs, refName, workspace)
@@ -1623,7 +1637,6 @@ func (s *Server) refreshOAuthToken(env *config.Environment, workspace string) bo
 		s.logger.Error().Msg("OAuth token response missing access_token")
 		return false
 	}
-	wsName, secretName := parseSecretRef(env.SecretRef)
 	resolver := secrets.GetResolver()
 	if err := resolver.Set(wsName, secretName, []byte(strings.TrimSpace(tokenData.AccessToken))); err != nil {
 		s.logger.Error().Err(err).Msg("failed to store refreshed OAuth access token")
