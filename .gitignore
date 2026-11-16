@@ -45,6 +45,7 @@ feedback.log
 
 # Local domain knowledge (workspace specifics, tokens, URLs)
 .ai/LOCAL.md
+.ai/leakcheck-terms.txt
 
 # Build / deploy
 dist/
