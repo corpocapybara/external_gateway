@@ -33,13 +33,13 @@ func TestRealWorkspacePick(t *testing.T) {
 	if ws, ok := realWorkspace(dir); ok {
 		t.Fatalf("empty dir picked %q", ws)
 	}
-	for _, f := range []string{"config.yaml", "operations.yaml", "config.a.yaml", "config.c.yaml", "operations.c.yaml", "config.b.yaml"} {
+	for _, f := range []string{"config.yaml", "operations.yaml", "config.a.yaml", "config.c.yaml", "operations.c.yaml", "config.b.yaml", "config.a.b.yaml", "operations.a.b.yaml"} {
 		if err := os.WriteFile(filepath.Join(dir, f), nil, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if ws, ok := realWorkspace(dir); !ok || ws != "c" {
-		t.Fatalf("want c (config.yaml and configs without operations ignored), got %q %v", ws, ok)
+		t.Fatalf("want c (config.yaml, dotted names and configs without operations ignored), got %q %v", ws, ok)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "operations.b.yaml"), nil, 0600); err != nil {
 		t.Fatal(err)
@@ -65,7 +65,9 @@ func testApp(t *testing.T) (*app, string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		os.WriteFile(filepath.Join(dir, filepath.Base(src)), data, 0600)
+		if err := os.WriteFile(filepath.Join(dir, filepath.Base(src)), data, 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return &app{buildDir: dir, installDir: filepath.Join(dir, "install"), dataDir: filepath.Join(dir, "data"), adminTokens: map[string]string{}}, ws
 }
@@ -80,8 +82,20 @@ func TestAddServiceWithCatalogCapabilities(t *testing.T) {
 		t.Fatalf("%s has no roles", ws)
 	}
 	role := sortedKeys(cfg.Roles)[0]
+	catalog := a.catalog()
+	taken := func(site string) bool {
+		if _, ok := cfg.Workspaces[workspaceKey(ws, cfg)].Sites[site]; ok {
+			return true
+		}
+		for id := range catalog {
+			if strings.HasPrefix(id, site+".") {
+				return true
+			}
+		}
+		return false
+	}
 	site := "github"
-	for i := 2; hasSite(cfg.Workspaces[workspaceKey(ws, cfg)].Sites, site); i++ {
+	for i := 2; taken(site); i++ {
 		site = fmt.Sprintf("github%d", i)
 	}
 	e, err := a.openEdit(ws)
@@ -248,9 +262,4 @@ func TestDisableAndEnableSite(t *testing.T) {
 		}
 		t.Fatalf("disable + enable must return the file to its original bytes: removed=%q added=%q len %d vs %d, first diff at %d: %q vs %q", r, ad, len(original), len(after), i, original[max(0, i-20):min(len(original), i+20)], after[max(0, i-20):min(len(after), i+20)])
 	}
-}
-
-func hasSite[V any](sites map[string]V, name string) bool {
-	_, ok := sites[name]
-	return ok
 }
