@@ -112,10 +112,10 @@ func emailFake(valid string, onReject func(), seen *[]string) func(*email.Config
 func TestOAuthRefreshSkippedWhenTokenChanged(t *testing.T) {
 	// The fake upstream stores "fresh" the way a concurrent refresh does
 	// (Resolver.Set writes the installed store and forgets the cached key).
-	storeFresh := func(name string) func() {
+	storeFresh := func(t *testing.T, name string) func() {
 		return func() {
 			if err := secrets.GetResolver().Set("w", name, []byte("fresh")); err != nil {
-				panic(err)
+				t.Errorf("storing fresh token: %v", err)
 			}
 		}
 	}
@@ -125,7 +125,7 @@ func TestOAuthRefreshSkippedWhenTokenChanged(t *testing.T) {
 		h := hotmailHarness(t, "oauth2", emailtest.ClosedPort(t), emailtest.ClosedPort(t), te.srv.URL)
 		h.store.Set("w", "hotmail", []byte("old"))
 		var seen []string
-		if err := h.s.withEmail(h.env(t), "w", emailFake("fresh", storeFresh("hotmail"), &seen)); err != nil {
+		if err := h.s.withEmail(h.env(t), "w", emailFake("fresh", storeFresh(t, "hotmail"), &seen)); err != nil {
 			t.Fatalf("withEmail: %v", err)
 		}
 		if n := te.calls.Load(); n != 0 {
@@ -142,7 +142,7 @@ func TestOAuthRefreshSkippedWhenTokenChanged(t *testing.T) {
 	t.Run("http-rest", func(t *testing.T) {
 		te := newTokenEndpoint(t, 0)
 		u := newAPIUpstream(t, "fresh")
-		u.onReject = storeFresh("api")
+		u.onReject = storeFresh(t, "api")
 		h := apiHarness(t, u, te.srv.URL)
 		if err := h.callAPI(); err != nil {
 			t.Fatal(err)
@@ -166,6 +166,28 @@ func TestOAuthRefreshWhenTokenUnchanged(t *testing.T) {
 		h.store.Set("w", "hotmail", []byte("old"))
 		var seen []string
 		if err := h.s.withEmail(h.env(t), "w", emailFake("new", nil, &seen)); err != nil {
+			t.Fatalf("withEmail: %v", err)
+		}
+		if n := te.calls.Load(); n != 1 {
+			t.Fatalf("token endpoint calls = %d, want 1", n)
+		}
+		if strings.Join(seen, ",") != "old,new" {
+			t.Fatalf("passwords used = %q, want old then new", seen)
+		}
+	})
+
+	t.Run("email, stored token differs only in whitespace", func(t *testing.T) {
+		te := newTokenEndpoint(t, 0)
+		h := hotmailHarness(t, "oauth2", emailtest.ClosedPort(t), emailtest.ClosedPort(t), te.srv.URL)
+		h.store.Set("w", "hotmail", []byte("old"))
+		// The same token re-stored with a trailing newline: equal after TrimSpace, so it refreshes.
+		restore := func() {
+			if err := secrets.GetResolver().Set("w", "hotmail", []byte("old\n")); err != nil {
+				t.Errorf("re-storing token: %v", err)
+			}
+		}
+		var seen []string
+		if err := h.s.withEmail(h.env(t), "w", emailFake("new", restore, &seen)); err != nil {
 			t.Fatalf("withEmail: %v", err)
 		}
 		if n := te.calls.Load(); n != 1 {
@@ -203,7 +225,7 @@ func TestOAuthRefreshWhenTokenUnchanged(t *testing.T) {
 		// Deleting through the resolver drops the cached key, so the read under the lock fails.
 		u.onReject = func() {
 			if err := secrets.GetResolver().Delete("w", "api"); err != nil {
-				panic(err)
+				t.Errorf("deleting stored token: %v", err)
 			}
 		}
 		h := apiHarness(t, u, te.srv.URL)
