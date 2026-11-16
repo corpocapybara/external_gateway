@@ -30,7 +30,7 @@ none
 - EG0009 · draft · connectors · M — No Acme admin-panel connector; agents capture the admin session token from the page
 - EG0043 · draft · server · S — Back off form-session logins after a failed login
 - EG0049 · draft · server · XS — Replace a real corporate host and a person's first name in tracked files with placeholders
-- EG0050 · draft · docs · S — Replace real ports 8443/8444 in .ai/DEVELOPMENT.md and .ai/SECRETS.md examples with <port>
+- EG0050 · draft · docs · M — Replace example ports 8443/8444 in tracked docs and help text with <port>
 
 ## Externally blocked
 
