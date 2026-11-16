@@ -18,7 +18,7 @@ none
 - EG0030 · in-testing · ops-config · S — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
 - EG0031 · reviewed · server · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
 - EG0044 · draft · server · S — OAuth refresh cooldown after a still-rejected retry (email + http-rest)
-- EG0048 · draft · deploy · M — Rewrite git history to purge every leakcheck term (real workspace names, Jira key, hosts), then force-push · blocked by EG0030, EG0049, EG0058
+- EG0048 · refined · deploy · M — Rewrite git history to purge every leakcheck term (real workspace names, Jira key, hosts), then force-push · blocked by EG0030, EG0049, EG0058
 - EG0054 · draft · server · S — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
 - EG0058 · in-progress · cli-tools · S — leakcheck history: scan every commit's blobs, paths, messages, identities, tags and notes for leak terms
 
