@@ -26,7 +26,7 @@ affected-tests: no   speed-tags: no   metrics: partial
 | R15 | blocking | 7 Security | EG0052 (new) |
 | R16 | blocking | 7 Security | EG0048 (existing) |
 
-Reviewed at master `c8f32fe` (2026-11-16), in the worktree `.worktrees/EG0035`. Measurement scripts live in the
+Reviewed code: master at `c8f32fe` (2026-11-16, the base of branch EG0035; later master commits are todo edits only), in the worktree `.worktrees/EG0035`. Measurement scripts live in the
 untracked `.scratch/review/` of that worktree: `sample.py` (process-tree sampler, psutil, 0.25 s interval),
 `slow.py` (go test -json summary), `loadgen/` (fake upstream plus load client), `load/ladder.sh` (Docker ladder),
 `secrets_scan.py`, `names_check.py`, `hashcheck.py`. Workspaces are named by placeholder only (`acme`, `<ws>`).
@@ -140,11 +140,15 @@ exist; `.ai/CONNECTORS.md` dispatch description matches `internal/server/server.
 - **R7 (note)** AGENTS.md lists three connectors in its architecture diagram (AGENTS.md:112: http-rest, postgres,
   local-service); the code dispatches seven (`internal/server/server.go:579-594` adds form-session, mcp, email,
   jira-worklog). Its admin table lists 2 endpoints; the server serves 4 (`/admin/secrets`, `/admin/secrets/status`,
-  `/admin/reload`, `/admin/diag`; index at `internal/server/server.go:2209`). Todo EG0055.
+  `/admin/reload`, `/admin/diag`; index at `internal/server/server.go:2209`). `docs/TRELLO.md:5,9` says the Trello key
+  and token go in the URL query; the code sends them in the Authorization header (`internal/server/server.go:981-983`).
+  Todo EG0055.
 - **R8 (note)** `server.listen_addr`, `tls_cert` and `tls_key` are documented (README.md:68,
   `config.example/config.yaml:2,6-7`) but ignored: the gateway always listens on plain HTTP at
   `127.0.0.1:<port>` (`cmd/egw/main.go:197`); `ListenAddr` (`internal/config/config.go:209`) is never read and
-  `git grep -n -E 'ServeTLS|ListenAndServeTLS' -- '*.go'` finds nothing. Todo EG0055.
+  `git grep -n -E 'ServeTLS|ListenAndServeTLS' -- '*.go'` finds nothing. A note, not blocking: the plain-HTTP
+  listener is loopback-only, so no traffic leaves the machine unencrypted; the harm is a setting that silently does
+  nothing. Todo EG0055.
 - **R9 (note)** Unfinished features: `internal/scheduler` (312 lines) is imported by nothing
   (`git grep -l 'internal/scheduler"' -- '*.go'`: 0 files) and `/capabilities` reports it `stub-not-wired`
   (`internal/server/server.go:312`); KeePass `Set`/`Delete` return "not implemented"
@@ -153,7 +157,10 @@ exist; `.ai/CONNECTORS.md` dispatch description matches `internal/server/server.
   (`internal/server/server.go:866-874`), plus a second line (`internal/server/server.go:931`): 3 stderr lines per
   request (measured: 60,005 lines for 20,001 requests in `egw-native.log`, 18.9 MB). Bodies carry agent-supplied
   content (Jira comments, messages); credentials go in headers, not the body or URL (`internal/server/server.go:981-984`).
-  Todo EG0055.
+  Checked: the form-session connector logs nothing (`git grep -n -i -E 'logger|zerolog' -- internal/connectors/formsession/`:
+  0), and no example op template references a secret (`git grep -n -i -E '\{\{ *secret|secret_ref' --
+  config.example/operations*.yaml`: 0), nor does any of the 3 live op files (`cat operations.*.yaml | grep -c -i -E
+  '\{\{ *secret|secret_ref'` in the main checkout: 0). Todo EG0055.
 
 ## 4. Technology
 
@@ -250,11 +257,14 @@ has 4 hits, of which 2 are the documented email copy-recipient field false posit
 
 - **R15 (blocking)** A real workspace name is in two tracked files of a public repository
   (`gh repo view --json visibility`: `PUBLIC`): `.ai/OPERATIONS.md:442` and
-  `internal/server/jenkins_build_params_test.go:14`. Both landed in `1dcfcdd`/`b3570b1` at 2026-11-16 09:17, before the
-  leakcheck hook was installed (`.git/hooks/pre-commit.local` mtime 10:02); the hook checks added lines only, so the
-  existing hits stay. Todo EG0052.
+  `internal/server/jenkins_build_params_test.go:14`. Both landed on the EG0011 branch (`1dcfcdd`/`b3570b1`, 2026-11-16
+  09:17; `65d0fad` at 10:02:01 touched the OPERATIONS.md line again), which was merged at 10:01 (`446d8a1`), after the
+  EG0038 scrub (`64114c1`, 09:59; `git merge-base --is-ancestor 1dcfcdd 64114c1`: not an ancestor, so the scrub never
+  saw them) and before the leakcheck hook was installed (`.git/hooks/pre-commit.local` mtime 10:02:31). The hook
+  checks added lines only, so the existing hits stay. Todo EG0052.
 - **R16 (blocking)** Real names in git history: 196 commits (`names_check.py history`), on a public repository.
-  Matches the existing todo EG0048 (history rewrite).
+  Matches the existing todo EG0048 (history rewrite), which waits on EG0058 (a leakcheck history scan), EG0030 and
+  EG0049 (`todo/EG0048.md` `blockers`).
 
 **Exposure list** (live: `Get-NetTCPConnection -State Listen` for the `egw` and `ExternalGateway` processes):
 
@@ -281,3 +291,5 @@ todo/EG0055.md todo/EG0056.md todo/EG0057.md` (pattern read from `.ai/LOCAL.md` 
 files' at run time) returned 0 hits. Skipped: vulnerability scan (govulncheck not installed, see R11); memory-pressure
 and slow-disk degradation (the app never neared a memory cap); the test suite in Docker (Windows-only tests); the live
 audit volume (outside this session's folders); a full duplication analysis beyond repeated function names.
+
+critic: round 1, PASS
