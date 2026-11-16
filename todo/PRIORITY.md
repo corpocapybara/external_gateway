@@ -14,7 +14,6 @@ none
 
 ## P2
 
-- EG0011 · in-progress · ops-config · M — `jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags
 - EG0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - EG0030 · in-testing · ops-config · S — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
 - EG0031 · draft · ops-config · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
@@ -32,3 +31,7 @@ none
 - EG0009 · draft · connectors · M — No Acme admin-panel connector; agents capture the admin session token from the page
 - EG0043 · draft · server · S — Back off form-session logins after a failed login
 - EG0049 · draft · server · XS — Replace a real corporate host and a person's first name in tracked files with placeholders
+
+## Externally blocked
+
+- EG0011 · in-progress · ops-config · M — `jenkins.build_with_params` passes only `PUBLISH`, so a parameterized test job can't be started with chosen image tags · externally blocked: acme automated-tests JenkinsfileRegression: Set versions falls back to the latest tag for empty tag params (session acme-regression-tags, 2026-11-16); re-check item 2 once on develop
