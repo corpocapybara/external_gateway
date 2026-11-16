@@ -52,7 +52,8 @@ func emailConfig(env *config.Environment, secret []byte, rootCAs *x509.CertPool)
 // withEmail resolves the env's secret, builds its email config and runs call.
 // For an oauth2 env with an oauth block, a rejected login refreshes the access
 // token once (refreshOAuthToken: serialised, stores a rotated refresh token,
-// flushes the cache) and retries call once with the new token.
+// flushes the cache; skipped when another call already replaced the token) and
+// retries call once with the stored token.
 func (s *Server) withEmail(env *config.Environment, workspace string, call func(*email.Config) error) error {
 	run := func() (*email.Config, error) {
 		wsName, secretName := parseSecretRef(env.SecretRef)
@@ -68,7 +69,7 @@ func (s *Server) withEmail(env *config.Environment, workspace string, call func(
 		cfg.AuthMode != email.AuthOAuth2 || env.OAuth == nil {
 		return err
 	}
-	if !s.refreshOAuthToken(env, workspace) {
+	if !s.refreshOAuthToken(env, workspace, cfg.Password) {
 		return fmt.Errorf("%w: OAuth token refresh failed", err)
 	}
 	_, err = run()

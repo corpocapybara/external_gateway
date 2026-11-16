@@ -203,9 +203,9 @@ To force a refresh, store the value `invalid` as `hotmail` through `/admin/secre
 - **Failed store of the rotated refresh token.** If Credential Manager refuses to store the new refresh token,
   the gateway only logs it and keeps the old one; Microsoft does not revoke a used refresh token right away,
   but if it expires the device code script must be rerun.
-- **Concurrent refreshes.** Two requests rejected at the same moment each refresh, one after the other
-  (refreshes are serialised). Microsoft does not revoke a used refresh token, so both succeed at the cost of an
-  extra token call; the last stored refresh token wins.
+- **Concurrent refreshes.** Refreshes are serialised. A request rejected at the same moment as another waits for
+  that refresh; when the stored access token is no longer the one it was rejected with, it retries with the stored
+  token and makes no token call of its own (EG0045). If that read fails, it refreshes too.
 - **SMTP 587 is STARTTLS only.** Outlook.com does not speak implicit TLS on 587. The connector does mandatory
   STARTTLS on every port except 465 (implicit TLS); this also changed Gmail's send path on 587 from a failing
   implicit-TLS dial to STARTTLS.
