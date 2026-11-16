@@ -52,15 +52,16 @@ Restated from todo EG0044 (the todo is authoritative):
 
 **D1 Config field.** `OAuthRefreshConfig` gains `RefreshCooldown *time.Duration \`yaml:"refresh_cooldown"\``.
 yaml.v3 decodes a duration string (`"5m"`) into a `time.Duration` (and through a pointer); a bare integer is
-nanoseconds (yaml.v3 behaviour, documented as "use a duration string"). A pointer tells absent (nil: default 5 min,
+refused at load (yaml.v3 v3.0.1 `cannot unmarshal !!int ... into time.Duration`; found while implementing, the
+earlier "nanoseconds" was wrong). A pointer tells absent (nil: default 5 min,
 `defaultOAuthRefreshCooldown` in package server) from `0s` (no cooldown, today's behaviour). `Config.Validate` walks
 workspaces → sites → environments and returns `workspace %s site %s env %s: oauth.refresh_cooldown %s is negative`.
 Per env, not global: the token endpoint and its rate limits belong to the env's OAuth block; the owner asked for a
 config field without a scope, and the existing `oauth` block is the only place the other refresh settings live.
 The window is read from the env passed to the call when the cooldown starts (`cooldownWindow(env)`), so a reload
 that changes it applies from the next start; reload also clears every cooldown (D6), so a window change on reload
-has no separate behaviour to test. A bare integer is nanoseconds (yaml.v3); docs say to use a duration string and
-`TestOAuthRefreshCooldownYAML` pins the 300 → 300 ns decode. `Validate` checks the pointer for nil before reading it.
+has no separate behaviour to test. `TestOAuthRefreshCooldownYAML` pins the bare-integer load error (300, -1);
+docs say to use a duration string. `Validate` checks the pointer for nil before reading it.
 
 **D2 Type.** `oauthCooldown{mu sync.Mutex; until map[string]time.Time; gen uint64; now func() time.Time}` with
 `newOAuthCooldown()`, `generation() uint64`, `cooling(key) bool` (until after now; an expired entry is deleted),
@@ -116,7 +117,7 @@ manual `cmdkey`, a direct store edit) takes effect only after the window or an `
 | 2 window, errors | `TestOAuthCooldownEmail` (always-rejecting fake), `TestOAuthCooldownHTTPRest`, `TestOAuthCooldownExpires`, `TestOAuthCooldownFailedRefresh`, `TestOAuthCooldownNoneAfterSuccess`, `TestOAuthCooldownRetryUnresolved`, `TestOAuthCooldownWindow` (4m59s, 5m00s, 5m01s, 2m, 0s) |
 | 3 clear, generation | `TestOAuthCooldownReset` (rows: set, delete, reload), `TestOAuthCooldownClearDuringRefresh` (http-rest and email rows: failing refresh across a clear; successful refresh whose retry is rejected after a clear; control row without the clear) |
 | 4 | all of the above in `internal/server/oauth_cooldown_test.go`, clock via `s.oauthCooldown.now`, counting token endpoint |
-| 5 | `TestOAuthRefreshCooldownYAML` (5m, 0s, 300, absent), `TestValidateRejectsNegativeRefreshCooldown` (-1m, -1, second env named, absent ok) in `internal/config` |
+| 5 | `TestOAuthRefreshCooldownYAML` (5m, 0s, absent; bare 300 and -1 refused at load), `TestValidateRejectsNegativeRefreshCooldown` (-1m, -1ns, second env named, absent ok) in `internal/config` |
 | 6 | `go test ./internal/server/ ./internal/config/` |
 
 Every test fails on today's code. A test whose point is an absent cooldown (after success, after a clear, after
