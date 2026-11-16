@@ -14,7 +14,8 @@ import (
 // jenkins.build_with_params declares each *ContainerImageTag param of the acme
 // regression job as an optional pattern-checked string with no default, and pins
 // PUBLISH to "false" (EG0011). A chosen tag must reach Jenkins as a query param,
-// an omitted tag must not be sent at all (so Jenkins keeps the job's default), and
+// an omitted tag must not be sent at all (Jenkins then leaves it empty: Active
+// Choices defaults run only in the web form), and
 // a malformed tag or PUBLISH=true must be refused before Jenkins is called.
 func TestJenkinsBuildWithParamsSendsOnlyChosenImageTags(t *testing.T) {
 	var mu sync.Mutex
