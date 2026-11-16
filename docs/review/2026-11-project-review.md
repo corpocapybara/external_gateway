@@ -26,8 +26,9 @@ affected-tests: no   speed-tags: no   metrics: partial
 | R15 | blocking | 7 Security | EG0052 (new) |
 | R16 | blocking | 7 Security | EG0048 (existing) |
 
-Reviewed code: master at `c8f32fe` (2026-11-16, the base of branch EG0035; later master commits are todo edits only), in the worktree `.worktrees/EG0035`. Measurement scripts live in the
-untracked `.scratch/review/` of that worktree: `sample.py` (process-tree sampler, psutil, 0.25 s interval),
+Reviewed code: master at `c8f32fe` (2026-11-16, the base of branch EG0035; later master commits are todo edits only), in the worktree `.worktrees/EG0035`. Measurement scripts and their outputs were kept in the
+untracked `.scratch/review/` of that worktree and were removed with it at delivery; the figures here are copied from
+them and were re-checked against them by the round-1 critic: `sample.py` (process-tree sampler, psutil, 0.25 s interval),
 `slow.py` (go test -json summary), `loadgen/` (fake upstream plus load client), `load/ladder.sh` (Docker ladder),
 `secrets_scan.py`, `names_check.py`, `hashcheck.py`. Workspaces are named by placeholder only (`acme`, `<ws>`).
 
