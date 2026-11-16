@@ -16,7 +16,7 @@ none
 
 - EG0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - EG0030 · in-testing · ops-config · S — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
-- EG0031 · in-testing · server · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
+- EG0031 · tested · server · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
 - EG0044 · in-progress · server · S — OAuth refresh cooldown after a still-rejected retry (email + http-rest)
 - EG0048 · designed · deploy · M — Rewrite git history to purge every leakcheck term (real workspace names, Jira key, hosts), then force-push · blocked by EG0030, EG0049
 - EG0054 · draft · server · S — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
