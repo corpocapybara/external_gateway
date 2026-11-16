@@ -8,9 +8,11 @@ This file holds the project rules for every agent tool. `.ai/INDEX.md` (doc inde
 
 ## Quick reference
 
+`acme` and `globex` (with the ports, service names, file names and deploy dirs derived from them) are illustrative placeholders; the real workspace names and ports are in the gitignored `.ai/LOCAL.md`.
+
 | Thing | Globex | Acme |
 |-------|--------|------|
-| Port | 8443 | 8444 |
+| Port | `<port>` | `<port>` |
 | Service name | `egw-globex` | `egw-acme` |
 | Config source | `config.globex.yaml` | `config.acme.yaml` |
 | Ops source | `operations.globex.yaml` | `operations.acme.yaml` |
@@ -33,7 +35,7 @@ Workspace convention: `config.<x>.yaml` is the single source of truth — everyt
 ```powershell
 $headers = @{"Authorization" = "Bearer <token>"}
 $body = @{env = "prod"; param = "value"} | ConvertTo-Json -Compress
-Invoke-RestMethod -Uri "http://127.0.0.1:8444/v1/workspaces/acme/op/<op-id>" `
+Invoke-RestMethod -Uri "http://127.0.0.1:<port>/v1/workspaces/acme/op/<op-id>" `
   -Method Post -Body $body -ContentType "application/json" -Headers $headers
 ```
 
@@ -50,7 +52,7 @@ If `admin_token_sha256` is configured, append `-token <admintoken>`.
 Session token (`xoxc` + `xoxd` cookie) — not a bot/app. Use the provisioning tool only:
 
 ```powershell
-tools\slack-provision\Provision-Slack.ps1 -Workspace acme -Port 8444 -SlackDomain your-slack-subdomain -Deploy -Verify
+tools\slack-provision\Provision-Slack.ps1 -Workspace acme -Port <port> -SlackDomain your-slack-subdomain -Deploy -Verify
 tools\slack-provision\Provision-Slack.ps1 -ListTeams
 ```
 
@@ -74,7 +76,7 @@ See `docs/SLACK.md` for full details.
 has one entry per GitLab/GitHub token behind a granted, enabled site (`site`, `env`, `state` ok/rejected/unreachable/
 missing, `expires_at`, `days_left`) with a `warning` to ask the owner when the token expires within 7 days, has
 expired, is rejected (401/403) or is missing; cached 1 h after ok, 5 min otherwise, cleared by `/admin/secrets`
-writes and `/admin/reload` (T0006). GitLab is detected only when the base URL contains `gitlab`, GitHub only for
+writes and `/admin/reload` (EG0006). GitLab is detected only when the base URL contains `gitlab`, GitHub only for
 `api.github.com`; no token, username or scopes are returned. `GET /help?workspace=<ws>` and `POST /feedback` also need a Bearer token (help: grant in `<ws>`, else 403); only the bare `/help` banner and `/healthz` are public.
 
 ## Key files
@@ -122,6 +124,11 @@ Agent ──Bearer token──> AuthN ──> Policy (grants) ──> Operation 
 ## Agent tokens
 
 Token SHAs in config (`agents[].token_sha256`). Gateway hashes Bearer token and compares. Values in `agent-keys.txt` (treat as secrets).
+
+## ToDo
+
+- Open work lives in `todo/` (one file per todo; `todo/PRIORITY.md` gives the order), written only through the ToDo CLI (`python -I -X utf8 C:/dev/_tools/todo/todo.py … --repo C:/dev/apps/external_gateway`, or the `todo` shim; not Claude Task tools; by hand only while the tool is down), under the rule `.ai/shared/rules/todo.md`.
+- Todo ids use the EG prefix (EG plus four digits); older commits, notes and branches use T-numbered ids for the same todos.
 
 ## Briefing worktree-isolated subagents
 
