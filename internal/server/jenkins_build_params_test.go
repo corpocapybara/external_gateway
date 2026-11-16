@@ -44,28 +44,30 @@ func TestJenkinsBuildWithParamsSendsOnlyChosenImageTags(t *testing.T) {
 			"env":                      {Type: "string", Default: "dev"},
 			"job":                      {Type: "string", Required: true, MultiSegment: true},
 			"PUBLISH":                  {Type: "enum", Values: []string{"false"}, Default: "false"},
-			"ApiContainerImageTag":     {Type: "string", Pattern: tagPattern},
-			"WalletsContainerImageTag": {Type: "string", Pattern: tagPattern},
+			"apiContainerImageTag":     {Type: "string", Pattern: tagPattern},
+			"walletsContainerImageTag": {Type: "string", Pattern: tagPattern},
 		}}
 	job := "job/Regression/job/develop"
 
-	code, out := f.call(t, "jenkins.build_with_params", map[string]interface{}{"job": job, "ApiContainerImageTag": "9.21.0-ci0167"})
+	code, out := f.call(t, "jenkins.build_with_params", map[string]interface{}{"job": job, "apiContainerImageTag": "9.21.0-ci0167"})
 	if code/100 != 2 {
 		t.Fatalf("one tag: status %d, body %v; want 2xx", code, out)
 	}
 	if len(builds) != 1 {
 		t.Fatalf("Jenkins got %d builds, want 1", len(builds))
 	}
-	want := url.Values{"ApiContainerImageTag": {"9.21.0-ci0167"}, "PUBLISH": {"false"}}
+	want := url.Values{"apiContainerImageTag": {"9.21.0-ci0167"}, "PUBLISH": {"false"}}
 	if got := builds[0]; got.Encode() != want.Encode() {
 		t.Fatalf("build query = %q, want %q (an omitted tag must not be sent)", got.Encode(), want.Encode())
 	}
 
 	refused := []map[string]interface{}{
-		{"job": job, "ApiContainerImageTag": "9.21.0 ci"},
-		{"job": job, "ApiContainerImageTag": "9.21/0"},
-		{"job": job, "ApiContainerImageTag": ""},
-		{"job": job, "ApiContainerImageTag": "-leading-dash"},
+		{"job": job, "apiContainerImageTag": "9.21.0 ci"},
+		{"job": job, "apiContainerImageTag": "9.21/0"},
+		{"job": job, "apiContainerImageTag": ""},
+		{"job": job, "apiContainerImageTag": "-leading-dash"},
+		// A tag the op does not declare (a new or misspelled Jenkinsfile param) is refused, not forwarded.
+		{"job": job, "ApiContainerImageTag": "9.21.0"},
 		{"job": job, "PUBLISH": "true"},
 		{"job": job, "PUBLISH": true},
 	}
