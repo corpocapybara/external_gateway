@@ -635,6 +635,42 @@ func TestFeedbackTodoDuplicateScansOnlyTodoFiles(t *testing.T) {
 	wantResp(t, postFeedback(s, `{"type":"todo","text":"only in priority"}`), 200, `{"status":"added","todo":"T0004"}`)
 }
 
+// EG0036: the duplicate check reads the repo's id_prefix, not a fixed T.
+func TestFeedbackTodoDuplicateUsesIDPrefix(t *testing.T) {
+	egRepo := func(t *testing.T) string {
+		repo := fakeAdoptedRepo(t)
+		writeFile(t, filepath.Join(repo, "todo", "_config.yaml"), strings.Replace(todoConfigYAML, "id_prefix: T", "id_prefix: EG", 1))
+		writeFile(t, filepath.Join(repo, "todo", "EG0001.md"), "---\nid: EG0001\nstate: draft\n---\nsame text\n")
+		// Not an id-shaped name: must not count.
+		writeFile(t, filepath.Join(repo, "todo", "EGfoo.md"), "---\n---\nonly in egfoo\n")
+		return repo
+	}
+	run := func(t *testing.T, repo string) {
+		rec := useRunner(t, adoptedRunner(func(argv []string) ([]byte, error) {
+			return []byte("EG0002 created: x (pending)\n"), nil
+		}))
+		s := todoServer(t, toolConfig(t, repo))
+		wantResp(t, postFeedback(s, `{"type":"todo","text":"same text"}`), 200, `{"status":"duplicate"}`)
+		if len(rec.calls) != 2 {
+			t.Fatalf("duplicate ran %q", rec.argvs())
+		}
+		wantResp(t, postFeedback(s, `{"type":"todo","text":"only in egfoo"}`), 200, `{"status":"added","todo":"EG0002"}`)
+	}
+	t.Run("id_prefix EG", func(t *testing.T) { run(t, egRepo(t)) })
+	t.Run("unreadable config falls back to any prefix", func(t *testing.T) {
+		repo := egRepo(t)
+		if err := os.Remove(filepath.Join(repo, "todo", "_config.yaml")); err != nil {
+			t.Fatal(err)
+		}
+		run(t, repo)
+	})
+	t.Run("malformed config falls back to any prefix", func(t *testing.T) {
+		repo := egRepo(t)
+		writeFile(t, filepath.Join(repo, "todo", "_config.yaml"), "id_prefix: [\n")
+		run(t, repo)
+	})
+}
+
 func TestTodoTitle(t *testing.T) {
 	long := strings.Repeat("a", 119) + " " + strings.Repeat("b", 10)
 	for in, want := range map[string]string{

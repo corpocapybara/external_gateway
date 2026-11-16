@@ -54,7 +54,7 @@ Useful debug endpoints:
     the gateway as the todo rule's "Without the tool" section says (`todo/<ID>.md`, its PRIORITY.md line, one `[hand]`
     commit of those two paths, R's hooks run). Every git/python child gets identity `egw-feedback`,
     `safe.directory=R` via `GIT_CONFIG_*` and PATH prefixed with `todo_python`'s directory (the services run as
-    LocalSystem). Responds `{"status":"added","todo":"<ID>"}`, or `"duplicate"` when a `todo/T*.md` body starts with
+    LocalSystem). Responds `{"status":"added","todo":"<ID>"}`, or `"duplicate"` when a `todo/<id_prefix>NNNN.md` body starts with
     the same text. Any failure (check, tool, commit) is a 500 after `feedback.log` was written; nothing is half-written.
   - **Not adopted**: appends `- [ ] <text> (date, via /feedback by <agent>).` to the legacy to-do list file
     `todo_path` (default: that file in R; created with a `# TODO` header if missing; parent dir must exist; line

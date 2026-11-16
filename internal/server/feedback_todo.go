@@ -193,14 +193,24 @@ func todoBody(text, agentID string) string {
 	return text + "\n\nFiled via /feedback by " + agentID + " on " + todayUTC() + "."
 }
 
-// todoDuplicate reports whether a todo/T*.md file in R has a body whose first paragraph is text.
+// todoDuplicate reports whether a todo/<id_prefix>NNNN.md file in R (the name shape maxTodoID
+// reads) has a body whose first paragraph is text. Without a readable todo config any upper-case
+// prefix counts, as in fileViaTool.
 func todoDuplicate(repo, text string) (bool, error) {
-	files, err := filepath.Glob(filepath.Join(repo, "todo", "T*.md"))
-	if err != nil {
+	prefix := "[A-Z]+"
+	if c, err := readTodoRepoConfig(repo); err == nil {
+		prefix = regexp.QuoteMeta(c.IDPrefix)
+	}
+	nameRe := regexp.MustCompile(`^` + prefix + `\d{4,}\.md$`)
+	entries, err := os.ReadDir(filepath.Join(repo, "todo"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, err
 	}
-	for _, f := range files {
-		data, err := os.ReadFile(f)
+	for _, e := range entries {
+		if e.IsDir() || !nameRe.MatchString(e.Name()) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(repo, "todo", e.Name()))
 		if err != nil {
 			return false, err
 		}
