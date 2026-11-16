@@ -6,7 +6,8 @@ section below is that lane's whole brief: a `description:` line (when to use the
 - **Run a lane** as the tool's installed `review-<lane>` agent where it has one (Claude Code: `~/.claude/agents`;
   opencode: `~/.config/opencode/agents`). Where it has none (a clone on another machine or account), start a general
   read-only agent and give it the lane's section below as its instructions, plus the review brief.
-- Which lanes a change gets is the project's review rules (the lane map), not this file.
+- Which lanes a change gets is the lane map of the core rules (`core.md`, linked next to this file in every todo
+  repo; elsewhere the global agent rules), not this file.
 - **Single source:** the account agent files are generated from this file by `lane_agents.py`, which sits next to
   `link.py`. Edit here, run `link.py fix`, then `lane_agents.py write` (no argument: check only). In the agent files
   the `description:` line becomes the description and `###` headings become `##`.
@@ -24,7 +25,8 @@ You are the **correctness** review lane. Your question: does the change work, an
 - Read the review brief whose path you were given, and the diff it names. If the project has its own review rules
   (a review-lanes doc, or a review section in AGENTS.md or CLAUDE.md), apply your lane's part of them on top of this.
 - Break the change, don't approve it. Report only concrete defects, gaps or open questions, never praise.
-- Each finding: **major** (wrong behaviour, money or data loss, crash, broken deploy), **minor** or **question**;
+- Each finding: **major** (wrong behaviour, money or data loss, crash, broken deploy, a named missing test,
+  untested branch or unproven acceptance item), **minor** or **question**;
   `file:line` on the head; the claim; the failing input or state; **FACT** (you read it) or **ASSUMPTION**.
 - About 40 tool calls and at most 200 words. No build, no DB, no decompile, no edits, no git writes, nothing posted.
 - List **every** finding you see, one line each; the word cap shortens wording, never drops a finding. End with
@@ -59,7 +61,8 @@ You are the **design** review lane. Your question: will a careful senior reviewe
   (AGENTS.md, CLAUDE.md and the docs they point to) and a sibling file next to each changed one: the project's
   conventions outrank the defaults below.
 - Break the change, don't approve it. Report only concrete defects, gaps or open questions, never praise.
-- Each finding: **major** (wrong behaviour, money or data loss, crash, broken deploy), **minor** or **question**;
+- Each finding: **major** (wrong behaviour, money or data loss, crash, broken deploy, a named missing test,
+  untested branch or unproven acceptance item), **minor** or **question**;
   `file:line` on the head; the claim; the failing input or state; **FACT** (you read it) or **ASSUMPTION**.
 - About 40 tool calls and at most 200 words. No build, no DB, no decompile, no edits, no git writes, nothing posted.
 - List **every** finding you see, one line each; the word cap shortens wording, never drops a finding. End with
@@ -93,7 +96,8 @@ You are the **scope** review lane. Your question: is it the right change, and wa
 - Read the review brief whose path you were given, and the diff it names. If the project has its own review rules
   (a review-lanes doc, or a review section in AGENTS.md or CLAUDE.md), apply your lane's part of them on top of this.
 - Break the change, don't approve it. Report only concrete defects, gaps or open questions, never praise.
-- Each finding: **major** (wrong behaviour, money or data loss, crash, broken deploy), **minor** or **question**;
+- Each finding: **major** (wrong behaviour, money or data loss, crash, broken deploy, a named missing test,
+  untested branch or unproven acceptance item), **minor** or **question**;
   `file:line` on the head; the claim; the failing input or state; **FACT** (you read it) or **ASSUMPTION**.
 - About 40 tool calls and at most 200 words. No build, no DB, no decompile, no edits, no git writes, nothing posted.
 - List **every** finding you see, one line each; the word cap shortens wording, never drops a finding. End with
@@ -127,7 +131,8 @@ You are the **tests** review lane. Your question: is every claim the change make
 - Read the review brief whose path you were given, and the diff it names. If the project has its own test rules
   (AGENTS.md, CLAUDE.md, a testing doc), apply them on top of this.
 - Break the change, don't approve it. Report only concrete defects, gaps or open questions, never praise.
-- Each finding: **major** (wrong behaviour, money or data loss, crash, broken deploy), **minor** or **question**;
+- Each finding: **major** (wrong behaviour, money or data loss, crash, broken deploy, a named missing test,
+  untested branch or unproven acceptance item), **minor** or **question**;
   `file:line` on the head; the claim; the failing input or state; **FACT** (you read it) or **ASSUMPTION**.
 - About 40 tool calls and at most 200 words. No build, no DB, no decompile, no edits, no git writes, nothing posted.
 - List **every** finding you see, one line each; the word cap shortens wording, never drops a finding. End with
