@@ -18,6 +18,7 @@ func TestLoadRefusesDoubleBracePath(t *testing.T) {
 		{"double brace placeholder", op("/api/console/proxy?path={{index}}/_search&method=POST", ""),
 			`operation k.search: path "/api/console/proxy?path={{index}}/_search&method=POST" has a double brace`},
 		{"lone closing pair", op("/a/{index}}/b", ""), `operation k.search: path "/a/{index}}/b" has a double brace`},
+		{"lone opening pair", op("/a/{{index/b", ""), `operation k.search: path "/a/{{index/b" has a double brace`},
 		{"single brace path", op("/api/console/proxy?path={index}/_search&method=POST", ""), ""},
 		{"double brace body_template", op("/a/{x}", "    body_template: '{\"q\":\"{{x}}\"}'\n"), ""},
 	}
