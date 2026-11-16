@@ -58,7 +58,9 @@ workspaces → sites → environments and returns `workspace %s site %s env %s: 
 Per env, not global: the token endpoint and its rate limits belong to the env's OAuth block; the owner asked for a
 config field without a scope, and the existing `oauth` block is the only place the other refresh settings live.
 The window is read from the env passed to the call when the cooldown starts (`cooldownWindow(env)`), so a reload
-that changes it applies from the next start (reload also clears, D6).
+that changes it applies from the next start; reload also clears every cooldown (D6), so a window change on reload
+has no separate behaviour to test. A bare integer is nanoseconds (yaml.v3); docs say to use a duration string and
+`TestOAuthRefreshCooldownYAML` pins the 300 → 300 ns decode. `Validate` checks the pointer for nil before reading it.
 
 **D2 Type.** `oauthCooldown{mu sync.Mutex; until map[string]time.Time; gen uint64; now func() time.Time}` with
 `newOAuthCooldown()`, `generation() uint64`, `cooling(key) bool` (until after now; an expired entry is deleted),
@@ -84,6 +86,13 @@ again and, when that error wraps `email.ErrAuthRejected`, starts the cooldown wi
 does the same when the retry's status is 401. A retry that succeeds, fails another way, or is never sent (the
 stored secret fails to resolve) starts nothing.
 
+Known gap (accepted): a caller-set cooldown starts after `oauthRefreshMu` is released. A third call rejected with
+the new token can take the lock in that gap, find no cooldown and call the token endpoint once more. The cost is
+bounded at one extra token call per gap; closing it would mean holding the lock across the upstream retry, which
+serialises every retry. Likewise `handleAdmin` stores the secret before it clears, so a refresh that begins in
+that instant loses its cooldown (at most one extra token call); no interleaving keeps a stale cooldown, because
+`start` and `clear` share the cooldown's mutex.
+
 **D6 Clear and generation.** `clear()` replaces the map and bumps `gen`. `handleAdmin` calls
 `s.oauthCooldown.clear()` next to each of the three `s.creds.clear()` calls. `start` drops the entry when
 `gen != c.gen`, so a refresh or retry that began before a clear (and finished after it) leaves nothing; and when
@@ -103,14 +112,19 @@ manual `cmdkey`, a direct store edit) takes effect only after the window or an `
 
 | Acceptance | Test |
 |---|---|
-| 1 key, outcome, order | `TestOAuthCooldownPerKey`, `TestOAuthCooldownChangedTokenBeatsCooldown`, `TestOAuthCooldownAfterSkippedRefreshRejected` |
-| 2 window, errors | `TestOAuthCooldownEmail`, `TestOAuthCooldownHTTPRest`, `TestOAuthCooldownExpires`, `TestOAuthCooldownFailedRefresh`, `TestOAuthCooldownNoneAfterSuccess`, `TestOAuthCooldownWindow` |
-| 3 clear, generation | `TestOAuthCooldownReset` (rows: set, delete, reload), `TestOAuthCooldownClearDuringRefresh` (rows: failing refresh across a clear; successful refresh whose retry is rejected after a clear; upstream/token endpoint block on a channel, no sleeps) |
+| 1 key, outcome, order | `TestOAuthCooldownPerKey`, `TestOAuthCooldownChangedTokenBeatsCooldown`, `TestOAuthCooldownAfterSkippedRefreshRejected`, `TestOAuthCooldownConcurrentFailedRefresh` |
+| 2 window, errors | `TestOAuthCooldownEmail` (always-rejecting fake), `TestOAuthCooldownHTTPRest`, `TestOAuthCooldownExpires`, `TestOAuthCooldownFailedRefresh`, `TestOAuthCooldownNoneAfterSuccess`, `TestOAuthCooldownRetryUnresolved`, `TestOAuthCooldownWindow` (4m59s, 5m00s, 5m01s, 2m, 0s) |
+| 3 clear, generation | `TestOAuthCooldownReset` (rows: set, delete, reload), `TestOAuthCooldownClearDuringRefresh` (http-rest and email rows: failing refresh across a clear; successful refresh whose retry is rejected after a clear; control row without the clear) |
 | 4 | all of the above in `internal/server/oauth_cooldown_test.go`, clock via `s.oauthCooldown.now`, counting token endpoint |
-| 5 | `TestOAuthRefreshCooldownYAML`, `TestValidateRejectsNegativeRefreshCooldown` in `internal/config` |
+| 5 | `TestOAuthRefreshCooldownYAML` (5m, 0s, 300, absent), `TestValidateRejectsNegativeRefreshCooldown` (-1m, -1, second env named, absent ok) in `internal/config` |
 | 6 | `go test ./internal/server/ ./internal/config/` |
 
-Each cooldown test fails on today's code: without the cooldown the second rejected call makes a second token call.
+Every test fails on today's code. A test whose point is an absent cooldown (after success, after a clear, after
+expiry, `0s`, unresolved retry) also proves the cooldown is live: a precondition or control row in which a
+rejected call in the window makes no token call. Test helpers: `newTokenEndpoint` gains an `onCall` hook (block on
+a channel, change status), `credStore` gains a `failResolve` set so a read of a named secret can fail, and an
+always-rejecting email fake. Concurrency tests use two goroutines and channel gates, as
+`TestOAuthConcurrentRejectionsOneRefresh` does; nothing stress-style.
 
 ## Not changed
 
