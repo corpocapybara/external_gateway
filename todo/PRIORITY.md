@@ -32,3 +32,4 @@ none
 - EG0002 · draft · ops-config · M — `kibana.search` has no stg/dev `base_url`, and acme's docs call `kibana.*` dead
 - EG0009 · draft · connectors · M — No Acme admin-panel connector; agents capture the admin session token from the page
 - EG0043 · draft · server · S — Back off form-session logins after a failed login
+- EG0049 · draft · server · XS — Replace a real corporate host and a person's first name in tracked files with placeholders
