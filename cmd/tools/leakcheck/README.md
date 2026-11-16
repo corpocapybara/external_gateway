@@ -36,6 +36,42 @@ Matching ignores case, and a term edge that is a letter, digit or `_` must be at
 
 Pre-commit skips while a merge is in progress (both sides were checked when committed).
 
+## History scan
+
+`leakcheck history [-root DIR] [-allow FILE] [REV...]` (EG0058) scans a whole repository, bare or not, for the
+terms: every commit of `git log REV...` (default `--all`), plus all tags and refs. Surfaces:
+
+- `blob`: each line of each file in each listed commit's tree (binary read as text; notes are blobs too). Each
+  distinct blob is read once and attributed to the first commit and path that listed it. Gitlinks are skipped.
+- `path`: each distinct full path (directory names included), attributed to the first commit holding it.
+- `message`: each line of each commit message.
+- `identity`: author and committer name and email (not mailmapped).
+- `tag`: message lines and the tagger name and email of each annotated tag under `refs/tags`.
+- `ref`: each ref name from `git for-each-ref`.
+
+Tags and refs are scanned whatever REV is. Terms are read from `.ai/leakcheck-terms.txt` plus config hosts of
+`-root DIR`; without `-root` that is the main checkout (the parent of the git common dir), so a bare repo
+outside a checkout needs `-root`. A missing terms file is an error. `-allow FILE` lists line texts to skip: a
+line (any line surface) whose trimmed text equals a trimmed FILE line (`#` and blank lines ignored) has no hits;
+`leakcheck:allow` on a line works too. Paths, identities and ref names have no allow rule.
+
+Output on stdout, one line per hit, terms joined by `, `:
+
+```
+leakcheck: blob <commit> <path>:<line>: <terms>
+leakcheck: path <commit> <path>: <terms>
+leakcheck: message <commit> line <n>: <terms>
+leakcheck: identity <commit> author|committer: <terms>
+leakcheck: tag <refname> line <n>: <terms>
+leakcheck: tag <refname> tagger: <terms>
+leakcheck: ref <refname>: <terms>
+leakcheck: history: <N> hits in <M> commits
+```
+
+Exit 0 no hit, 1 a hit or any error (fail closed), 2 usage (bad flag, or a REV starting with `-`).
+
+Limits: a ref pointing at a tree or blob is not walked, and a tag of a tag shows only the outer tag.
+
 ## Deliberate false positives
 
 Put `leakcheck:allow` on the line (in a comment, or in the message line). Paths have no marker. Git's own

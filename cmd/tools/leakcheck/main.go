@@ -29,11 +29,13 @@ func run(args []string, dir string, stdout, stderr io.Writer) int {
 		return runCommitMsg(dir, args[1], stderr)
 	case "install":
 		return runInstall(dir, stdout, stderr)
+	case "history":
+		return runHistory(args[1:], dir, stdout, stderr)
 	}
 	return usage(stderr)
 }
 
 func usage(stderr io.Writer) int {
-	fmt.Fprintln(stderr, "usage: leakcheck pre-commit | commit-msg FILE | install")
+	fmt.Fprintln(stderr, "usage: leakcheck pre-commit | commit-msg FILE | install | history [-root DIR] [-allow FILE] [REV...]")
 	return 2
 }
