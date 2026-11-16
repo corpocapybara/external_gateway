@@ -346,6 +346,9 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 		if err := checkConstraintTypes(id, op); err != nil {
 			return err
 		}
+		if err := checkJQLScope(id, op); err != nil {
+			return err
+		}
 		if err := checkJiraFields(id, op); err != nil {
 			return err
 		}
@@ -624,17 +627,14 @@ func (r *OperationRegistry) CheckConstraints(op *Operation, params map[string]in
 		constraintType, _ := constraint["type"].(string)
 		switch constraintType {
 		case "jql_scope":
-			projectsVal := constraint["projects"]
+			projectsVal, present := constraint["projects"]
+			if present && !validJQLScopeProjects(projectsVal) {
+				// Fails closed for an op built in code; loaded ops passed checkJQLScope.
+				return fmt.Errorf("jql_scope on %s: %s", op.ID, jqlScopeProjectsRule)
+			}
 			var projects []string
-			if projectsStr, ok := projectsVal.(string); ok && strings.HasPrefix(projectsStr, "$workspace.") {
-				switch projectsStr {
-				case "$workspace.jira_projects":
-					projects = workspace.Policy.JiraProjects
-				case "$workspace.bitbucket_repos":
-					projects = workspace.Policy.BitbucketRepos
-				case "$workspace.pg_allowed_tables":
-					projects = workspace.Policy.PgAllowedTables
-				}
+			if source, ok := projectsVal.(string); ok {
+				projects = jqlScopeSources[source](&workspace.Policy)
 			} else if list, ok := projectsVal.([]interface{}); ok {
 				// A literal list pins the scope in the operation itself (a second Jira
 				// with its own projects); an empty one denies rather than unscopes.

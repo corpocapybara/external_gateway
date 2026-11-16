@@ -1,6 +1,10 @@
 package policy
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/external_gateway/internal/config"
+)
 
 // constraintKind says what a known constraint type does at request time.
 type constraintKind int
@@ -46,6 +50,46 @@ func checkConstraintTypes(id string, op *Operation) error {
 		}
 		if _, known := constraintTypes[t]; !known {
 			return fmt.Errorf("operation %s: unknown constraint type %q", id, t)
+		}
+	}
+	return nil
+}
+
+// jqlScopeSources are the $workspace names a jql_scope projects value may name,
+// each with the policy list it reads.
+var jqlScopeSources = map[string]func(*config.WorkspacePolicy) []string{
+	"$workspace.jira_projects":     func(p *config.WorkspacePolicy) []string { return p.JiraProjects },
+	"$workspace.bitbucket_repos":   func(p *config.WorkspacePolicy) []string { return p.BitbucketRepos },
+	"$workspace.pg_allowed_tables": func(p *config.WorkspacePolicy) []string { return p.PgAllowedTables },
+}
+
+// jqlScopeProjectsRule is the error text for a projects value jql_scope does not accept.
+const jqlScopeProjectsRule = "projects must be a list or one of " +
+	"$workspace.bitbucket_repos, $workspace.jira_projects, $workspace.pg_allowed_tables"
+
+// validJQLScopeProjects reports whether v is a projects value jql_scope accepts:
+// a list (its items are checked per request) or a jqlScopeSources name.
+func validJQLScopeProjects(v interface{}) bool {
+	switch v := v.(type) {
+	case []interface{}:
+		return true
+	case string:
+		return jqlScopeSources[v] != nil
+	}
+	return false
+}
+
+// checkJQLScope refuses, at load time, a jql_scope whose projects key is present
+// but not a value validJQLScopeProjects accepts; such a value used to fall back
+// to the workspace's jira_projects and, with none configured, scope nothing
+// (EG0022). No projects key keeps that fallback.
+func checkJQLScope(id string, op *Operation) error {
+	for _, constraint := range op.Constraints {
+		if t, _ := constraint["type"].(string); t != "jql_scope" {
+			continue
+		}
+		if v, present := constraint["projects"]; present && !validJQLScopeProjects(v) {
+			return fmt.Errorf("operation %s: jql_scope %s", id, jqlScopeProjectsRule)
 		}
 	}
 	return nil
