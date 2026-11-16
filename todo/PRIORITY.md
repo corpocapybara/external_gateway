@@ -20,7 +20,7 @@ none
 - EG0031 · draft · ops-config · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
 - EG0035 · draft · unset · M — Project review (rubric v1)
 - EG0037 · draft · unset · S — AGENTS.md: add ToDo section, mark acme/globex as placeholders, fix T ids
-- EG0038 · designed · server · M — Remove real workspace names and Jira keys from tracked files; EG ids in OPERATIONS.md
+- EG0038 · in-progress · server · M — Remove real workspace names and Jira keys from tracked files; EG ids in OPERATIONS.md
 - EG0044 · draft · server · S — OAuth refresh cooldown after a still-rejected retry (email + http-rest)
 - EG0045 · draft · server · S — Skip OAuth refresh when the stored access token already changed (concurrent rejections)
 - EG0046 · draft · server · S — Email connector responses skip allow_fields shaping (hotmail/gmail return attrs, cc, seq)
