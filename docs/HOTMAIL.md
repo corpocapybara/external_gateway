@@ -149,7 +149,9 @@ How the gateway uses it:
   `oauth` sites pass the upstream 401 through instead). A stored access token that changed meanwhile is still
   used at once. `/admin/secrets` (set or delete) and `/admin/reload` end every cooldown; a credential-store
   write made outside `/admin/secrets` (e.g. `cmdkey` or another tool writing the store directly) takes effect
-  only after the window ends or the next `/admin/reload`.
+  only after the window ends or the next `/admin/reload`. Any failed refresh counts, a brief token-endpoint
+  outage too, and so does a retry refused for a reason other than the token; either holds refreshes off for one
+  window.
 - `/admin/status` lists both secrets and does not try `LOGIN` with the access token (the env is an OAuth kind).
 
 ## Operations

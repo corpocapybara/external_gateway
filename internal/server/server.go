@@ -1577,13 +1577,14 @@ func parseSecretRef(ref string) (workspace, name string) {
 type refreshOutcome int
 
 const (
-	refreshRetry   refreshOutcome = iota // refreshed, or another call already did: retry with the stored token
+	refreshFailed  refreshOutcome = iota // the refresh failed (and started a cooldown): no retry; the zero value
 	refreshCooling                       // inside the cooldown window: no token call, no retry
-	refreshFailed                        // the refresh failed (and started a cooldown): no retry
+	refreshRetry                         // refreshed, or another call already did: retry with the stored token
 )
 
 // refreshResult carries the cooldown generation read when the refresh began; a
-// caller whose retry is still rejected hands it back to oauthCooldown.start.
+// caller whose retry is still rejected hands it back to oauthCooldown.start
+// (gen is used only with refreshRetry).
 type refreshResult struct {
 	outcome refreshOutcome
 	gen     uint64

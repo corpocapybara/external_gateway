@@ -160,16 +160,27 @@ func TestOAuthCooldownExpires(t *testing.T) {
 }
 
 func TestOAuthCooldownFailedRefresh(t *testing.T) {
-	t.Run("http-rest", func(t *testing.T) {
-		te := newTokenEndpoint(t, http.StatusInternalServerError)
-		u := newAPIUpstream(t, "none")
-		h := cdAPIHarness(t, u, te.srv.URL, "")
-		cdClock(h)
-		coolAPI(t, h, te)
-		if got := strings.Join(u.calls(), ","); got != "Bearer old,Bearer old" {
-			t.Fatalf("upstream calls = %q, want two rejected calls, no retry", got)
-		}
-	})
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"http-rest non-200", http.StatusInternalServerError, ""},
+		{"http-rest bad JSON", 0, `{"access_token":`},
+		{"http-rest empty access_token", 0, `{"access_token":"","refresh_token":"r2"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := newTokenEndpoint(t, tc.status)
+			te.body = tc.body
+			u := newAPIUpstream(t, "none")
+			h := cdAPIHarness(t, u, te.srv.URL, "")
+			cdClock(h)
+			coolAPI(t, h, te)
+			if got := strings.Join(u.calls(), ","); got != "Bearer old,Bearer old" {
+				t.Fatalf("upstream calls = %q, want two rejected calls, no retry", got)
+			}
+		})
+	}
 	t.Run("email", func(t *testing.T) {
 		te := newTokenEndpoint(t, http.StatusInternalServerError)
 		h := cdEmailHarness(t, te.srv.URL)
@@ -185,6 +196,30 @@ func TestOAuthCooldownFailedRefresh(t *testing.T) {
 		}
 		wantTokenCalls(t, te, 1, "two calls")
 	})
+}
+
+// A retry that fails for another reason (not a refused login) starts no cooldown.
+func TestOAuthCooldownEmailRetryOtherError(t *testing.T) {
+	te := newTokenEndpoint(t, 0)
+	h := cdEmailHarness(t, te.srv.URL)
+	cdClock(h)
+	netErr := errors.New("connection reset")
+	var seen []string
+	call := func(cfg *email.Config) error {
+		seen = append(seen, cfg.Password)
+		if len(seen) == 2 {
+			return netErr
+		}
+		return email.ErrAuthRejected
+	}
+	if err := h.s.withEmail(h.env(t), "w", call); !errors.Is(err, netErr) {
+		t.Fatalf("first call: err = %v, want the retry's network error", err)
+	}
+	wantTokenCalls(t, te, 1, "first call")
+	h.s.withEmail(h.env(t), "w", call) // rejected with "new": refreshes, retry rejected: cooldown
+	wantTokenCalls(t, te, 2, "second call (no cooldown after a non-auth retry error)")
+	h.s.withEmail(h.env(t), "w", call)
+	wantTokenCalls(t, te, 2, "third call (cooling)")
 }
 
 func TestOAuthCooldownConcurrentFailedRefresh(t *testing.T) {
