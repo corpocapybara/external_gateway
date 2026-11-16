@@ -10,7 +10,7 @@ none
 
 ## P1
 
-none
+- EG0052 · draft · docs · XS — Real workspace name in .ai/OPERATIONS.md and jenkins_build_params_test.go on the public repo (review R15)
 
 ## P2
 
@@ -20,12 +20,17 @@ none
 - EG0035 · in-progress · docs · M — Project review (rubric v1)
 - EG0044 · draft · server · S — OAuth refresh cooldown after a still-rejected retry (email + http-rest)
 - EG0048 · draft · deploy · M — Rewrite git history to purge the real workspace names and Jira key, then force-push · blocked by EG0030, EG0049
+- EG0054 · draft · server · S — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
 
 ## P3
 
 - EG0043 · refined · connectors · S — Back off form-session logins after a failed login
 - EG0049 · designed · server · XS — Replace a real corporate host and a person's first name in tracked files with placeholders
 - EG0051 · draft · server · S — allow_fields ignored by local-service, postgres and jira-worklog connectors
+- EG0053 · draft · server · M — Structure notes from the project review: server.go dispatch chain, connector registry in two places, unowned paths (review R1, R2)
+- EG0055 · draft · server · S — Doc drift and dead code from the project review: connector list, admin endpoints, unused TLS/listen_addr, unwired scheduler, body logging (review R7-R10)
+- EG0056 · draft · server · XS — Dependency notes from the project review: 4 outdated direct modules, no vulnerability scan (review R11)
+- EG0057 · draft · server · M — Metrics notes from the project review: no runtime metrics, unbounded audit logs, service log lost, audit keyed by token hash (review R13, R14)
 
 ## Externally blocked
 
