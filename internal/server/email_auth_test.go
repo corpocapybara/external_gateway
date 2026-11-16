@@ -65,13 +65,17 @@ func TestEmailConfigFromEnv(t *testing.T) {
 type tokenEndpoint struct {
 	srv    *httptest.Server
 	calls  atomic.Int32
-	status int // 0 = 200 with access_token new, refresh_token r2
+	status int    // 0 = 200 with access_token new, refresh_token r2
+	onCall func() // when set, runs on every call before it is answered (set before the first call)
 }
 
 func newTokenEndpoint(t *testing.T, status int) *tokenEndpoint {
 	te := &tokenEndpoint{status: status}
 	te.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		te.calls.Add(1)
+		if te.onCall != nil {
+			te.onCall()
+		}
 		if te.status != 0 {
 			w.WriteHeader(te.status)
 			w.Write([]byte(`{"error":"invalid_grant"}`))
