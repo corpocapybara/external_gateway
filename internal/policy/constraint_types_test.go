@@ -154,3 +154,59 @@ func TestExampleOpsLoad(t *testing.T) {
 		t.Fatalf("broken copy: error = %v, want unknown constraint type", err)
 	}
 }
+
+// A jql_scope whose projects is present but is neither a list nor a known
+// $workspace source used to fall back to the workspace's jira_projects and, with
+// none configured, scope nothing (EG0022). It is refused at load and in
+// CheckConstraints, also when the workspace has no jira_projects.
+func TestJQLScopeBadProjectsRefused(t *testing.T) {
+	const loadWant = "operation a.b: jql_scope projects must be a list or one of " +
+		"$workspace.bitbucket_repos, $workspace.jira_projects, $workspace.pg_allowed_tables"
+	const checkWant = "jql_scope on a.b: projects must be a list or one of " +
+		"$workspace.bitbucket_repos, $workspace.jira_projects, $workspace.pg_allowed_tables"
+	rows := []struct {
+		name, yaml string
+		value      interface{}
+	}{
+		{"number", "7", 7},
+		{"map", "{a: b}", map[string]interface{}{"a": "b"}},
+		{"non-list non-workspace string", "DESK", "DESK"},
+		{"$workspace.nope", "$workspace.nope", "$workspace.nope"},
+		{"null", "null", nil},
+	}
+	r := &OperationRegistry{Operations: map[string]*Operation{}}
+	for _, row := range rows {
+		_, err := NewRegistry(constraintOpsFile(t, "    constraints:\n      - type: jql_scope\n        projects: "+row.yaml+"\n"))
+		if err == nil || !strings.Contains(err.Error(), loadWant) {
+			t.Errorf("%s: load error = %v, want it to contain %q", row.name, err, loadWant)
+		}
+
+		op := &Operation{ID: "a.b", Constraints: []map[string]interface{}{{"type": "jql_scope", "projects": row.value}}}
+		for _, ws := range []*config.Workspace{
+			{}, // empty JiraProjects: the old fallback scoped nothing
+			{Policy: config.WorkspacePolicy{JiraProjects: []string{"DESK"}}},
+		} {
+			err := r.CheckConstraints(op, map[string]interface{}{"jql": "summary ~ x"}, ws)
+			if err == nil || err.Error() != checkWant {
+				t.Errorf("%s (jira_projects %v): CheckConstraints error = %v, want %q", row.name, ws.Policy.JiraProjects, err, checkWant)
+			}
+		}
+	}
+
+	// Valid shapes, and no projects key at all, still load.
+	for _, v := range []string{
+		"", "        projects: [DESK]\n", "        projects: $workspace.jira_projects\n",
+		"        projects: $workspace.bitbucket_repos\n", "        projects: $workspace.pg_allowed_tables\n",
+	} {
+		if _, err := NewRegistry(constraintOpsFile(t, "    constraints:\n      - type: jql_scope\n"+v)); err != nil {
+			t.Errorf("projects %q: unexpected load error: %v", v, err)
+		}
+	}
+	// No projects key keeps the workspace fallback in CheckConstraints.
+	op := &Operation{ID: "a.b", Constraints: []map[string]interface{}{{"type": "jql_scope"}}}
+	p := map[string]interface{}{"jql": "summary ~ x"}
+	ws := &config.Workspace{Policy: config.WorkspacePolicy{JiraProjects: []string{"DESK"}}}
+	if err := r.CheckConstraints(op, p, ws); err != nil || p["jql"] != "(summary ~ x) AND project in (DESK)" {
+		t.Errorf("no projects key: err %v, jql %q, want the workspace scope", err, p["jql"])
+	}
+}
