@@ -19,7 +19,7 @@ none
 - EG0031 · reviewed · server · S — Kibana op paths use {{index}}, so the outer braces stay in the upstream URL
 - EG0035 · in-progress · docs · M — Project review (rubric v1)
 - EG0044 · draft · server · S — OAuth refresh cooldown after a still-rejected retry (email + http-rest) · blocked by EG0045
-- EG0045 · in-review · server · S — Skip OAuth refresh when the stored access token already changed (concurrent rejections)
+- EG0045 · in-testing · server · S — Skip OAuth refresh when the stored access token already changed (concurrent rejections)
 - EG0048 · draft · deploy · M — Rewrite git history to purge the real workspace names and Jira key, then force-push · blocked by EG0030, EG0049
 
 ## P3
