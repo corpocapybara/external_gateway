@@ -101,3 +101,13 @@ func TestExpandPathTemplateSinglePass(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// EG0031: the Kibana console proxy path with a single-brace {index} renders the
+// index query-escaped after "?path=", with no braces left in the URL.
+func TestExpandPathTemplateConsoleProxyIndex(t *testing.T) {
+	got, err := expandPathTemplate("/api/console/proxy?path={index}/_search&method=POST", nil,
+		map[string]interface{}{"index": "logstash-*"}, nil)
+	if want := "/api/console/proxy?path=logstash-%2A/_search&method=POST"; err != nil || got != want {
+		t.Fatalf("got %q, %v; want %q", got, err, want)
+	}
+}

@@ -335,6 +335,11 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 		if !isKnownConnector(op.Connector) {
 			return fmt.Errorf("operation %s: unknown connector %q", id, op.Connector)
 		}
+		// Path placeholders take single braces; in "{{index}}" only the inner
+		// "{index}" is replaced and the outer braces reach the upstream URL (EG0031).
+		if strings.Contains(op.Path, "{{") || strings.Contains(op.Path, "}}") {
+			return fmt.Errorf("operation %s: path %q has a double brace; path placeholders take single braces ({name})", id, op.Path)
+		}
 		for name, def := range op.Params {
 			if def.Pattern == "" {
 				continue
