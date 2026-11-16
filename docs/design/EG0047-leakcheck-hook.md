@@ -76,7 +76,9 @@ reported once per line; terms are sorted so output is deterministic. Lines are s
 
 **D6 — what is scanned.** Base = `HEAD` when `git rev-parse --verify -q HEAD` succeeds, else the empty tree
 (`git hash-object -t tree --stdin` with empty input, which also fits sha256 repos). Content:
-`git -c core.quotePath=false diff --cached -U0 --no-color --no-ext-diff -M -C --src-prefix=a/ --dst-prefix=b/ <base>`.
+`git -c core.quotePath=false diff --cached -U0 --no-color --no-ext-diff -M --src-prefix=a/ --dst-prefix=b/ <base>`.
+No `-C` (changed in code review round 1): a copy then shows as an added file, so a file copied verbatim from
+one that already leaks has every line checked.
 Parser state: outside a hunk, `diff --git` starts a file and `+++ b/<path>` sets the current path (a trailing
 TAB, which git adds after a path with a space, is stripped; a quoted path `"…"` is unquoted with
 `strconv.Unquote`; `+++ /dev/null` = deleted); every other header line (`---`, `index`, `similarity index`,
@@ -85,7 +87,7 @@ missing count means 1) enters a hunk with `oldLeft=b`, `newLeft=d` and the new-f
 a hunk a `+` line is content (scanned at the counter, then counter++ and newLeft--), a `-` line only does
 oldLeft--, and a `\ No newline at end of file` line is skipped without counting; the hunk ends when both
 counts reach 0. So an added `+++x` or removed `--- y` line inside a hunk is content, never a header. Trailing
-`\r` is stripped before matching. Paths: `git diff --cached --name-status -z -M -C <base>`, NUL-separated
+`\r` is stripped before matching. Paths: `git diff --cached --name-status -z -M <base>`, NUL-separated
 records `A\0path\0`, `M\0path\0`, `D\0path\0`, `R100\0old\0new\0`, `C075\0src\0new\0`; for `A` the path, for
 `R*`/`C*` the second (new) path is checked; `M`, `D`, `T` are not. A path hit is reported once, from this list
 only; header lines never yield line hits.

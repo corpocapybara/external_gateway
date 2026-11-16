@@ -239,13 +239,15 @@ func runPreCommit(dir string, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	names, err := git(dir, "-c", "core.quotePath=false", "diff", "--cached", "--name-status", "-z", "-M", "-C", base)
+	// No -C: a copy then shows as an added file, so every line it brings in is checked, also when it was
+	// copied verbatim from a file that already leaks (review round 1).
+	names, err := git(dir, "-c", "core.quotePath=false", "diff", "--cached", "--name-status", "-z", "-M", base)
 	if err != nil {
 		return fail(stderr, err)
 	}
 	hits := pathHits(names, terms)
 	diff, err := git(dir, "-c", "core.quotePath=false", "diff", "--cached", "-U0", "--no-color", "--no-ext-diff",
-		"-M", "-C", "--src-prefix=a/", "--dst-prefix=b/", base)
+		"-M", "--src-prefix=a/", "--dst-prefix=b/", base)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -254,7 +256,7 @@ func runPreCommit(dir string, stderr io.Writer) int {
 }
 
 // pathHits checks the new path of each added, renamed or copied entry of `git diff --name-status -z`
-// output: records A\0path\0, R100\0old\0new\0, C075\0src\0new\0 (design D6).
+// output: records A\0path\0, R100\0old\0new\0, and C075\0src\0new\0 should -C ever be passed (design D6).
 func pathHits(out []byte, terms []string) []string {
 	fields := strings.Split(string(out), "\x00")
 	var hits []string

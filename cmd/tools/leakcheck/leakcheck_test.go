@@ -266,24 +266,27 @@ func TestPreCommitPaths(t *testing.T) {
 	r.write("old.txt", "plain\n")
 	r.write("zork-old.txt", "hello\n")
 	r.write("zork-gone.txt", "bye\n")
+	r.write("leaky.txt", "zork leaks here\n"+numbered(5)) // an existing leak in the tree
 	r.commitAll("init")
 
-	r.write("new zork.txt", "zork inside\n")         // added, path with a space
-	r.git("mv", "old.txt", "zork-renamed.txt")       // pure rename
-	r.write("zork-old.txt", "hello\nmore\n")         // modified, path already had the term
-	os.Remove(filepath.Join(r.dir, "zork-gone.txt")) // deleted
-	r.write("zork-copy.txt", numbered(10))           // copy of src.txt ...
-	r.write("src.txt", numbered(10)+"tail\n")        // ... whose source is modified, so -C fires
+	r.write("new zork.txt", "zork inside\n")                    // added, path with a space
+	r.git("mv", "old.txt", "zork-renamed.txt")                  // pure rename
+	r.write("zork-old.txt", "hello\nmore\n")                    // modified, path already had the term
+	os.Remove(filepath.Join(r.dir, "zork-gone.txt"))            // deleted
+	r.write("zork-copy.txt", numbered(10))                      // copy of src.txt into a term path
+	r.write("src.txt", numbered(10)+"tail\n")                   // source modified, as git -C would need
+	r.write("copy.txt", "zork leaks here\n"+numbered(5))        // verbatim copy of the existing leak ...
+	r.write("leaky.txt", "zork leaks here\n"+numbered(5)+"x\n") // ... whose source is modified too
 	r.git("add", "-A")
-	if st := r.git("diff", "--cached", "--name-status", "-M", "-C"); !strings.Contains(st, "C") {
-		t.Logf("copy not detected by git here (path is then checked as added):\n%s", st)
-	}
 	code, stderr := r.preCommit("")
+	// No copy detection (design D6, review round 1): a copied file is an added file, so both its path and
+	// every line it brings in are checked.
 	wantHits(t, code, stderr,
 		"leakcheck: new zork.txt: path contains zork",
 		"leakcheck: new zork.txt:1: zork",
 		"leakcheck: zork-renamed.txt: path contains zork",
 		"leakcheck: zork-copy.txt: path contains zork",
+		"leakcheck: copy.txt:1: zork",
 	)
 }
 

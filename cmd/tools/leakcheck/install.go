@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -51,9 +52,14 @@ func runInstall(dir string, stdout, stderr io.Writer) int {
 	if err := installBinary(exe); err != nil {
 		return fail(stderr, err)
 	}
-	for name, script := range hookScripts {
+	names := make([]string, 0, len(hookScripts))
+	for name := range hookScripts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
 		p := filepath.Join(hooks, name)
-		if err := os.WriteFile(p, []byte(fmt.Sprintf(script, slash)), 0o755); err != nil {
+		if err := os.WriteFile(p, []byte(fmt.Sprintf(hookScripts[name], slash)), 0o755); err != nil {
 			return fail(stderr, err)
 		}
 		fmt.Fprintf(stdout, "leakcheck: wrote %s\n", filepath.ToSlash(p))
