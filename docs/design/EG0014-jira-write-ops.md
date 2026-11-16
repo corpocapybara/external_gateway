@@ -15,7 +15,7 @@ Alternatives rejected: keep per-field create params and add `fields_extra` (two 
 scoping); an allowlist of field names (owner chose pinning keys, not field names; T0003's `jira_fields` is for
 search output, not writes).
 
-## Ops (`config.example/operations.yaml`, mirrored in `operations.acme.yaml`)
+## Ops (`config.example/operations.yaml`, mirrored in `operations.<ws>.yaml`)
 | op | method, path | params | constraint |
 |---|---|---|---|
 | jira.create | POST /rest/api/2/issue | fields (object, required), update (object, default {}) | jira_key_scope: project_keys [fields.project.key], required [fields.project.key], issue_keys [fields.parent.key], absent [fields.issuelinks, update.issuelinks, update.parent, update.project] |
@@ -37,10 +37,10 @@ Unchanged: op ids (grants in `config.example/config.yaml:29`, `config.example/co
 only without an ops file) and `operations.globex.yaml`.
 
 ## acme (gitignored, not in git)
-`operations.acme.yaml`: the six ops as above, the old `jira.edit` replaced; `jira.issue` `allow_fields` gains
+`operations.<ws>.yaml`: the six ops as above, the old `jira.edit` replaced; `jira.issue` `allow_fields` gains
 `fields.issuelinks[].id`, `fields.issuelinks[].type.name`, `fields.issuelinks[].inwardIssue.key`,
 `fields.issuelinks[].outwardIssue.key`, `fields.fixVersions[].name` (so an agent can find a link id to delete and
-see versions). `config.acme.yaml`: role dev-bot += create, link, link_delete, versions, editmeta; readonly +=
+see versions). `config.<ws>.yaml`: role dev-bot += create, link, link_delete, versions, editmeta; readonly +=
 versions, editmeta. Backups of both files go to the scratchpad before editing.
 
 ## Tests
@@ -82,14 +82,14 @@ Manual (owner: no live writes), after an elevated `deploy/update.ps1`, recorded 
 ACME returns names; editmeta on a named ACME issue returns fields; `jira.issue` on a named ACME issue that has links
 returns `fields.issuelinks[].id`; edit key ABC-1 and create `fields.project.key ABC` return 403 constraint, and
 the deployed audit log shows a deny and no allow for those request ids; `GET /capabilities?workspace=acme` with
-the dev-bot token lists the five new grants; `Select-String` on the deployed `config.acme.yaml` shows readonly's
+the dev-bot token lists the five new grants; `Select-String` on the deployed `config.<ws>.yaml` shows readonly's
 two.
 
 ## Notes on scope
 - `jira.versions`' enum and the constraint both leave the project unscoped when `jira_projects` is empty (same
   fallback as T0013); acme sets it.
 - `env`: the example ops declare none (the example Jira site has one environment). The acme copies keep an
-  optional `env` string param like acme's `jira.issue` and `jira.edit` today (`config.acme.yaml` jira site:
+  optional `env` string param like acme's `jira.issue` and `jira.edit` today (`config.<ws>.yaml` jira site:
   `default_env: prod`, plus a corpo env); the T0013 pre-check passes `env` through to its GET.
 - `jira.link` `type` stays free text (JSON-escaped, Jira rejects unknown types); the acceptance asks no more.
 - `.ai/OPERATIONS.md`: both tables that list `jira.create`/`jira.edit` (~lines 228-229, 271) are updated.

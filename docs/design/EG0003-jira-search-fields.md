@@ -57,7 +57,7 @@ Values never break out of the body: `buildBody` renders a list with `json.Marsha
 - `config.example/operations.yaml`, `operations.globex.yaml`: `fields` default and `allowed` = the field names
   under `issues[].fields` in their `allow_fields`; new `body_template` carries `jql`, `maxResults`, `fields`
   (jql/maxResults move from query string to the POST body, which is what `/rest/api/3/search/jql` reads).
-- `operations.acme.yaml` (gitignored): default = today's 13; allowed adds `components`, `customfield_10333`;
+- `operations.<ws>.yaml` (gitignored): default = today's 13; allowed adds `components`, `customfield_10333`;
   `allow_fields` adds `issues[].fields.components[].name`, `issues[].fields.customfield_10333`.
 
 ## Tests

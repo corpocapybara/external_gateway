@@ -1,11 +1,11 @@
 # Set (or rotate) the GitLab PAT the gateway uses for a workspace.
 # Run from an elevated Windows PowerShell:
-#   powershell -ExecutionPolicy Bypass -File .\deploy\set-gitlab-token.ps1
+#   powershell -ExecutionPolicy Bypass -File .\deploy\set-gitlab-token.ps1 -Workspace <ws> -Port <port>
 # If config.<ws>.yaml has no admin_token_sha256 (the admin API is fail-closed), an admin token is
 # generated, its hash added to the config, the token saved to agent-keys.txt, and the gateway redeployed.
 param(
-    [string]$Workspace = 'acme',
-    [int]$Port = 8444,
+    [Parameter(Mandatory)][string]$Workspace,
+    [Parameter(Mandatory)][int]$Port,
     [string]$SecretName = 'gitlab'
 )
 $ErrorActionPreference = 'Stop'

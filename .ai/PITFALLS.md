@@ -106,7 +106,7 @@ Before, an unset `base_url` silently caused the upstream URL to be malformed (e.
 
 ### PowerShell 5.1 UTF-8 corruption
 
-`Set-Content`/`Get-Content` without `-Encoding UTF8` corrupts non-ASCII characters. Always use `-Encoding UTF8`. JSON config files must stay valid UTF-8.
+JSON config files must stay valid UTF-8. The PowerShell 5.1 encoding rule itself is the global core rule "Windows PowerShell 5.1 corrupts UTF-8".
 
 ### Jira API version: /rest/api/3/ required
 

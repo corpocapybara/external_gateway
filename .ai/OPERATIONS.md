@@ -90,7 +90,7 @@ body_template: |
   {"name":"gateway-login-{{now}}"}
 ```
 
-## Jira attachment content (`jira_attachment_content`, T0008)
+## Jira attachment content (`jira_attachment_content`, EG0008)
 
 `jira_attachment_content: true` on an http-rest op serves one attachment's content. The op needs required params
 `key` (issue key) and `id` (attachment id); give them patterns that pin the project (e.g. `^PROJ-[0-9]+$`,
@@ -145,7 +145,7 @@ Each entry under `constraints:` needs a `type` that is exactly one of the 10 typ
 | `allowed_tables` | Marker only; the postgres connector enforces the workspace's `pg_allowed_tables`. |
 | `project_scope`, `repo_scope` | No effect. Their ops scope the param with a literal `enum`, which can drift from the workspace policy. |
 | `max_rows`, `statement_timeout` | No effect. The postgres connector hard-codes 1000 rows and a 5000 ms timeout; YAML values are ignored. |
-| `kibana_index_scope` | No effect: nothing enforces it (T0021). |
+| `kibana_index_scope` | No effect: nothing enforces it (EG0021). |
 
 Any other type is refused when the ops file loads: `operation <id>: unknown constraint type "<t>"` (matching is
 exact, so `JQL_SCOPE` is refused), or `operation <id>: constraint has no type` when `type` is missing, null, empty
@@ -326,7 +326,7 @@ A listed path whose upstream field is present but empty or null stays in the res
 
 ## Complete operation reference
 
-### Jira write ops in `config.example/operations.yaml` (T0014)
+### Jira write ops in `config.example/operations.yaml` (EG0014)
 Writes take Jira's own `fields` / `update` objects verbatim; `jira_key_scope` pins the keys inside them. The
 globex/acme tables below describe their own (older) op files, which are unchanged.
 
@@ -432,7 +432,7 @@ field names). The `jira.create` / `jira.edit` rows in the globex/acme tables bel
 | gitlab.branches | http-rest | gitlab | List branches |
 | gitlab.projects | http-rest | gitlab | List/search projects |
 | gitlab.whoami | http-rest | gitlab | Get current user |
-| corpjira.attachment_content | http-rest | corpjira | Content of one attachment of an `PROJ-` issue: `key`, `id` (from `corpjira.attachments`); images/PDF base64, text as text, 1 MB cap (acme, gitignored; see Jira attachment content) |
+| corpjira.attachment_content | http-rest | corpjira | Content of one attachment of an issue in the pinned project: `key`, `id` (from `corpjira.attachments`); images/PDF base64, text as text, 1 MB cap (live workspace only, gitignored; see Jira attachment content; details in `.ai/LOCAL.md`) |
 | jenkins.jobs | http-rest | jenkins | List jobs/folders (`env`: dev/staging) |
 | jenkins.job | http-rest | jenkins | Get job status + recent builds (+ child jobs for folders) |
 | jenkins.build | http-rest | jenkins | Get build result/duration/culprits |

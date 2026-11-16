@@ -13,7 +13,7 @@ Credential Manager paths, agent tokens) live **only** in `.ai/LOCAL.md`, which i
 gitignored. If you need a concrete example, put it in `LOCAL.md` and reference it from
 the tracked doc — never inline the real value.
 
-Before committing docs, grep for leaked identifiers (`\bcc\b`, real ports, internal
+Before committing docs, grep for leaked identifiers (the real-names pattern in `.ai/LOCAL.md`, real ports, internal
 domains). A tracked file that names a real workspace is a bug, even if the surrounding
 prose is correct.
 

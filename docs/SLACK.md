@@ -146,7 +146,7 @@ accepts for `chat.postMessage`. This avoids the escaping hazard entirely.
 
 `slack.presence` and `slack.usergroups` are read-only ops added for the acme `mr-worker` review-request flow
 (tag only reviewers whose presence is `active`; resolve `@testers` / `@backend-devs-<team>` by `handle`).
-Both are in `operations.acme.yaml` and `config.example/operations.yaml`, no Go change. In `config.acme.yaml` they are
+Both are in `operations.<ws>.yaml` and `config.example/operations.yaml`, no Go change. In `config.<ws>.yaml` they are
 granted to `dev-bot` (next to `slack.users`) and to `mr-worker`, which also gets `slack.send` + `slack.users`.
 Scopes: the `xoxc` session token acts as the logged-in user's web client, not an OAuth app, so there is no
 `users:read`/`usergroups:read` list to grant or re-provision; a `missing_scope` error would only appear
