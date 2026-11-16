@@ -84,10 +84,13 @@ func TestPatchedRemovalAndNewBlock(t *testing.T) {
 }
 
 func TestPatchedRealConfigsUnchangedRoundTrip(t *testing.T) {
-	for _, p := range []string{"../../config.acme.yaml", "../../operations.acme.yaml"} {
-		if _, err := os.Stat(p); err != nil {
-			continue
-		}
+	configs, _ := filepath.Glob(filepath.Join("..", "..", "config.*.yaml"))
+	ops, _ := filepath.Glob(filepath.Join("..", "..", "operations.*.yaml"))
+	files := append(configs, ops...)
+	if len(files) == 0 {
+		t.Skip("no config.<ws>.yaml or operations.<ws>.yaml at the checkout root")
+	}
+	for _, p := range files {
 		f, err := openYAML(p)
 		if err != nil {
 			t.Fatal(err)
