@@ -2597,7 +2597,7 @@ func (s *Server) executeEmailConnector(ws *config.Workspace, op *policy.Operatio
 	}
 
 	body, _ := json.Marshal(result)
-	return 200, body, nil
+	return 200, shapeResponse(200, body, op.Response.AllowFields), nil
 }
 
 func matchPolicyPattern(value, pattern string) bool {
