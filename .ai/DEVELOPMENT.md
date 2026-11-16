@@ -18,7 +18,7 @@ Builds produce statically-linked `.exe` files in the project root. Go modules ar
 The script does NOT patch configs — all config values are the source of truth in the repo.
 
 Service binary path:
-- `C:\Program Files\external_gateway\egw.exe --config "C:\Program Files\external_gateway\acme\config.yaml" --ops "C:\Program Files\external_gateway\acme\operations.yaml" --port 8444 --svc-name egw-acme`
+- `C:\Program Files\external_gateway\egw.exe --config "C:\Program Files\external_gateway\acme\config.yaml" --ops "C:\Program Files\external_gateway\acme\operations.yaml" --port <port> --svc-name egw-acme`
 
 ## Testing operations
 
@@ -28,14 +28,14 @@ Quick test pattern:
 ```powershell
 $token = "WpnrHLaY…REDACTED-see-agent-keys.txt"
 $body = @{env = "prod"; param = "value"} | ConvertTo-Json -Compress
-$r = Invoke-RestMethod -Uri "http://127.0.0.1:8444/v1/workspaces/acme/op/gitlab.branches" `
+$r = Invoke-RestMethod -Uri "http://127.0.0.1:<port>/v1/workspaces/acme/op/gitlab.branches" `
   -Method Post -Body $body -ContentType "application/json" `
   -Headers @{"Authorization" = "Bearer $token"}
 ```
 
 Dry-run (validates params + grants, doesn't execute upstream):
 ```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8444/v1/workspaces/acme/op/gitlab.projects?dry_run=true" `
+Invoke-RestMethod -Uri "http://127.0.0.1:<port>/v1/workspaces/acme/op/gitlab.projects?dry_run=true" `
   -Method Post -Body "{}" -ContentType "application/json" -Headers @{"Authorization" = "Bearer $token"}
 ```
 
@@ -70,7 +70,7 @@ Useful debug endpoints:
 Get-Service egw-acme, egw-globex
 
 # Is the gateway responding?
-Invoke-RestMethod http://127.0.0.1:8444/healthz
+Invoke-RestMethod http://127.0.0.1:<port>/healthz
 ```
 
 ## Audit logs

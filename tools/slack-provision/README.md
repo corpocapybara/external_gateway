@@ -36,13 +36,13 @@ disk, never on a command line, only masked previews are printed.
 .\Provision-Slack.ps1 -Workspace acme -ShowConfig
 
 # First-time provisioning: wire Slack into the gateway, deploy, verify (ELEVATED, Slack quit)
-.\Provision-Slack.ps1 -Workspace acme -Port 8444 -SlackDomain your-slack-subdomain -Deploy -Verify
+.\Provision-Slack.ps1 -Workspace acme -Port <port> -SlackDomain your-slack-subdomain -Deploy -Verify
 
 # Rotate an existing pair when the session expires (Slack quit; no deploy needed)
-.\Provision-Slack.ps1 -Workspace globex -Port 8443 -SlackDomain your-slack-subdomain
+.\Provision-Slack.ps1 -Workspace globex -Port <port> -SlackDomain your-slack-subdomain
 
 # Switch the connected workspace / refresh just the token (Slack can stay running, no elevation)
-.\Provision-Slack.ps1 -Workspace acme -Port 8444 -SlackDomain your-slack-subdomain -TokenOnly -Verify
+.\Provision-Slack.ps1 -Workspace acme -Port <port> -SlackDomain your-slack-subdomain -TokenOnly -Verify
 ```
 
 ## Parameters
