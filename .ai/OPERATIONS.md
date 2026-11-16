@@ -439,7 +439,7 @@ field names). The `jira.create` / `jira.edit` rows in the globex/acme tables bel
 | jenkins.test_report | http-rest | jenkins | JUnit report of one build (404 when none published). Default: counts only; cases on request, e.g. `tree=failCount,suites[name,cases[className,name,status,errorDetails]{0,20}]` (`{0,N}` caps cases per suite; no status filter; `errorStack` allowed) |
 | jenkins.console | http-rest | jenkins | Get build console log (plain text) |
 | jenkins.build_trigger | http-rest | jenkins | Start a build (**write**) |
-| jenkins.build_with_params | http-rest | jenkins | Start a parameterized build, `PUBLISH` pinned to `false` (**write**) |
+| jenkins.build_with_params | http-rest | jenkins | Start a parameterized build (**write**). `PUBLISH` is an enum of only `false` (a build never publishes). The acme develop regression job's `*ContainerImageTag` params (stage `Set versions` of automated-tests `JenkinsfileRegression`, e.g. `ApiContainerImageTag`) are declared one by one as optional strings, no default, pattern `^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$` (Docker tag); an omitted tag is not sent, so Jenkins keeps the job's default. A new tag param needs a YAML line |
 | kibana.login | http-rest | kibana | Get ES API key |
 | kibana.search | http-rest | kibana | Search logs |
 | postgres.query | postgres | postgres | Run SELECT (read-only enforced) |
