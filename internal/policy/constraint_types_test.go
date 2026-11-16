@@ -202,11 +202,23 @@ func TestJQLScopeBadProjectsRefused(t *testing.T) {
 			t.Errorf("projects %q: unexpected load error: %v", v, err)
 		}
 	}
+	// Each $workspace source scopes by its own policy list.
+	ws := &config.Workspace{Policy: config.WorkspacePolicy{
+		JiraProjects: []string{"J"}, BitbucketRepos: []string{"B"}, PgAllowedTables: []string{"T"},
+	}}
+	for source, want := range map[string]string{
+		"$workspace.jira_projects": "J", "$workspace.bitbucket_repos": "B", "$workspace.pg_allowed_tables": "T",
+	} {
+		op := &Operation{ID: "a.b", Constraints: []map[string]interface{}{{"type": "jql_scope", "projects": source}}}
+		p := map[string]interface{}{"jql": "summary ~ x"}
+		if err := r.CheckConstraints(op, p, ws); err != nil || p["jql"] != "(summary ~ x) AND project in ("+want+")" {
+			t.Errorf("%s: err %v, jql %q, want project in (%s)", source, err, p["jql"], want)
+		}
+	}
 	// No projects key keeps the workspace fallback in CheckConstraints.
 	op := &Operation{ID: "a.b", Constraints: []map[string]interface{}{{"type": "jql_scope"}}}
 	p := map[string]interface{}{"jql": "summary ~ x"}
-	ws := &config.Workspace{Policy: config.WorkspacePolicy{JiraProjects: []string{"DESK"}}}
-	if err := r.CheckConstraints(op, p, ws); err != nil || p["jql"] != "(summary ~ x) AND project in (DESK)" {
+	if err := r.CheckConstraints(op, p, ws); err != nil || p["jql"] != "(summary ~ x) AND project in (J)" {
 		t.Errorf("no projects key: err %v, jql %q, want the workspace scope", err, p["jql"])
 	}
 }
