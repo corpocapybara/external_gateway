@@ -6,7 +6,7 @@ same commit as the todo change (todo rules, section "Without the tool").
 
 ## P0
 
-none
+- EG0047 · draft · connectors · M — Add GIT PreCommit Hook to sanitize data
 
 ## P1
 
