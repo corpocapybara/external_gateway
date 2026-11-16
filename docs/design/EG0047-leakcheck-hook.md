@@ -10,8 +10,8 @@
 - D7: pre-commit skips while `MERGE_HEAD` exists; commit-msg checks every message (§Decisions D7).
 - D8: main checkout = parent of `git rev-parse --path-format=absolute --git-common-dir`; the diff uses git's own hook environment (§Decisions D8).
 - D9: fail closed: any error exits 1 with `leakcheck: error: …`; a hit exits 1 with the hint line (§Decisions D9).
-- D10: `install` refuses `core.hooksPath`, copies via temp file + rename, overwrites only its own marked files (§Decisions D10).
-- D11: tests re-exec the test binary as the tool (`TestMain` dispatches subcommands), so no `go build` in tests; one shared temp-repo helper (§Decisions D11).
+- D10: `install` refuses `core.hooksPath` and an exe path with `"`, `$` or a backtick, copies via temp file + rename, overwrites only its own marked files (§Decisions D10).
+- D11: tests re-exec the test binary as the tool (`TestMain` dispatches subcommands and unsets inherited `GIT_*`), so no `go build` in tests; one shared temp-repo helper; required cases listed there (§Decisions D11).
 - D12: the live terms file is seeded locally from `.ai/LOCAL.md` and never committed (§Decisions D12).
 
 ## Acceptance
@@ -67,23 +67,34 @@ subdomain of a public SaaS domain names the tenant and stays a term.
 
 **D5 — matching.** Lower-case the line (`strings.ToLower`) and search each term with `strings.Index` in a loop
 (literal: a `.` in a host is a dot). A hit counts when, for each term edge whose rune is a letter, digit or `_`
-(`unicode.IsLetter/IsDigit`), the neighbouring rune in the line is not one (or is the line end). Each term is
+(`unicode.IsLetter/IsDigit`), the neighbouring rune in the lower-cased line is not one (or is the line end);
+offsets and neighbours are both taken in the lower-cased line, so a case mapping that changes byte length
+cannot misalign them. After a rejected candidate the search resumes one byte later, so `cab ab` still hits
+`ab`; a term inside a longer term (`ab`, `abc`) is checked on its own. Each term is
 reported once per line; terms are sorted so output is deterministic. Lines are split from the whole output
 (`bytes.Split`), so no scanner token limit applies.
 
 **D6 — what is scanned.** Base = `HEAD` when `git rev-parse --verify -q HEAD` succeeds, else the empty tree
 (`git hash-object -t tree --stdin` with empty input, which also fits sha256 repos). Content:
 `git -c core.quotePath=false diff --cached -U0 --no-color --no-ext-diff -M -C --src-prefix=a/ --dst-prefix=b/ <base>`.
-Parser state: `diff --git` starts a file; `+++ b/<path>` sets the current path (`+++ /dev/null` = deleted: no
-lines follow anyway); `@@ … +c[,d] @@` sets the new-file line counter to c; inside a hunk a `+` line is scanned
-(and the counter advanced), `-` lines are not; `Binary files … differ` and every header line are skipped. A
-quoted path (`"…"`) is unquoted with `strconv.Unquote`. Trailing `\r` is stripped before matching. Paths:
-`git diff --cached --name-status -z -M -C <base>`; status `A`, `R*`, `C*` → the new path is checked; `M`, `D`,
-`T` are not.
+Parser state: outside a hunk, `diff --git` starts a file and `+++ b/<path>` sets the current path (a trailing
+TAB, which git adds after a path with a space, is stripped; a quoted path `"…"` is unquoted with
+`strconv.Unquote`; `+++ /dev/null` = deleted); every other header line (`---`, `index`, `similarity index`,
+`rename from/to`, `copy from/to`, mode lines, `Binary files … differ`) is skipped. `@@ -a[,b] +c[,d] @@` (a
+missing count means 1) enters a hunk with `oldLeft=b`, `newLeft=d` and the new-file line counter at c. Inside
+a hunk a `+` line is content (scanned at the counter, then counter++ and newLeft--), a `-` line only does
+oldLeft--, and a `\ No newline at end of file` line is skipped without counting; the hunk ends when both
+counts reach 0. So an added `+++x` or removed `--- y` line inside a hunk is content, never a header. Trailing
+`\r` is stripped before matching. Paths: `git diff --cached --name-status -z -M -C <base>`, NUL-separated
+records `A\0path\0`, `M\0path\0`, `D\0path\0`, `R100\0old\0new\0`, `C075\0src\0new\0`; for `A` the path, for
+`R*`/`C*` the second (new) path is checked; `M`, `D`, `T` are not. A path hit is reported once, from this list
+only; header lines never yield line hits.
 
 **D7 — merges.** A clean `git merge` never runs pre-commit; a conflicted one does, and its diff against HEAD
 is the other side's whole change, already checked when it was committed. So pre-commit exits 0 while
-`git rev-parse --git-path MERGE_HEAD` exists (same choice as the todo hook). Cherry-pick, revert and amend
+the file named by `git rev-parse --path-format=absolute --git-path MERGE_HEAD` exists (absolute, so it holds
+from a subdirectory; same choice as the todo hook). A clean merge's content is likewise unchecked (git runs
+`pre-merge-commit`, not pre-commit), by the same reasoning. Cherry-pick, revert and amend
 bring new content into a commit and are checked. commit-msg has no skip: a merge subject naming a branch with a
 term is a leak too.
 
@@ -96,17 +107,32 @@ both the main checkout (`<root>/.git`) and a linked worktree under `.worktrees/`
 `leakcheck: commit refused (EG0047): remove the names above, or add leakcheck:allow to a line that is a
 deliberate false positive`) or an error (`leakcheck: error: <what>: <err>`: missing/unreadable terms file named by
 path, unreadable config, failing git command with its stderr). The terms file is loaded before anything is
-diffed, so a missing file fails even with nothing staged. Usage errors exit 2.
+diffed, so a missing file fails even with nothing staged. Usage errors (unknown subcommand, missing FILE)
+exit 2 (tested in `TestFailClosed`). commit-msg line numbers count every file line, `#` lines included.
 
 **D10 — install.** Refuses (exit 1) when `git config --get core.hooksPath` is non-empty. Hooks dir =
 `<common-dir>/hooks`. Copies `os.Executable()` to `leakcheck.exe.tmp` there, then `os.Rename` over
-`leakcheck.exe` (replace-existing on Windows). A `.local` that exists without the marker line is a foreign hook:
+`leakcheck.exe` (replace-existing on Windows); when the source already is that target, the copy is skipped.
+The exe path is written with forward slashes inside double quotes; a path containing `"`, `$` or a backtick
+is refused (sh would expand it), so a path with spaces works and nothing else needs escaping. A `.local` that exists without the marker line is a foreign hook:
 refuse and name it; one with the marker is rewritten. Prints what it wrote.
 
 **D11 — tests.** `TestMain` runs the tool when `os.Args[1]` is a subcommand name (normal test runs pass only
 `-test.*` flags), so `install` copies the test binary and the end-to-end wrappers exec it without a build. One
 helper `newRepo(t)` does `git init`, sets `user.name/email`, `commit.gpgsign=false`, `core.autocrlf=false`
-and writes a terms file; tests keep git processes few.
+and writes a terms file. `TestMain` first unsets every inherited `GIT_*` variable (`GIT_DIR`, `GIT_INDEX_FILE`,
+… set when the tests run from inside a hook), so test repos are never confused with the caller's. Tests
+keep git processes few: several cases share one staged state.
+
+Cases the tests must include (from design review round 1): `TestPreCommitBlocksAddedLine` — an added line
+`++ b/x` and a removed line `-- y` inside hunks, a file with no final newline, a CRLF content line, a
+renamed-and-edited file's new line numbers; `TestPreCommitPaths` — a pure rename into a term path gives exactly
+one path hit and no line hit, a path with a space, a copy (modified source so `-C` fires); `TestMatch` —
+`cab ab`, terms `ab` and `abc` on one line, a byte-length-changing lower case (`İ`); `TestCommitMsg` — a term
+only in a `#` line and only below the scissors line pass; `TestPreCommitSkipsMerge` — MERGE_HEAD written by
+hand, run from a subdirectory; `TestInstall` — a hooks dir path with a space, rerun, foreign `.local`
+refused, shebang and LF asserted; `TestFailClosed` — a directory in place of the terms file and of a config
+(unreadable on Windows), a non-repo dir for the git error, an unknown subcommand (exit 2).
 
 **D12 — live seed.** The implementer writes `.ai/leakcheck-terms.txt` in the main checkout from `.ai/LOCAL.md`
 section "Real names in tracked files" and "Placeholders used in committed todos" (workspace names, Jira keys,
