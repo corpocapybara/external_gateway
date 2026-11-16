@@ -101,7 +101,7 @@ func runHistory(args []string, dir string, stdout, stderr io.Writer) int {
 	for _, c := range commits {
 		entries, ok := treeEntries[c.tree]
 		if !ok {
-			out, err := git(dir, "-c", "core.quotePath=false", "ls-tree", "-r", "-z", "--full-tree", c.tree)
+			out, err := git(dir, "--no-replace-objects", "-c", "core.quotePath=false", "ls-tree", "-r", "-z", "--full-tree", c.tree)
 			if err != nil {
 				return fail(stderr, err)
 			}
@@ -152,7 +152,7 @@ func runHistory(args []string, dir string, stdout, stderr io.Writer) int {
 	}
 
 	// Tags and refs, whatever REV is.
-	tags, err := git(dir, "for-each-ref", "--format=%(objecttype) %(refname)", "refs/tags")
+	tags, err := git(dir, "--no-replace-objects", "for-each-ref", "--format=%(objecttype) %(refname)", "refs/tags")
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -162,7 +162,7 @@ func runHistory(args []string, dir string, stdout, stderr io.Writer) int {
 		if !ok || typ != "tag" {
 			continue
 		}
-		raw, err := git(dir, "cat-file", "tag", ref)
+		raw, err := git(dir, "--no-replace-objects", "cat-file", "tag", ref)
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -181,7 +181,7 @@ func runHistory(args []string, dir string, stdout, stderr io.Writer) int {
 			tagHits = append(tagHits, fmt.Sprintf("leakcheck: tag %s line %d: %s", ref, n, join(found)))
 		})
 	}
-	refs, err := git(dir, "for-each-ref", "--format=%(refname)")
+	refs, err := git(dir, "--no-replace-objects", "for-each-ref", "--format=%(refname)")
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -212,7 +212,7 @@ func runHistory(args []string, dir string, stdout, stderr io.Writer) int {
 // historyCommits lists the commits and their scanned fields in one git call. Records are NUL-terminated
 // (-z) with seven NUL-separated fields each; the message is last and holds no NUL.
 func historyCommits(dir string, revs []string) ([]histCommit, error) {
-	args := []string{"-c", "core.quotePath=false", "log", "--no-color", "-z",
+	args := []string{"--no-replace-objects", "-c", "core.quotePath=false", "log", "--no-color", "--no-show-signature", "-z",
 		"--format=%H%x00%T%x00%an%x00%ae%x00%cn%x00%ce%x00%B"}
 	if len(revs) == 0 {
 		args = append(args, "--all")
@@ -246,7 +246,7 @@ func scanBlobs(dir string, blobs []blobRef, fn func(b blobRef, content string)) 
 	if len(blobs) == 0 {
 		return nil
 	}
-	cmd := exec.Command("git", "cat-file", "--batch")
+	cmd := exec.Command("git", "--no-replace-objects", "cat-file", "--batch")
 	cmd.Dir = dir
 	var stderr strings.Builder
 	cmd.Stderr = &stderr

@@ -70,6 +70,11 @@ leakcheck: history: <N> hits in <M> commits
 
 Exit 0 no hit, 1 a hit or any error (fail closed), 2 usage (bad flag, or a REV starting with `-`).
 
+Relative `-root` and `-allow` paths resolve against the working directory. Hits print grouped by surface (blob,
+path, message, identity, tag, ref). An explicit `--all`, or a flag after a REV, is a usage error. Git runs with
+`--no-replace-objects`, so the real objects are scanned, not replacements. UTF-16 blobs are read as bytes (terms
+between NULs are not seen). Gitlink (submodule) entries are skipped, their paths too.
+
 Limits: a ref pointing at a tree or blob is not walked, and a tag of a tag shows only the outer tag.
 
 ## Deliberate false positives
