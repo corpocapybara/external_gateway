@@ -699,3 +699,84 @@ func TestFormSessionEnvFields(t *testing.T) {
 		})
 	}
 }
+
+// fsRefuseLogin answers every login with a 401 (wrong or rotated password).
+func fsRefuseLogin(w http.ResponseWriter, r *http.Request, n int) { w.WriteHeader(http.StatusUnauthorized) }
+
+func TestFormSessionLoginBackoff(t *testing.T) {
+	u := newFSUpstream(t, fsCookie, false)
+	u.onLogin = fsRefuseLogin
+	s := newFormSessionServer(t, fsStore("fs1"), fsEnv{ws: "fs1", site: "codimd", env: "prod", url: u.srv.URL})
+	_, out, raw := fsCall(t, s, "fs1", "codimd.note", nil)
+	fsWantError(t, out, raw)
+	if strings.Contains(raw, "login not retried") {
+		t.Fatalf("first call is a real login: %s", raw)
+	}
+	for i := 2; i <= 3; i++ {
+		_, out, raw := fsCall(t, s, "fs1", "codimd.note", nil)
+		fsWantError(t, out, raw)
+		if !strings.Contains(raw, "login refused (status 401); login not retried for ") {
+			t.Fatalf("call %d: want the stored error with the suffix: %s", i, raw)
+		}
+		assertNoLeak(t, raw)
+	}
+	fsWantCounts(t, u, 1, 0)
+}
+
+func TestFormSessionReloginRefusedBackoff(t *testing.T) {
+	u := newFSUpstream(t, fsCookie, false)
+	u.onLogin = func(w http.ResponseWriter, r *http.Request, n int) {
+		if n == 1 {
+			fsLoginOK(w, fsCookie)
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}
+	u.onData = func(w http.ResponseWriter, r *http.Request, n int) { w.WriteHeader(http.StatusUnauthorized) }
+	s := newFormSessionServer(t, fsStore("fs1"), fsEnv{ws: "fs1", site: "codimd", env: "prod", url: u.srv.URL})
+	_, out, raw := fsCall(t, s, "fs1", "codimd.note", nil)
+	fsWantError(t, out, raw)
+	fsWantCounts(t, u, 2, 1)
+	_, out, raw = fsCall(t, s, "fs1", "codimd.note", nil)
+	fsWantError(t, out, raw)
+	if !strings.Contains(raw, "login not retried for ") {
+		t.Fatalf("want the backoff error: %s", raw)
+	}
+	fsWantCounts(t, u, 2, 1)
+}
+
+// fsBackoffThenAdmin starts a backoff, runs one admin call and checks that the
+// next op call logs in again (and, still refused, is not a backoff answer).
+func fsBackoffThenAdmin(t *testing.T, method, path, body string) {
+	t.Helper()
+	u := newFSUpstream(t, fsCookie, false)
+	u.onLogin = fsRefuseLogin
+	s := newFormSessionServer(t, fsStore("fs1"), fsEnv{ws: "fs1", site: "codimd", env: "prod", url: u.srv.URL})
+	fsCall(t, s, "fs1", "codimd.note", nil)
+	if _, _, raw := fsCall(t, s, "fs1", "codimd.note", nil); !strings.Contains(raw, "login not retried") {
+		t.Fatalf("precondition: want a backoff answer: %s", raw)
+	}
+	fsWantCounts(t, u, 1, 0)
+	if w := adminDo(s, method, path, body); w.Code != 200 {
+		t.Fatalf("admin %s: %d %s", path, w.Code, w.Body.String())
+	}
+	_, out, raw := fsCall(t, s, "fs1", "codimd.note", nil)
+	fsWantError(t, out, raw)
+	if strings.Contains(raw, "login not retried") {
+		t.Fatalf("after admin %s: still backing off: %s", path, raw)
+	}
+	fsWantCounts(t, u, 2, 0)
+}
+
+func TestFormSessionBackoffResetByReload(t *testing.T) {
+	fsBackoffThenAdmin(t, http.MethodPost, "/admin/reload", "")
+}
+
+func TestFormSessionBackoffResetBySecretWrite(t *testing.T) {
+	t.Run("set", func(t *testing.T) {
+		fsBackoffThenAdmin(t, http.MethodPost, "/admin/secrets", `{"workspace":"fs1","name":"codimd","value":"pw-EG43-rotated"}`)
+	})
+	t.Run("delete", func(t *testing.T) {
+		fsBackoffThenAdmin(t, http.MethodDelete, "/admin/secrets?workspace=fs1&name=unrelated", "")
+	})
+}
