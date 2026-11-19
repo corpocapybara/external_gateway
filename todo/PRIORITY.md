@@ -15,8 +15,7 @@ none
 ## P2
 
 - EG0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
-- EG0030 · tested · ops-config · S — No GitLab op posts a general MR note: gitlab.mr_note only replies, mr_discussion_create needs a diff position
-- EG0048 · designed · deploy · M — Rewrite git history to purge every leakcheck term (real workspace names, Jira key, hosts), then force-push · blocked by EG0030, EG0049
+- EG0048 · designed · deploy · M — Rewrite git history to purge every leakcheck term (real workspace names, Jira key, hosts), then force-push · blocked by EG0049
 - EG0054 · draft · server · S — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
 - EG0060 · draft · unset · M — Run-app note: how an agent starts and drives the ExternalGateway desktop app (cmd/egw-desktop) for the run-app check
 
