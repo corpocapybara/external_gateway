@@ -51,6 +51,10 @@ func TestLoadKnownConnectors(t *testing.T) {
 	if got := KnownConnectors(); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("KnownConnectors() = %v, want %v (keep it in step with the server dispatch map)", got, want)
 	}
+	KnownConnectors()[0] = "changed" // a copy: the caller cannot change the list
+	if got := KnownConnectors()[0]; got != "http-rest" {
+		t.Fatalf("KnownConnectors()[0] = %q after a caller wrote to its copy, want http-rest", got)
+	}
 	for _, c := range want {
 		p := writeOps(t, "  a.b:\n    connector: "+c+"\n    site: s\n    method: GET\n    path: /x\n")
 		if _, err := NewRegistry(p); err != nil {
