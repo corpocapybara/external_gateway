@@ -19,6 +19,11 @@ import (
 // SessionCookieName is the cookie a successful login sets (Express/CodiMD).
 const SessionCookieName = "connect.sid"
 
+// ErrLoginRefused is wrapped by Login when the site refused the credentials
+// (401, 403, a redirect back to the login page, or any other non-5xx answer
+// without a session cookie). Only such errors start the Sessions backoff.
+var ErrLoginRefused = errors.New("form-session login refused")
+
 // loginDrainLimit caps how much of a login response body is read (and discarded).
 const loginDrainLimit = 1 << 20
 
@@ -85,18 +90,18 @@ func (c *Connector) Login(ctx context.Context, baseURL, email, password string, 
 
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return "", fmt.Errorf("form-session login refused (status %d)", resp.StatusCode)
+		return "", fmt.Errorf("%w (status %d)", ErrLoginRefused, resp.StatusCode)
 	case resp.StatusCode >= 500:
 		return "", fmt.Errorf("form-session login failed (status %d)", resp.StatusCode)
 	case resp.StatusCode >= 300 && resp.StatusCode < 400 && NeedsLogin(resp.StatusCode, resp.Header.Get("Location")):
-		return "", errors.New("form-session login refused")
+		return "", ErrLoginRefused
 	}
 	for _, cookie := range resp.Cookies() {
 		if cookie.Name == SessionCookieName && cookie.Value != "" {
 			return cookie.Value, nil
 		}
 	}
-	return "", errors.New("form-session login: no session cookie")
+	return "", fmt.Errorf("%w: no session cookie", ErrLoginRefused)
 }
 
 // NeedsLogin reports whether an upstream answer means the session is gone: a
