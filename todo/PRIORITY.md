@@ -21,7 +21,7 @@ none
 
 ## P3
 
-- EG0043 · in-progress · connectors · S — Back off form-session logins after a failed login
+- EG0043 · in-review · connectors · S — Back off form-session logins after a failed login
 - EG0051 · draft · server · S — allow_fields ignored by local-service, postgres and jira-worklog connectors
 - EG0055 · draft · server · S — Doc drift and dead code from the project review: connector list, admin endpoints, unused TLS/listen_addr, unwired scheduler, body logging (review R7-R10)
 - EG0056 · draft · server · XS — Dependency notes from the project review: 4 outdated direct modules, no vulnerability scan (review R11)
