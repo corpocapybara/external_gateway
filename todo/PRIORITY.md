@@ -10,7 +10,7 @@ none
 
 ## P1
 
-- EG0052 · reviewed · docs · XS — Real workspace name in .ai/OPERATIONS.md and jenkins_build_params_test.go on the public repo (review R15)
+- EG0052 · in-testing · docs · XS — Real workspace name in .ai/OPERATIONS.md and jenkins_build_params_test.go on the public repo (review R15)
 
 ## P2
 
