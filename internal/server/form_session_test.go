@@ -701,7 +701,9 @@ func TestFormSessionEnvFields(t *testing.T) {
 }
 
 // fsRefuseLogin answers every login with a 401 (wrong or rotated password).
-func fsRefuseLogin(w http.ResponseWriter, r *http.Request, n int) { w.WriteHeader(http.StatusUnauthorized) }
+func fsRefuseLogin(w http.ResponseWriter, r *http.Request, n int) {
+	w.WriteHeader(http.StatusUnauthorized)
+}
 
 func TestFormSessionLoginBackoff(t *testing.T) {
 	u := newFSUpstream(t, fsCookie, false)
