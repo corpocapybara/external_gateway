@@ -21,7 +21,7 @@ none
 
 ## P3
 
-- EG0043 · refined · connectors · S — Back off form-session logins after a failed login
+- EG0043 · designed · connectors · S — Back off form-session logins after a failed login
 - EG0051 · draft · server · S — allow_fields ignored by local-service, postgres and jira-worklog connectors
 - EG0053 · draft · server · M — Structure notes from the project review: server.go dispatch chain, connector registry in two places, unowned paths (review R1, R2)
 - EG0055 · draft · server · S — Doc drift and dead code from the project review: connector list, admin endpoints, unused TLS/listen_addr, unwired scheduler, body logging (review R7-R10)
