@@ -72,7 +72,7 @@ from each config too) — so add or remove a workspace just by adding/removing i
 ## Adding a new connector — checklist
 
 1. Implement `connectors.Connector` interface in `internal/connectors/<name>/connector.go`
-2. Wire the connector into `server.go`'s operation dispatch (add a case for the connector name)
+2. Add the name to `knownConnectors` (`internal/policy/connectors.go`) and an entry to `connectorDispatches` (`internal/server/dispatch.go`); `TestConnectorDispatchMatchesPolicy` catches a missed one
 3. If it resolves secrets, use `secrets.ResolveWithWorkspaceCheck()` for cross-tenant enforcement
 4. Register taint after use: `secrets.GetTaintRegistry().Taint(secret)`
 5. Audit all responses with `s.audit.LogAllow()` or `LogDeny()`

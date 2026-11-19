@@ -1,9 +1,10 @@
 package policy
 
-// knownConnectors lists the op.Connector values that executeOp in
-// internal/server/server.go dispatches. loadFromFile refuses an op with any
-// other value, empty included (EG0041). Add a connector here and in the
-// dispatch chain together.
+// knownConnectors is the one list of op.Connector values. loadFromFile refuses
+// an op with any other value, empty included (EG0041). The server runs each
+// through connectorDispatches (internal/server/dispatch.go); add a connector
+// here and there together: TestConnectorDispatchMatchesPolicy fails on a
+// missed one (EG0063).
 var knownConnectors = []string{
 	"http-rest",
 	"form-session",
@@ -12,6 +13,11 @@ var knownConnectors = []string{
 	"mcp",
 	"email",
 	"jira-worklog",
+}
+
+// KnownConnectors returns a copy of the accepted connector names.
+func KnownConnectors() []string {
+	return append([]string(nil), knownConnectors...)
 }
 
 func isKnownConnector(name string) bool {
