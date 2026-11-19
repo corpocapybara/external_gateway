@@ -23,12 +23,13 @@ none
 
 - EG0043 · in-progress · connectors · S — Back off form-session logins after a failed login
 - EG0051 · draft · server · S — allow_fields ignored by local-service, postgres and jira-worklog connectors
-- EG0053 · draft · server · M — Structure notes from the project review: server.go dispatch chain, connector registry in two places, unowned paths (review R1, R2)
 - EG0055 · draft · server · S — Doc drift and dead code from the project review: connector list, admin endpoints, unused TLS/listen_addr, unwired scheduler, body logging (review R7-R10)
 - EG0056 · draft · server · XS — Dependency notes from the project review: 4 outdated direct modules, no vulnerability scan (review R11)
 - EG0057 · draft · server · M — Metrics notes from the project review: no runtime metrics, unbounded audit logs, service log lost, audit keyed by token hash (review R13, R14)
 - EG0059 · draft · cli-tools · S — leakcheck tests take 34 s (history scan tests add ~11 s): cut git process count
 - EG0061 · reviewed · server · XS — Remove the real Jira host label from the env_select_test.go comment
+- EG0062 · draft · server · XS — Bucket ownership for every tracked top-level path in todo/_config.yaml (review R2)
+- EG0063 · draft · server · S — Connector dispatch as a map checked against policy's connector list (review R1)
 
 ## Externally blocked
 
