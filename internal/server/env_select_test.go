@@ -115,7 +115,7 @@ func (f *envFixture) send(t *testing.T, opID, body string, dryRun bool) (int, ma
 
 // An env-less call to a site with several environments used to go to whichever
 // env Go's randomised map iteration yielded first (ACME jira: 4 of 18 calls hit
-// the VPN-only jiraops). With default_env set, it always goes to that env.
+// the VPN-only Jira env). With default_env set, it always goes to that env.
 func TestEnvlessCallUsesSiteDefaultEnv(t *testing.T) {
 	f := newEnvFixture(t)
 	jira := f.sites["jira"]
