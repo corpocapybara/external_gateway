@@ -580,24 +580,7 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, work
 	var responseBody []byte
 	var err error
 
-	if op.Connector == "http-rest" && op.SlackFileContent {
-		upstreamStatus, responseBody, err = s.executeSlackFileContent(ws, op, params, workspace)
-	} else if op.Connector == "http-rest" && op.JiraAttachmentContent {
-		upstreamStatus, responseBody, err = s.executeJiraAttachmentContent(ws, op, params, workspace)
-	} else if op.Connector == "http-rest" || op.Connector == "form-session" {
-		upstreamStatus, responseBody, err = s.executeHttpConnector(ws, op, params, workspace)
-	} else if op.Connector == "postgres" {
-		upstreamStatus, responseBody, err = s.executePostgresConnector(ws, op, params, workspace)
-	} else if op.Connector == "local-service" {
-		responseBody, err = s.executeLocalServiceConnector(ws, op, params)
-		upstreamStatus = 200
-	} else if op.Connector == "mcp" {
-		upstreamStatus, responseBody, err = s.executeMcpConnector(ws, op, params, workspace)
-	} else if op.Connector == "email" {
-		upstreamStatus, responseBody, err = s.executeEmailConnector(ws, op, params, workspace)
-	} else if op.Connector == "jira-worklog" {
-		upstreamStatus, responseBody, err = s.executeJiraWorklog(ws, op, params, workspace)
-	}
+	upstreamStatus, responseBody, err = s.dispatchConnector(ws, op, params, workspace)
 
 	var cd *policy.ConstraintDenied
 	if errors.As(err, &cd) {
@@ -724,11 +707,10 @@ func resolveEnv(site config.Site, siteName string, params map[string]interface{}
 
 // checkEnvSelection refuses a request whose environment is missing-but-ambiguous
 // or unknown, before anything is resolved or sent upstream. It covers the
-// connectors that pick their environment with resolveEnv.
+// connectors that pick their environment with resolveEnv (pickEnv in
+// connectorDispatches).
 func checkEnvSelection(ws *config.Workspace, op *policy.Operation, params map[string]interface{}) error {
-	switch op.Connector {
-	case "http-rest", "form-session", "mcp", "email", "jira-worklog":
-	default:
+	if d, ok := connectorDispatches[op.Connector]; !ok || !d.pickEnv {
 		return nil
 	}
 	site, ok := ws.Sites[op.Site]

@@ -43,13 +43,17 @@ func TestLoadUnknownConnector(t *testing.T) {
 		`operation a.b: unknown connector "http_rest"`)
 }
 
-// Every connector executeOp dispatches (internal/server/server.go) loads. The
-// names are pinned here, not read from knownConnectors, so a name dropped from
+// Every connector the server dispatches (internal/server/dispatch.go) loads. The
+// names are pinned here, not read from KnownConnectors(), so a name dropped from
 // or added to the list fails this test until it is changed on purpose.
 func TestLoadKnownConnectors(t *testing.T) {
 	want := []string{"http-rest", "form-session", "postgres", "local-service", "mcp", "email", "jira-worklog"}
-	if strings.Join(knownConnectors, ",") != strings.Join(want, ",") {
-		t.Fatalf("knownConnectors = %v, want %v (keep it in step with the executeOp dispatch)", knownConnectors, want)
+	if got := KnownConnectors(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("KnownConnectors() = %v, want %v (keep it in step with the server dispatch map)", got, want)
+	}
+	KnownConnectors()[0] = "changed" // a copy: the caller cannot change the list
+	if got := KnownConnectors()[0]; got != "http-rest" {
+		t.Fatalf("KnownConnectors()[0] = %q after a caller wrote to its copy, want http-rest", got)
 	}
 	for _, c := range want {
 		p := writeOps(t, "  a.b:\n    connector: "+c+"\n    site: s\n    method: GET\n    path: /x\n")

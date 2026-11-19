@@ -28,7 +28,7 @@ type Credentials struct {
 
 ## Connector dispatch
 
-In `server.go`, the operation-execution path routes to the appropriate connector based on `op.Connector` (an if/else chain, not a `switch`):
+In `server.go`, the operation-execution path routes to the appropriate connector based on `op.Connector`, through the `connectorDispatches` map in `internal/server/dispatch.go` (EG0063; inside `http-rest`, `slack_file_content` and then `jira_attachment_content` ops take their own handler):
 
 ```
 "http-rest"     → executeHttpConnector       → httprest.Connector
@@ -44,7 +44,8 @@ In `server.go`, the operation-execution path routes to the appropriate connector
 `formsession.Connector.Login` and sends the session cookie in place of an auth header
 (see "Form Session Connector" below). Loading an ops file refuses an op whose `connector`
 is missing, empty or none of the above (`operation a.b: unknown connector "http_rest"`,
-EG0041); the accepted names are `knownConnectors` in `internal/policy/connectors.go`.
+EG0041); the accepted names are `policy.KnownConnectors()` (`internal/policy/connectors.go`).
+`TestConnectorDispatchMatchesPolicy` fails when that list and the dispatch map differ.
 
 ## HTTP REST Connector (`httprest`)
 
@@ -163,8 +164,10 @@ Form-based login for session-cookie sites (CodiMD), wired through `executeHttpCo
    ```go
    secrets.GetTaintRegistry().Taint(secret)
    ```
-5. Wire into `server.go` by adding a case in the connector dispatch:
+5. Add the name to `knownConnectors` in `internal/policy/connectors.go` and an entry to
+   `connectorDispatches` in `internal/server/dispatch.go` (`pickEnv: true` when it picks its
+   environment with `resolveEnv`):
    ```go
-   case "my-connector":
-       resp, err = s.myConnector.Execute(ctx, &connectors.Request{...})
+   "my-connector": {pickEnv: true, run: (*Server).executeMyConnector},
    ```
+   `TestConnectorDispatchMatchesPolicy` fails if one of the two is missed.
