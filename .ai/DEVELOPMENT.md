@@ -125,7 +125,8 @@ Invoke-RestMethod http://127.0.0.1:<port>/healthz
 
 ## Audit logs
 
-Stored at `C:\ProgramData\external_gateway\audit\audit_YYYYMMDD.log` — append-only JSONL:
+Stored at `C:\ProgramData\external_gateway\audit\audit_YYYYMMDD.log` — append-only JSONL. `agent_id` is the
+calling agent's config `agents[].id` (EG0064; files written before it hold the token's SHA-256 there):
 ```json
 {"ts":"2026-07-09T10:06:40Z","request_id":"...","agent_id":"...","workspace":"acme","operation":"gitlab.projects","params":{...},"decision":"allow","upstream_status":200,"latency_ms":1411}
 ```
