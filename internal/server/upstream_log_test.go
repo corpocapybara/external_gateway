@@ -67,7 +67,7 @@ func TestUpstreamRequestLogOmitsBody(t *testing.T) {
 	}
 }
 
-// TestCapabilitiesFeaturesLacksScheduler: the scheduler stub is gone, so
+// TestCapabilitiesFeaturesLacksScheduler: the unwired scheduler package is gone, so
 // /capabilities no longer reports it (EG0055, review R9).
 func TestCapabilitiesFeaturesLacksScheduler(t *testing.T) {
 	s := accessServer(t)
