@@ -37,6 +37,7 @@ import (
 	"github.com/external_gateway/internal/connectors/formsession"
 	"github.com/external_gateway/internal/connectors/httprest"
 	"github.com/external_gateway/internal/connectors/postgres"
+	"github.com/external_gateway/internal/metrics"
 	"github.com/external_gateway/internal/policy"
 	"github.com/external_gateway/internal/redact"
 	"github.com/external_gateway/internal/secrets"
@@ -84,6 +85,9 @@ type Server struct {
 	// session cookies, cleared wherever creds is.
 	formLogin      *formsession.Connector
 	formSessions   *formsession.Sessions
+	// metrics counts op requests since start for GET /admin/metrics (EG0066);
+	// a Server field, not runtimeState, so a reload keeps the counters.
+	metrics *metrics.Collector
 }
 
 func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logger zerolog.Logger) *Server {
@@ -99,6 +103,7 @@ func New(cfg *config.Config, reg *policy.OperationRegistry, opsPath string, logg
 		oauthCooldown: newOAuthCooldown(),
 		formLogin:    formsession.NewConnector(),
 		formSessions: formsession.NewSessions(),
+		metrics:      metrics.New(),
 	}
 	s.state.Store(&runtimeState{cfg: cfg, reg: reg})
 	s.configChecksum.Store(checksum)
@@ -385,6 +390,9 @@ func (s *Server) handleWorkspaceOp(w http.ResponseWriter, r *http.Request) {
 
 	tokenSHA := s.authenticate(r)
 	if tokenSHA == "" {
+		if r.URL.Query().Get("dry_run") != "true" {
+			s.metrics.Unattributed()
+		}
 		s.writeDeny(w, r, "", "", "", "authentication", "missing or invalid token")
 		return
 	}
@@ -506,6 +514,7 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, tokenSHA, wor
 	if agent == nil {
 		// Gone from config (reload) since authenticate: there is no agent id to
 		// audit, and the token hash is never written in its place.
+		s.metrics.Unattributed()
 		s.writeDeny(w, r, "", workspace, opID, "agent", "agent not found")
 		return
 	}
@@ -515,23 +524,32 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, tokenSHA, wor
 
 	ws := st.cfg.GetWorkspace(workspace)
 	if ws == nil {
+		s.metrics.Unattributed()
 		s.writeDeny(w, r, agentID, workspace, opID, "workspace", "workspace not found")
 		return
 	}
 
 	op, ok := st.reg.Get(opID)
 	if !ok {
+		s.metrics.Unattributed()
 		s.writeUnknownOp(w, agent, agentID, workspace, opID)
 		return
 	}
 
+	// Workspace and op resolved: from here every return is exactly one of a
+	// deny, a reject or an executed call in the op's metrics entry (EG0066).
+	deny := func(rule, detail string) {
+		s.metrics.Denied(workspace, opID)
+		s.writeDeny(w, r, agentID, workspace, opID, rule, detail)
+	}
+
 	if !agentHasOp(st.cfg, agent, workspace, opID) {
-		s.writeDeny(w, r, agentID, workspace, opID, "grant", "operation not allowed for this agent")
+		deny("grant", "operation not allowed for this agent")
 		return
 	}
 
 	if site, ok := ws.Sites[op.Site]; ok && site.Disabled {
-		s.writeDeny(w, r, agentID, workspace, opID, "disabled", "integration "+op.Site+" is disabled in this workspace")
+		deny("disabled", "integration "+op.Site+" is disabled in this workspace")
 		return
 	}
 
@@ -540,11 +558,13 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, tokenSHA, wor
 		body, readErr := io.ReadAll(r.Body)
 		var tooLarge *http.MaxBytesError
 		if errors.As(readErr, &tooLarge) {
+			s.metrics.Rejected(workspace, opID)
 			http.Error(w, fmt.Sprintf("request body exceeds %d bytes", tooLarge.Limit), http.StatusRequestEntityTooLarge)
 			return
 		}
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &params); err != nil {
+				s.metrics.Rejected(workspace, opID)
 				http.Error(w, "invalid JSON body", http.StatusBadRequest)
 				return
 			}
@@ -552,17 +572,17 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, tokenSHA, wor
 	}
 
 	if err := st.reg.ValidateParams(op, params, ws); err != nil {
-		s.writeDeny(w, r, agentID, workspace, opID, "validation", err.Error())
+		deny("validation", err.Error())
 		return
 	}
 
 	if err := st.reg.CheckConstraints(op, params, ws); err != nil {
-		s.writeDeny(w, r, agentID, workspace, opID, "constraint", err.Error())
+		deny("constraint", err.Error())
 		return
 	}
 
 	if err := s.checkParamScopes(ws, op, params); err != nil {
-		s.writeDeny(w, r, agentID, workspace, opID, "scope", err.Error())
+		deny("scope", err.Error())
 		return
 	}
 
@@ -574,12 +594,12 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, tokenSHA, wor
 	st.reg.ApplyDefaults(op, params)
 
 	if err := checkEnvSelection(ws, op, params); err != nil {
-		s.writeDeny(w, r, agentID, workspace, opID, "validation", err.Error())
+		deny("validation", err.Error())
 		return
 	}
 
 	if err := checkTunnelAccess(st, ws, op, params); err != nil {
-		s.writeDeny(w, r, agentID, workspace, opID, "tunnel", err.Error())
+		deny("tunnel", err.Error())
 		return
 	}
 
@@ -591,12 +611,13 @@ func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, tokenSHA, wor
 
 	var cd *policy.ConstraintDenied
 	if errors.As(err, &cd) {
-		s.writeDeny(w, r, agentID, workspace, opID, "constraint", cd.Detail)
+		deny("constraint", cd.Detail)
 		return
 	}
 
 	latency := time.Since(start).Milliseconds()
 	s.auditLog.LogAllow(requestID, agentID, workspace, opID, auditParams(op, params), latency, upstreamStatus)
+	s.metrics.Executed(workspace, opID, latency, err != nil || upstreamStatus >= 400)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Request-ID", requestID)
@@ -2247,7 +2268,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 0 || parts[0] == "" {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"endpoints": "POST /admin/secrets, GET /admin/secrets/status?workspace=, POST /admin/reload, POST /admin/diag",
+			"endpoints": "POST /admin/secrets, GET /admin/secrets/status?workspace=, POST /admin/reload, POST /admin/diag, GET /admin/metrics",
 		})
 		return
 	}
@@ -2448,6 +2469,18 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(results)
+
+	case "metrics":
+		if !s.authenticateAdmin(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.Error(w, "GET required", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(s.metrics.Snapshot())
 
 	case "reload":
 		if r.Method != http.MethodPost {
