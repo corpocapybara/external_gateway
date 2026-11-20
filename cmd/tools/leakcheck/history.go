@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -90,48 +92,69 @@ func runHistory(args []string, dir string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
+	refs, err := git(dir, "--no-replace-objects", "for-each-ref", "--format=%(objectname) %(refname)")
+	if err != nil {
+		return fail(stderr, err)
+	}
+
+	// One cat-file process reads every tree, blob and tag object (EG0070).
+	cf := &catFile{dir: dir}
+	defer cf.kill()
 
 	var blobHits, pathHits, msgHits, idHits, tagHits, refHits []string
 
-	// Trees, paths and blobs.
-	treeEntries := map[string][]struct{ oid, path string }{}
+	// Trees, paths and blobs. Each tree is walked depth-first in stored order, the order `ls-tree -r` lists. A
+	// (prefix, tree) pair already walked is skipped: its paths and blobs were all seen then.
+	trees := map[string][]treeEntry{}
+	walked := map[string]bool{}
 	seenPath := map[string]bool{}
 	seenBlob := map[string]bool{}
 	var blobs []blobRef
-	for _, c := range commits {
-		entries, ok := treeEntries[c.tree]
+	var walk func(c histCommit, tree, prefix string) error
+	walk = func(c histCommit, tree, prefix string) error {
+		key := prefix + "\x00" + tree
+		if walked[key] {
+			return nil
+		}
+		walked[key] = true
+		entries, ok := trees[tree]
 		if !ok {
-			out, err := git(dir, "--no-replace-objects", "-c", "core.quotePath=false", "ls-tree", "-r", "-z", "--full-tree", c.tree)
+			data, err := cf.read(tree, "tree")
 			if err != nil {
-				return fail(stderr, err)
+				return err
 			}
-			for _, rec := range strings.Split(string(out), "\x00") {
-				if rec == "" {
-					continue
-				}
-				meta, path, found := strings.Cut(rec, "\t")
-				f := strings.Fields(meta)
-				if !found || len(f) != 3 {
-					return fail(stderr, fmt.Errorf("ls-tree %s: bad record %q", c.tree, rec))
-				}
-				if f[1] != "blob" { // gitlinks (160000) and anything else that is not a file
-					continue
-				}
-				entries = append(entries, struct{ oid, path string }{f[2], path})
+			if entries, err = parseTree(tree, data); err != nil {
+				return err
 			}
-			treeEntries[c.tree] = entries
+			trees[tree] = entries
 		}
 		for _, e := range entries {
-			if !seenPath[e.path] {
-				seenPath[e.path] = true
-				if found := matchTerms(e.path, terms); len(found) > 0 {
-					pathHits = append(pathHits, fmt.Sprintf("leakcheck: path %s %s: %s", c.sha, e.path, join(found)))
+			path := prefix + e.name
+			switch e.mode & 0o170000 {
+			case 0o040000:
+				if err := walk(c, e.oid, path+"/"); err != nil {
+					return err
+				}
+				continue
+			case 0o160000: // gitlink: the commit of another repository, not a file
+				continue
+			}
+			if !seenPath[path] {
+				seenPath[path] = true
+				if found := matchTerms(path, terms); len(found) > 0 {
+					pathHits = append(pathHits, fmt.Sprintf("leakcheck: path %s %s: %s", c.sha, path, join(found)))
 				}
 			}
 			if !seenBlob[e.oid] {
 				seenBlob[e.oid] = true
-				blobs = append(blobs, blobRef{e.oid, c.sha, e.path})
+				blobs = append(blobs, blobRef{e.oid, c.sha, path})
 			}
+		}
+		return nil
+	}
+	for _, c := range commits {
+		if err := walk(c, c.tree, ""); err != nil {
+			return fail(stderr, err)
 		}
 		lineScan(c.body, func(n int, found []string) {
 			msgHits = append(msgHits, fmt.Sprintf("leakcheck: message %s line %d: %s", c.sha, n, join(found)))
@@ -143,28 +166,35 @@ func runHistory(args []string, dir string, stdout, stderr io.Writer) int {
 			idHits = append(idHits, fmt.Sprintf("leakcheck: identity %s committer: %s", c.sha, join(found)))
 		}
 	}
-	if err := scanBlobs(dir, blobs, func(b blobRef, content string) {
-		lineScan(content, func(n int, found []string) {
+	for _, b := range blobs {
+		data, err := cf.read(b.oid, "blob")
+		if err != nil {
+			return fail(stderr, fmt.Errorf("%v (%s)", err, b.path))
+		}
+		lineScan(string(data), func(n int, found []string) {
 			blobHits = append(blobHits, fmt.Sprintf("leakcheck: blob %s %s:%d: %s", b.commit, b.path, n, join(found)))
 		})
-	}); err != nil {
-		return fail(stderr, err)
 	}
 
-	// Tags and refs, whatever REV is.
-	tags, err := git(dir, "--no-replace-objects", "for-each-ref", "--format=%(objecttype) %(refname)", "refs/tags")
-	if err != nil {
-		return fail(stderr, err)
-	}
-	for _, l := range strings.Split(string(tags), "\n") {
+	// Tags and refs, whatever REV is. A ref under refs/tags is an annotated tag when its object is a tag object.
+	for _, l := range strings.Split(string(refs), "\n") {
 		l = strings.TrimSuffix(l, "\r")
-		typ, ref, ok := strings.Cut(l, " ")
-		if !ok || typ != "tag" {
+		oid, ref, ok := strings.Cut(l, " ")
+		if !ok {
 			continue
 		}
-		raw, err := git(dir, "--no-replace-objects", "cat-file", "tag", ref)
+		if found := matchTerms(ref, terms); len(found) > 0 {
+			refHits = append(refHits, fmt.Sprintf("leakcheck: ref %s: %s", ref, join(found)))
+		}
+		if !strings.HasPrefix(ref, "refs/tags/") {
+			continue
+		}
+		typ, raw, err := cf.readAny(oid)
 		if err != nil {
-			return fail(stderr, err)
+			return fail(stderr, fmt.Errorf("%v (%s)", err, ref))
+		}
+		if typ != "tag" {
+			continue
 		}
 		head, msg, _ := strings.Cut(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n\n")
 		for _, h := range strings.Split(head, "\n") {
@@ -181,18 +211,8 @@ func runHistory(args []string, dir string, stdout, stderr io.Writer) int {
 			tagHits = append(tagHits, fmt.Sprintf("leakcheck: tag %s line %d: %s", ref, n, join(found)))
 		})
 	}
-	refs, err := git(dir, "--no-replace-objects", "for-each-ref", "--format=%(refname)")
-	if err != nil {
+	if err := cf.finish(); err != nil {
 		return fail(stderr, err)
-	}
-	for _, ref := range strings.Split(string(refs), "\n") {
-		ref = strings.TrimSuffix(ref, "\r")
-		if ref == "" {
-			continue
-		}
-		if found := matchTerms(ref, terms); len(found) > 0 {
-			refHits = append(refHits, fmt.Sprintf("leakcheck: ref %s: %s", ref, join(found)))
-		}
 	}
 
 	n := 0
@@ -241,70 +261,122 @@ func historyCommits(dir string, revs []string) ([]histCommit, error) {
 	return commits, nil
 }
 
-// scanBlobs reads each blob once through one `git cat-file --batch` process and calls fn with its content.
-func scanBlobs(dir string, blobs []blobRef, fn func(b blobRef, content string)) error {
-	if len(blobs) == 0 {
+// treeEntry is one entry of a raw tree object: its octal mode, name and object id (hex).
+type treeEntry struct {
+	mode      uint32
+	name, oid string
+}
+
+// parseTree splits a raw tree object (`<octal mode> <name>\0<raw id>` records) in stored order. The raw id is as
+// long as the tree's own id: 20 bytes for sha1, 32 for sha256.
+func parseTree(id string, data []byte) ([]treeEntry, error) {
+	idLen := len(id) / 2
+	var entries []treeEntry
+	for len(data) > 0 {
+		sp := bytes.IndexByte(data, ' ')
+		nul := bytes.IndexByte(data, 0)
+		if sp <= 0 || nul < sp || nul+1+idLen > len(data) {
+			return nil, fmt.Errorf("tree %s: malformed entry", id)
+		}
+		mode, err := strconv.ParseUint(string(data[:sp]), 8, 32)
+		if err != nil {
+			return nil, fmt.Errorf("tree %s: bad mode %q", id, data[:sp])
+		}
+		entries = append(entries, treeEntry{uint32(mode), string(data[sp+1 : nul]), hex.EncodeToString(data[nul+1 : nul+1+idLen])})
+		data = data[nul+1+idLen:]
+	}
+	return entries, nil
+}
+
+// catFile is one `git cat-file --batch` process, started at the first read and driven one object at a time.
+type catFile struct {
+	dir    string
+	cmd    *exec.Cmd
+	in     io.WriteCloser
+	w      *bufio.Writer
+	r      *bufio.Reader
+	stderr strings.Builder
+}
+
+// read returns the content of the object id, which must have type want.
+func (c *catFile) read(id, want string) ([]byte, error) {
+	typ, data, err := c.readAny(id)
+	if err != nil {
+		return nil, err
+	}
+	if typ != want {
+		return nil, fmt.Errorf("git cat-file --batch: object %s is a %s, not a %s", id, typ, want)
+	}
+	return data, nil
+}
+
+// readAny returns the type and content of the object id; a missing object is an error.
+func (c *catFile) readAny(id string) (string, []byte, error) {
+	if c.cmd == nil {
+		c.cmd = gitCommand(c.dir, "--no-replace-objects", "cat-file", "--batch")
+		c.cmd.Stderr = &c.stderr
+		in, err := c.cmd.StdinPipe()
+		if err != nil {
+			return "", nil, err
+		}
+		out, err := c.cmd.StdoutPipe()
+		if err != nil {
+			return "", nil, err
+		}
+		if err := c.cmd.Start(); err != nil {
+			return "", nil, err
+		}
+		c.in, c.w, c.r = in, bufio.NewWriter(in), bufio.NewReaderSize(out, 1<<16)
+	}
+	if _, err := c.w.WriteString(id + "\n"); err != nil {
+		return "", nil, fmt.Errorf("git cat-file --batch: writing %s: %v", id, err)
+	}
+	if err := c.w.Flush(); err != nil {
+		return "", nil, fmt.Errorf("git cat-file --batch: writing %s: %v", id, err)
+	}
+	header, err := c.r.ReadString('\n')
+	if err != nil {
+		return "", nil, fmt.Errorf("git cat-file --batch: reading header of %s: %v", id, err)
+	}
+	f := strings.Fields(header)
+	if len(f) == 2 && f[1] == "missing" {
+		return "", nil, fmt.Errorf("git cat-file --batch: object %s is missing", id)
+	}
+	size := -1
+	if len(f) == 3 {
+		size, _ = strconv.Atoi(f[2])
+	}
+	if size < 0 {
+		return "", nil, fmt.Errorf("git cat-file --batch: unexpected header %q", strings.TrimSpace(header))
+	}
+	buf := make([]byte, size+1) // the content and its trailing LF
+	if _, err := io.ReadFull(c.r, buf); err != nil {
+		return "", nil, fmt.Errorf("git cat-file --batch: reading %s: %v", id, err)
+	}
+	return f[1], buf[:size], nil
+}
+
+// finish ends the process after the last read; a failed exit is an error.
+func (c *catFile) finish() error {
+	if c.cmd == nil {
 		return nil
 	}
-	cmd := exec.Command("git", "--no-replace-objects", "cat-file", "--batch")
-	cmd.Dir = dir
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	in, err := cmd.StdinPipe()
+	c.in.Close()
+	err := c.cmd.Wait()
+	c.cmd = nil
 	if err != nil {
-		return err
-	}
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	go func() {
-		w := bufio.NewWriter(in)
-		for _, b := range blobs {
-			w.WriteString(b.oid + "\n")
-		}
-		w.Flush()
-		in.Close()
-	}()
-	r := bufio.NewReaderSize(out, 1<<16)
-	var rerr error
-	for _, b := range blobs {
-		header, err := r.ReadString('\n')
-		if err != nil {
-			rerr = fmt.Errorf("git cat-file --batch: reading header of %s: %v", b.oid, err)
-			break
-		}
-		f := strings.Fields(header)
-		if len(f) == 2 && f[1] == "missing" {
-			rerr = fmt.Errorf("git cat-file --batch: blob %s (%s) is missing", b.oid, b.path)
-			break
-		}
-		size := -1
-		if len(f) == 3 {
-			size, _ = strconv.Atoi(f[2])
-		}
-		if size < 0 || f[1] != "blob" {
-			rerr = fmt.Errorf("git cat-file --batch: unexpected header %q", strings.TrimSpace(header))
-			break
-		}
-		buf := make([]byte, size+1)
-		if _, err := io.ReadFull(r, buf); err != nil {
-			rerr = fmt.Errorf("git cat-file --batch: reading blob %s: %v", b.oid, err)
-			break
-		}
-		fn(b, string(buf[:size]))
-	}
-	if rerr != nil {
-		cmd.Process.Kill()
-		io.Copy(io.Discard, out)
-		cmd.Wait()
-		return rerr
-	}
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("git cat-file --batch: %v: %s", err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("git cat-file --batch: %v: %s", err, strings.TrimSpace(c.stderr.String()))
 	}
 	return nil
+}
+
+// kill stops a process still running (an early return).
+func (c *catFile) kill() {
+	if c.cmd == nil {
+		return
+	}
+	c.in.Close()
+	c.cmd.Process.Kill()
+	c.cmd.Wait()
+	c.cmd = nil
 }

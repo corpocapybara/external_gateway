@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,16 +20,29 @@ func (r *repo) hist(args ...string) (int, string, string) {
 	return code, stdout.String(), stderr.String()
 }
 
+// gitIn runs git in the repo with stdin and returns its trimmed stdout.
+func (r *repo) gitIn(stdin string, args ...string) string {
+	r.t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = r.dir
+	cmd.Stdin = strings.NewReader(stdin)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		r.t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, stderr.String())
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // fastImport feeds one git fast-import stream to the repo: the whole fixture history in one git process (EG0059).
 func (r *repo) fastImport(stream string) {
 	r.t.Helper()
-	cmd := exec.Command("git", "fast-import", "--quiet")
-	cmd.Dir = r.dir
-	cmd.Stdin = strings.NewReader(stream)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		r.t.Fatalf("git fast-import: %v: %s", err, out)
-	}
+	r.gitIn(stream, "fast-import", "--quiet")
 }
+
+// fiData is a fast-import data block.
+func fiData(s string) string { return fmt.Sprintf("data %d\n%s\n", len(s), s) }
 
 // wantHist asserts the exit code and the exact stdout lines (order-insensitive except the last, the count line).
 func wantHist(t *testing.T, code int, stdout string, wantCode int, want ...string) {
@@ -133,6 +147,81 @@ func TestHistoryLeakyRepo(t *testing.T) {
 		"leakcheck: tag refs/tags/v1 tagger: zork",
 		"leakcheck: ref refs/heads/zork-branch: zork",
 		"leakcheck: history: 9 hits in 8 commits")
+}
+
+// TestHistoryTreeWalk covers the one-process tree walk (EG0070): a fixed git process count, subtree reuse under a
+// new prefix, tree order, gitlinks, a dangling ref, tags, sha256 and fail-closed reads of broken trees.
+func TestHistoryTreeWalk(t *testing.T) {
+	r := newRepo(t, testTerms)
+	const me = "t <t@example.invalid>"
+	commit := func(ts int, changes string) string {
+		return fmt.Sprintf("commit refs/heads/main\nauthor %s %d +0000\ncommitter %s %d +0000\n%s", me, ts, me, ts, fiData("m\n")) + changes
+	}
+	file := func(path, content string) string { return "M 100644 inline " + path + "\n" + fiData(content) }
+	r.fastImport(
+		// A: the subtree docs/sub under a clean directory.
+		commit(1700000001, file("docs/sub/f.txt", "fine\n")) +
+			// B: the same subtree object under a term directory: zork/ has the same tree id as docs/.
+			commit(1700000002, file("zork/sub/f.txt", "fine\n")) +
+			// C: docs/ again at the same prefix; one term blob at a.txt and a/x.txt; a gitlink to an absent commit.
+			commit(1700000003, "D zork\n"+file("a.txt", "acme-real here\n")+file("a/x.txt", "acme-real here\n")+
+				"M 160000 1111111111111111111111111111111111111111 zork-mod\n") +
+			"tag v1\nfrom refs/heads/main\ntagger zork <ok@example.invalid> 1700000004 +0000\n" + fiData("clean\n") +
+			"tag v2\nfrom refs/heads/main\ntagger " + me + " 1700000005 +0000\n" + fiData("line one\nzork here\n"))
+	ids := strings.Fields(r.git("rev-list", "--reverse", "main"))
+	if len(ids) != 3 {
+		t.Fatalf("fixture commits %q, want 3", ids)
+	}
+	b, c := ids[1], ids[2]
+	// A dangling ref is only name-scanned (git log --all would refuse it, so the scans name main).
+	r.write(".git/refs/heads/zork-dangling", "2222222222222222222222222222222222222222\n")
+
+	want := []string{
+		"leakcheck: blob " + c + " a.txt:1: acme-real",
+		"leakcheck: path " + b + " zork/sub/f.txt: zork",
+		"leakcheck: tag refs/tags/v1 tagger: zork",
+		"leakcheck: tag refs/tags/v2 line 2: zork",
+		"leakcheck: ref refs/heads/zork-dangling: zork",
+		"leakcheck: history: 5 hits in 3 commits",
+	}
+	for _, tc := range []struct {
+		args  []string
+		procs int
+	}{{[]string{"-root", r.dir, "main"}, 3}, {[]string{"main"}, 4}} {
+		before := gitStarts
+		code, out, _ := r.hist(tc.args...)
+		if got := gitStarts - before; got != tc.procs {
+			t.Errorf("history %q started %d git processes, want %d", tc.args, got, tc.procs)
+		}
+		wantHist(t, code, out, 1, want...)
+	}
+
+	// Fail closed on a missing subtree, a blob under a tree entry and a truncated tree.
+	blob, err := hex.DecodeString(strings.TrimSpace(r.git("rev-parse", "main:docs/sub/f.txt")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tree := range map[string]string{
+		"missing subtree": r.gitIn("040000 tree 3333333333333333333333333333333333333333\tsub\n", "mktree", "--missing"),
+		"blob as tree":    r.gitIn("40000 sub\x00"+string(blob), "hash-object", "-t", "tree", "--literally", "-w", "--stdin"),
+		"truncated tree":  r.gitIn("100644 f\x00abc", "hash-object", "-t", "tree", "--literally", "-w", "--stdin"),
+	} {
+		id := strings.TrimSpace(r.git("commit-tree", tree, "-m", name))
+		if code, _, stderr := r.hist("-root", r.dir, id); code != 1 || !strings.Contains(stderr, "leakcheck: error:") {
+			t.Errorf("%s: exit %d, stderr %q; want exit 1 and an error line", name, code, stderr)
+		}
+	}
+
+	// sha256: 32-byte ids in tree entries.
+	r2 := &repo{t: t, dir: t.TempDir()}
+	r2.git("init", "-q", "-b", "main", "--object-format=sha256")
+	r2.write(termsRel, testTerms)
+	r2.fastImport(commit(1700000001, file("a/b/c.txt", "zork\n")))
+	id := strings.TrimSpace(r2.git("rev-parse", "main"))
+	code, out, _ := r2.hist("-root", r2.dir)
+	wantHist(t, code, out, 1,
+		"leakcheck: blob "+id+" a/b/c.txt:1: zork",
+		"leakcheck: history: 1 hits in 1 commits")
 }
 
 // TestHistoryNoRepo covers usage and error exits without a repository.
