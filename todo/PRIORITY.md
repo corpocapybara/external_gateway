@@ -20,7 +20,6 @@ none
 ## P3
 
 - EG0051 · draft · server · S — allow_fields ignored by local-service, postgres and jira-worklog connectors
-- EG0059 · draft · cli-tools · S — leakcheck tests take 34 s (history scan tests add ~11 s): cut git process count
 - EG0065 · draft · server · S — Audit file retention and a persisted service log under the SCM (review R13)
 - EG0066 · draft · server · M — Runtime metrics: per-op request count and latency, process CPU and RSS (review R13)
 - EG0068 · draft · server · XS — Run govulncheck ./... and record the result in the project review (review R11)
