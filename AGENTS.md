@@ -30,6 +30,8 @@ Workspace convention: `config.<x>.yaml` is the single source of truth — everyt
 .\deploy\update.ps1     # Admin shell; rebuilds egw.exe itself
 ```
 
+Desktop app (`cmd/egw-desktop`): how an agent builds, starts, drives and stops it for the run-app check is in `.ai/DEVELOPMENT.md` "Running the desktop app (run-app check)".
+
 ## Testing an operation
 
 ```powershell
