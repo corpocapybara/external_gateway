@@ -25,6 +25,7 @@ none
 - EG0065 · draft · server · S — Audit file retention and a persisted service log under the SCM (review R13)
 - EG0066 · draft · server · M — Runtime metrics: per-op request count and latency, process CPU and RSS (review R13)
 - EG0068 · draft · server · XS — Run govulncheck ./... and record the result in the project review (review R11)
+- EG0069 · draft · server · XS — Config validation: agents[].id must be non-empty and unique (audit agent_id is now the config id, EG0064)
 
 ## Externally blocked
 
