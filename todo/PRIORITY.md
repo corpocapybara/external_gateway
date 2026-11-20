@@ -24,7 +24,6 @@ none
 - EG0065 · draft · server · M — Audit file retention and a persisted service log under the SCM (review R13)
 - EG0066 · draft · server · M — Runtime metrics: per-op request count and latency, process CPU and RSS (review R13)
 - EG0069 · draft · server · XS — Config validation: agents[].id must be non-empty and unique (audit agent_id is now the config id, EG0064)
-- EG0070 · draft · cli-tools · S — leakcheck history starts one git ls-tree per distinct tree (~710 on this repo): read trees in one process
 
 ## Externally blocked
 
