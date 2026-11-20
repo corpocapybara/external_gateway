@@ -7,11 +7,11 @@ Todo: `todo/EG0021.md` (its acceptance is the contract; this doc says how). Work
 
 - `kibana_index_scope` becomes `constraintChecked` with its own case in `CheckConstraints` (D1).
 - The only accepted `indices` value is the string `$workspace.kibana_indices`; any other value, a missing `indices`
-  or an op with no `index` param is refused when the ops file loads (D2).
+  or an op with no string `index` param is refused when the ops file loads (D2).
 - An empty `kibana_indices` list leaves the op unscoped: no check at all (owner 2026-11-12; D3).
 - The checked value is the `index` param, else the op's declared `index` default (CheckConstraints runs before
   ApplyDefaults); omitted with no default, or not a string, is refused (D4).
-- The value is split on commas, each element trimmed; an empty element (also an empty or blank index) is
+- The value is split on commas, each element trimmed of ASCII space and tab; an empty element (also an empty or blank index) is
   refused (D5).
 - Each element must pass a character rule: only `A-Z a-z 0-9 . _ - *`, at most 255 bytes, not starting with `-` or
   `_`, not `.`, no `..`. This refuses `_all`, `-x`, `?`, `[`, `]` (owner answers) and also `/ : # & % < >` and
