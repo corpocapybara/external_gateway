@@ -16,6 +16,7 @@ none
 
 - EG0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - EG0054 · draft · server · S — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
+- EG0071 · draft · connectors · S — Data race in email connector ReadMessage (go test -race fails TestEmailResponseShaped, TestEmailResponseNoAllowFieldsUnchanged)
 
 ## P3
 
