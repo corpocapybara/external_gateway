@@ -21,11 +21,12 @@ none
 
 - EG0051 · draft · server · S — allow_fields ignored by local-service, postgres and jira-worklog connectors
 - EG0055 · draft · server · S — Doc drift and dead code from the project review: connector list, admin endpoints, unused TLS/listen_addr, unwired scheduler, body logging (review R7-R10)
-- EG0056 · draft · server · XS — Dependency notes from the project review: 4 outdated direct modules, no vulnerability scan (review R11)
 - EG0059 · draft · cli-tools · S — leakcheck tests take 34 s (history scan tests add ~11 s): cut git process count
 - EG0064 · draft · server · S — Audit records carry the configured agent id, not the token SHA-256 (review R14)
 - EG0065 · draft · server · S — Audit file retention and a persisted service log under the SCM (review R13)
 - EG0066 · draft · server · M — Runtime metrics: per-op request count and latency, process CPU and RSS (review R13)
+- EG0067 · draft · server · XS — Update the 4 outdated direct Go modules: wincred, go-sasl, zerolog, x/sys (review R11)
+- EG0068 · draft · server · XS — Run govulncheck ./... and record the result in the project review (review R11)
 
 ## Externally blocked
 
