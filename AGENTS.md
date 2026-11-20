@@ -68,6 +68,7 @@ See `docs/SLACK.md` for full details.
 | `/admin/secrets/status` | GET | Every secret `?workspace=` references, with whether it is set |
 | `/admin/reload` | POST | Hot-reload config and ops from disk |
 | `/admin/diag` | POST | Per-env secret resolution and login checks for body `{"workspace","site"}` |
+| `/admin/metrics` | GET | Per workspace+op request, deny, reject, error counts and latency (count, p50/p95/p99, max ms) since start; `denied_unattributed`; process CPU, RSS, goroutines, threads (EG0066) |
 
 ## Error responses
 
