@@ -2,6 +2,8 @@ module github.com/external_gateway
 
 go 1.26.0
 
+toolchain go1.26.11
+
 require (
 	fyne.io/systray v1.11.0
 	github.com/danieljoos/wincred v1.2.3

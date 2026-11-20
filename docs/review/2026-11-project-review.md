@@ -2,7 +2,7 @@
 
 ```
 repo: apps/external_gateway   variant: full   rubric: v1
-findings: 2 blocking, 14 note   todos: EG0052, EG0053, EG0054, EG0055, EG0056, EG0057, EG0048
+findings: 2 blocking, 14 note   todos: EG0052, EG0053, EG0054, EG0055, EG0067, EG0068, EG0057, EG0048
 suite: 29.0 s (full, cap 15 min)   docker: --cpus 0.5 --memory 512m
 affected-tests: no   speed-tags: no   metrics: partial
 ```
@@ -19,7 +19,7 @@ affected-tests: no   speed-tags: no   metrics: partial
 | R8 | note | 3 Bugs and drift | EG0055 |
 | R9 | note | 3 Bugs and drift | EG0055 |
 | R10 | note | 3 Bugs and drift | EG0055 |
-| R11 | note | 4 Technology | EG0056 |
+| R11 | note | 4 Technology | EG0067, EG0068 |
 | R12 | note | 5 Performance (tests) | EG0054 |
 | R13 | note | 6 Metrics | EG0057 |
 | R14 | note | 6 Metrics | EG0057 |
@@ -174,9 +174,15 @@ the service itself cross-compiles for Linux (`GOOS=linux GOARCH=amd64 CGO_ENABLE
 - **R11 (note)** `go list -u -m all`: 23 of 35 modules have a newer version; 4 of 10 direct requirements are behind:
   `danieljoos/wincred v1.1.2 [v1.2.3]`, `emersion/go-sasl` (2020 pseudo-version, 2024 available),
   `rs/zerolog v1.31.0 [v1.35.1]`, `golang.org/x/sys v0.41.0 [v0.50.0]`; indirect `golang.org/x/crypto v0.48.0
-  [v0.59.0]`, `golang.org/x/net v0.49.0 [v0.62.0]`. Vulnerabilities: UNVERIFIED - needs: `govulncheck ./...`
-  (not installed on this machine; fetching and running it with `go run ...@latest` was refused in this session).
-  Todo EG0056.
+  [v0.59.0]`, `golang.org/x/net v0.49.0 [v0.62.0]`. Vulnerabilities (2026-11-20, EG0068, on master after the
+  EG0067 module updates, merge e042e06): `govulncheck ./...` (govulncheck@v1.10.0, go1.26.5, DB updated
+  2026-11-11) exit 3, 17 called (symbol-level) vulnerabilities, all in the standard library: GO-2026-6859, -6809,
+  -6617, -6613, -6612, -6611, -6610, -6608, -6607, -6605, -6603, -6218, -6090, -6089, -6088, -5972, -5026 (net/http,
+  crypto/tls, crypto/x509, net/textproto, net/url, encoding/xml, encoding/asn1; fixed in go1.26.6 to go1.26.11).
+  None called in third-party modules (3 in imported packages and 22 in required modules not called). Fixed by the
+  line `toolchain go1.26.11` in `go.mod`: re-run under go1.26.11 printed `No vulnerabilities found.` (exit 0);
+  `go test ./...` passes. Deployed binaries keep go1.26.5 until rebuilt with `deploy\update.ps1`.
+  Todos EG0067, EG0068.
 
 ## 5. Performance and resources
 
@@ -289,7 +295,7 @@ checked: areas 1-7 in full; timed suite once (`go test -json -count=1 ./...`, 28
 control) and real-names count over all refs; live listeners. Names check of this report and the filed todos:
 `python -I -X utf8 .scratch/review/names_check.py paths docs/review/ todo/EG0052.md todo/EG0053.md todo/EG0054.md
 todo/EG0055.md todo/EG0056.md todo/EG0057.md` (pattern read from `.ai/LOCAL.md` section 'Real names in tracked
-files' at run time) returned 0 hits. Skipped: vulnerability scan (govulncheck not installed, see R11); memory-pressure
+files' at run time) returned 0 hits. Skipped: memory-pressure
 and slow-disk degradation (the app never neared a memory cap); the test suite in Docker (Windows-only tests); the live
 audit volume (outside this session's folders); a full duplication analysis beyond repeated function names.
 
