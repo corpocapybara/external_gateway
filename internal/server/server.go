@@ -384,8 +384,8 @@ func (s *Server) handleWorkspaceOp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agentID := s.authenticate(r)
-	if agentID == "" {
+	tokenSHA := s.authenticate(r)
+	if tokenSHA == "" {
 		s.writeDeny(w, r, "", "", "", "authentication", "missing or invalid token")
 		return
 	}
@@ -402,11 +402,11 @@ func (s *Server) handleWorkspaceOp(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxOpBodyBytes)
 
 	if r.URL.Query().Get("dry_run") == "true" {
-		s.handleDryRun(w, r, agentID, workspace, opID)
+		s.handleDryRun(w, r, tokenSHA, workspace, opID)
 		return
 	}
 
-	s.executeOp(w, r, agentID, workspace, opID)
+	s.executeOp(w, r, tokenSHA, workspace, opID)
 }
 
 // maxOpBodyBytes caps an operation's JSON params, which for an upload carry the
@@ -431,13 +431,16 @@ func auditParams(op *policy.Operation, params map[string]interface{}) map[string
 	return out
 }
 
-func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, agentID, workspace, opID string) {
+func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, tokenSHA, workspace, opID string) {
 	st := s.state.Load()
-	agent := st.cfg.GetAgentByTokenSHA(agentID)
+	agent := st.cfg.GetAgentByTokenSHA(tokenSHA)
 	if agent == nil {
 		http.Error(w, "agent not found", http.StatusNotFound)
 		return
 	}
+	// Audit records name the configured agent id, never the token hash: a
+	// rotated token must not split an agent's history.
+	agentID := agent.ID
 
 	ws := st.cfg.GetWorkspace(workspace)
 	if ws == nil {
@@ -495,16 +498,21 @@ func (s *Server) handleDryRun(w http.ResponseWriter, r *http.Request, agentID, w
 	})
 }
 
-func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, agentID, workspace, opID string) {
+func (s *Server) executeOp(w http.ResponseWriter, r *http.Request, tokenSHA, workspace, opID string) {
 	st := s.state.Load()
 	requestID := uuid.New().String()
 	start := time.Now()
 
-	agent := st.cfg.GetAgentByTokenSHA(agentID)
+	agent := st.cfg.GetAgentByTokenSHA(tokenSHA)
 	if agent == nil {
-		s.writeDeny(w, r, agentID, workspace, opID, "agent", "agent not found")
+		// Gone from config (reload) since authenticate: there is no agent id to
+		// audit, and the token hash is never written in its place.
+		s.writeDeny(w, r, "", workspace, opID, "agent", "agent not found")
 		return
 	}
+	// Audit records name the configured agent id, never the token hash: a
+	// rotated token must not split an agent's history.
+	agentID := agent.ID
 
 	ws := st.cfg.GetWorkspace(workspace)
 	if ws == nil {
