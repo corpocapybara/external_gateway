@@ -25,8 +25,7 @@ none
 - EG0064 · draft · server · S — Audit records carry the configured agent id, not the token SHA-256 (review R14)
 - EG0065 · draft · server · S — Audit file retention and a persisted service log under the SCM (review R13)
 - EG0066 · draft · server · M — Runtime metrics: per-op request count and latency, process CPU and RSS (review R13)
-- EG0067 · draft · server · XS — Update the 4 outdated direct Go modules: wincred, go-sasl, zerolog, x/sys (review R11)
-- EG0068 · draft · server · XS — Run govulncheck ./... and record the result in the project review (review R11) · blocked by EG0067
+- EG0068 · draft · server · XS — Run govulncheck ./... and record the result in the project review (review R11)
 
 ## Externally blocked
 
