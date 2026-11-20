@@ -16,7 +16,6 @@ none
 
 - EG0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - EG0054 · draft · server · S — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
-- EG0068 · draft · server · XS — Run govulncheck ./... and record the result in the project review (review R11)
 
 ## P3
 
