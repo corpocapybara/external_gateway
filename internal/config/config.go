@@ -15,6 +15,7 @@ type Config struct {
 	Agents        []Agent              `yaml:"agents"`
 	Server        ServerConfig         `yaml:"server"`
 	Audit         AuditConfig          `yaml:"audit"`
+	Log           LogConfig            `yaml:"log"`
 	Tunnels       map[string]Tunnel    `yaml:"tunnels"`
 	SecretStore   SecretStoreConfig    `yaml:"secret_store"`
 	AdminTokenSHA string               `yaml:"admin_token_sha256"`
@@ -220,6 +221,26 @@ type ServerConfig struct {
 type AuditConfig struct {
 	Dir       string `yaml:"dir"`
 	MaxSizeMB int    `yaml:"max_size_mb"`
+	// RetentionDays is how many days of audit_<date>.log files to keep (EG0065).
+	// Unset means DefaultAuditRetentionDays; 0 keeps every file; negative is refused.
+	RetentionDays *int `yaml:"retention_days"`
+}
+
+// DefaultAuditRetentionDays applies when audit.retention_days is unset.
+const DefaultAuditRetentionDays = 90
+
+// Retention returns the effective audit.retention_days.
+func (a AuditConfig) Retention() int {
+	if a.RetentionDays == nil {
+		return DefaultAuditRetentionDays
+	}
+	return *a.RetentionDays
+}
+
+// LogConfig controls the operational (zerolog) log. File overrides the default
+// service log path, used only when egw runs under the SCM (EG0065).
+type LogConfig struct {
+	File string `yaml:"file"`
 }
 
 func Load(path string) (*Config, error) {
@@ -245,6 +266,9 @@ func Load(path string) (*Config, error) {
 func (c *Config) Validate() error {
 	if err := c.Feedback.validate(); err != nil {
 		return err
+	}
+	if c.Audit.RetentionDays != nil && *c.Audit.RetentionDays < 0 {
+		return fmt.Errorf("audit.retention_days %d is negative", *c.Audit.RetentionDays)
 	}
 	if len(c.Agents) == 0 {
 		return fmt.Errorf("no agents defined")

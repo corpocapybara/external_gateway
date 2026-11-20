@@ -73,7 +73,7 @@ func auditRecords(t *testing.T, requestID string) []audit.Record {
 
 func TestJiraLinkDeletePrecheck(t *testing.T) {
 	// Init first: Dir() is read below. A process-global logger from an earlier test is kept.
-	if err := audit.Init(t.TempDir(), 1); err != nil {
+	if err := audit.Init(t.TempDir(), 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	// An earlier test's t.TempDir may already be gone: recreate the shared audit dir.

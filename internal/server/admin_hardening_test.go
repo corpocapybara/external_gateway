@@ -153,7 +153,7 @@ func TestReloadConcurrentWithRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := audit.Init(dir, 1); err != nil {
+	if err := audit.Init(dir, 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	s := New(cfg, reg, opsPath, zerolog.Nop())
@@ -210,7 +210,7 @@ func TestReloadRefusesUnknownConstraintType(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := audit.Init(dir, 1); err != nil {
+	if err := audit.Init(dir, 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	s := New(cfg, reg, opsPath, zerolog.Nop())
@@ -266,7 +266,7 @@ func TestReloadRefusesNilOperation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := audit.Init(dir, 1); err != nil {
+	if err := audit.Init(dir, 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	s := New(cfg, reg, opsPath, zerolog.Nop())

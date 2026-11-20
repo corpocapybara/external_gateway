@@ -59,7 +59,9 @@ func (p *program) Stop(s service.Service) error {
 func main() {
 	flag.Parse()
 
-	logger := zerolog.New(os.Stderr).With().Timestamp().Caller().Logger()
+	// Under the SCM stderr goes nowhere: also write the log to a file, opened
+	// before the config so a config-load failure is persisted too (EG0065).
+	logger, logFile := newLogger(serviceLogPath(service.Interactive(), *svcName, ""), os.Stderr)
 	if *verbose {
 		logger = logger.Level(zerolog.DebugLevel)
 	}
@@ -110,15 +112,22 @@ func main() {
 	}
 
 	cfg, opsPath_, port_ := resolveConfig(logger)
+	if logFile != nil {
+		// Every logger copy shares logFile, so switching it in place is enough.
+		path := serviceLogPath(false, *svcName, cfg.Log.File)
+		if err := logFile.Switch(path, cfg.Audit.Retention()); err != nil {
+			warnLogFile(logger, path, err)
+		}
+	}
 	_, ln, httpSrv := setup(cfg, opsPath_, port_, logger)
 
 	p := &program{httpSrv: httpSrv, ln: ln, logger: logger}
 	svc, err := service.New(p, svcCfg)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal().Err(err).Msg("creating service")
 	}
 	if err := svc.Run(); err != nil {
-		log.Fatal(err)
+		logger.Fatal().Err(err).Msg("running service")
 	}
 }
 
@@ -165,8 +174,11 @@ func flagWasSet(name string) bool {
 }
 
 func setup(cfg *config.Config, opsPath_ string, port_ int, logger zerolog.Logger) (*server.Server, net.Listener, *http.Server) {
-	if err := audit.Init(cfg.Audit.Dir, cfg.Audit.MaxSizeMB); err != nil {
+	if err := audit.Init(cfg.Audit.Dir, cfg.Audit.MaxSizeMB, cfg.Audit.Retention()); err != nil {
 		logger.Fatal().Err(err).Msg("initializing audit")
+	}
+	if err := audit.GetLogger().PruneErr(); err != nil {
+		logger.Warn().Err(err).Str("dir", cfg.Audit.Dir).Msg("audit prune")
 	}
 
 	secrets.GetResolver()

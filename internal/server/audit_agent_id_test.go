@@ -20,7 +20,7 @@ import (
 // TestAuditAgentIDIsConfigID: audit records name the configured agent id, never
 // the token's SHA-256 (EG0064, review R14).
 func TestAuditAgentIDIsConfigID(t *testing.T) {
-	if err := audit.Init(t.TempDir(), 1); err != nil {
+	if err := audit.Init(t.TempDir(), 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	// An earlier test's t.TempDir may already be gone: recreate the shared audit dir.
