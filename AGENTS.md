@@ -64,8 +64,10 @@ See `docs/SLACK.md` for full details.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/admin/secrets` | POST | Set a secret in SYSTEM Credential Manager |
+| `/admin/secrets` | POST/PUT, DELETE | Set (or, with `?workspace=&name=`, delete) a secret in SYSTEM Credential Manager |
+| `/admin/secrets/status` | GET | Every secret `?workspace=` references, with whether it is set |
 | `/admin/reload` | POST | Hot-reload config and ops from disk |
+| `/admin/diag` | POST | Per-env secret resolution and login checks for body `{"workspace","site"}` |
 
 ## Error responses
 
@@ -111,7 +113,9 @@ Agent ──Bearer token──> AuthN ──> Policy (grants) ──> Operation 
                     ┌─────────────────────────────────────┤
                     ▼                                     ▼
               Parameter validation              Connector dispatch
-              Constraint checks                 (http-rest | postgres | local-service)
+              Constraint checks                 (http-rest | form-session | postgres |
+                    │                            local-service | mcp | email |
+                    │                            jira-worklog)
                     │                                     │
                     ▼                                     ▼
               Secret Resolution ──> Cross-tenant check ──> Upstream Execution

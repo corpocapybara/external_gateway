@@ -122,7 +122,6 @@ The read-only enforcement in `postgres/connector.go` uses `\b` word-boundary reg
 
 ## Stalled / incomplete features
 
-- **Clockify auto-PR scheduler**: Stub in `scheduler.go` — returns "not implemented; requires POST /admin/jobs endpoint and connector wiring"
 - **Postgres proxy/Teleport**: Not implemented — direct connections only
 - **Unit tests**: only `internal/redact/hook_test.go` (response-shaper array projection) exists; the rest of the project is untested
 - **No rate limiting**

@@ -64,9 +64,7 @@ abort) all derive from it. Add a workspace by dropping in a `config.<x>.yaml` �
 
 ```yaml
 server:
-  listen_addr: "127.0.0.1"   # listen address
-  tls_cert: ""               # TLS cert path (optional)
-  tls_key: ""                # TLS key path (optional)
+  port: 8443                 # optional; the gateway always listens on plain HTTP at 127.0.0.1:<port>
 
 admin_token_sha256: ""       # if set, all /admin/* endpoints require
                               # Authorization: Bearer <token> with SHA256 match
@@ -295,7 +293,6 @@ external_gateway/
 │   ├── secrets/          # Credential Manager resolver + taint registry
 │   ├── audit/            # Append-only JSONL audit logger
 │   ├── redact/           # ResponseShaper + taint-based leak prevention
-│   ├── scheduler/        # Clockify auto-PR scheduler stub
 │   └── connectors/
 │       ├── httprest/     # Generic HTTP (Jira, GitLab, Kibana, etc.)
 │       ├── postgres/     # Read-only SQL with safety guards
@@ -368,7 +365,6 @@ Agent ──Bearer token──> AuthN ──> Policy (grants) ──> Operation 
 | Capabilities examples | ✓ | `/capabilities` returns PowerShell example call per operation |
 | Hotmail/Outlook | ✓ | IMAP/SMTP with XOAUTH2 (basic auth is rejected), token auto-refresh — [How To Connect](docs/HOTMAIL.md) |
 | Kibana SSO proxy | ✗ | [Upvote/Grafana proxy](.ai/PITFALLS.md#kibana-prod-behind-grafana-upvote-sso-proxy) blocks Basic Auth |
-| Clockify scheduler | ✗ | Stub — not wired |
 | Slack channel allow-list | ✗ | `slack_channels` exists but [no constraint enforces it](.ai/PITFALLS.md#stalled--incomplete-features) |
 
 ## .ai/ Documentation

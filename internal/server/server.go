@@ -313,7 +313,6 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 			"cross_tenant_isolation":  "enabled",
 			"config_signing":          "sha256-checksum",
 			"config_hot_reload":       "enabled",
-			"clockify_scheduler":      "stub-not-wired",
 			"secret_empty_detect":     "enabled",
 		},
 	})
@@ -849,14 +848,12 @@ func (s *Server) executeHttpConnector(ws *config.Workspace, op *policy.Operation
 		}
 	}
 
-	logBody := string(body)
-	if multipartType != "" {
-		logBody = fmt.Sprintf("<multipart, %d bytes>", len(body))
-	}
+	// Only the body's size is logged: bodies carry agent-supplied content
+	// (comments, messages), never fit for an info-level log line (EG0055).
 	s.logger.Info().
 		Str("url", urlStr).
 		Str("method", op.Method).
-		Str("body", logBody).
+		Int("body_bytes", len(body)).
 		Msg("upstream request")
 
 	headers := map[string]string{

@@ -210,11 +210,11 @@ type Grant struct {
 	Role     string `yaml:"role"`
 }
 
+// ServerConfig: the gateway always listens on plain HTTP at 127.0.0.1:<port>.
+// The retired keys listen_addr, tls_cert and tls_key were never read; Load
+// still accepts files that carry them (yaml.Unmarshal is non-strict).
 type ServerConfig struct {
-	ListenAddr string `yaml:"listen_addr"`
-	Port       int    `yaml:"port"`
-	TLSCert    string `yaml:"tls_cert"`
-	TLSKey     string `yaml:"tls_key"`
+	Port int `yaml:"port"`
 }
 
 type AuditConfig struct {
