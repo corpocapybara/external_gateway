@@ -21,7 +21,6 @@ none
 ## P3
 
 - EG0051 · draft · server · S — allow_fields ignored by local-service, postgres and jira-worklog connectors
-- EG0066 · draft · server · M — Runtime metrics: per-op request count and latency, process CPU and RSS (review R13)
 - EG0069 · draft · server · XS — Config validation: agents[].id must be non-empty and unique (audit agent_id is now the config id, EG0064)
 
 ## Externally blocked
