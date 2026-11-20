@@ -17,7 +17,7 @@ none
 - EG0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - EG0048 · in-review · deploy · M — Rewrite git history to purge every leakcheck term (real workspace names, Jira key, hosts), then force-push
 - EG0054 · draft · server · S — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
-- EG0060 · draft · docs · S — Run-app note: how an agent starts and drives the ExternalGateway desktop app (cmd/egw-desktop) for the run-app check
+- EG0060 · designed · docs · S — Run-app note: how an agent starts and drives the ExternalGateway desktop app (cmd/egw-desktop) for the run-app check
 
 ## P3
 
