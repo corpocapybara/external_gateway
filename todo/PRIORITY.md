@@ -16,7 +16,6 @@ none
 
 - EG0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - EG0054 · draft · server · S — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
-- EG0060 · designed · docs · S — Run-app note: how an agent starts and drives the ExternalGateway desktop app (cmd/egw-desktop) for the run-app check
 
 ## P3
 
