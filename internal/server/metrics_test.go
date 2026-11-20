@@ -197,6 +197,11 @@ func TestAdminMetricsCountsOps(t *testing.T) {
 	u := newMetricsUpstream(t)
 	h := metricsHarness(t, u.srv.URL)
 	tok := credAgentTok
+	// audit.Init runs once per process, in an earlier test's TempDir, which may be
+	// gone by now; recreate it so the allowed call's audit line can be read.
+	if err := os.MkdirAll(audit.GetLogger().Dir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
 
 	// allowed, 200 JSON
 	if c := opCall(h, tok, "m", "api.get", "", nil); c != 200 {
