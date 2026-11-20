@@ -111,6 +111,8 @@ Useful debug endpoints:
     endings kept). Responds `{"status":"added"}` or `"duplicate"` (same item text already there).
   Other types and an unset `todo_repo` respond `"recorded"`.
 - `POST /admin/reload` — hot-reload config + ops from disk (needs admin auth)
+- `GET /admin/metrics` — per-op counts and latency since start plus process CPU/RSS/goroutines/threads (needs admin
+  auth; counters live on `Server`, so a reload keeps them; dry runs are not counted)
 - `POST /admin/secrets` — set a secret (needs admin auth)
 
 ## Health checks
