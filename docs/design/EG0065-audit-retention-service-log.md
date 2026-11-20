@@ -123,7 +123,7 @@ leaves `f == nil` (next `Write` retries as above). After a successful rotation, 
 and neither matches the audit regex (a hyphen follows the date) nor the reverse. Prune uses D2's cutoff rule,
 `removeFile`, the not-exist tolerance and the joined errors. Prune errors from rotation are ignored (no logger
 inside the writer); `Switch` returns them. Only `cmd/egw` uses the package; main never calls `Close` (the process
-exits).
+exits). `base` is the file name without its extension (`egw-acme.log` -> `egw-acme`; a `log.file` with no extension uses the whole name); rotated files always end in `.log`. Test 6 counts `renameFile` calls with a constant fake `Now`; test 5 also shows `Switch(path, 90)` then removes the planted file.
 
 ### D5 Default path
 
