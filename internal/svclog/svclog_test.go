@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -95,6 +96,17 @@ func TestServiceLogRotatesAndPrunes(t *testing.T) {
 	if got, _ := os.ReadFile(path); string(got) != "third-line\na-line\nb-line\nc-line\n" {
 		t.Errorf("current file after failed rotation = %q", got)
 	}
+	now = now.Add(retryDelay)
+	renameFile = orig
+	if _, err := w.Write([]byte("d-line\n")); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(dir, "egw-acme_20261120-220100.log") {
+		t.Error("rotation not retried once the retry delay passed")
+	}
+	if got, _ := os.ReadFile(path); string(got) != "d-line\n" {
+		t.Errorf("file after the retried rotation = %q, want only d-line", got)
+	}
 
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
@@ -136,6 +148,31 @@ func TestSwitchAfterFailedOpen(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(good); string(got) != "kept\n" {
 		t.Errorf("good.log = %q", got)
+	}
+
+	// Prune failures: a remove error is wrapped in ErrPrune, a file already gone
+	// is not an error, and the rest is still pruned.
+	fake := errors.New("locked")
+	orig := removeFile
+	t.Cleanup(func() { removeFile = orig })
+	removeFile = func(p string) error {
+		switch filepath.Base(p) {
+		case "good_20000102-000000.log":
+			return fake
+		case "good_20000103-000000.log":
+			return fs.ErrNotExist
+		}
+		return os.Remove(p)
+	}
+	for _, n := range []string{"good_20000102-000000.log", "good_20000103-000000.log", "good_20000104-000000.log"} {
+		touch(t, dir, n)
+	}
+	err := w.Switch(good, 90)
+	if !errors.Is(err, ErrPrune) || !errors.Is(err, fake) || errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Switch prune failure = %v, want ErrPrune wrapping only the remove error", err)
+	}
+	if exists(dir, "good_20000104-000000.log") {
+		t.Error("good_20000104-000000.log kept after another remove failed")
 	}
 }
 

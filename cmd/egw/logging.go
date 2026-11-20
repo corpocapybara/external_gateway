@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -48,5 +49,9 @@ func newLogger(path string, stderr io.Writer) (zerolog.Logger, *svclog.Writer) {
 }
 
 func warnLogFile(logger zerolog.Logger, path string, err error) {
+	if errors.Is(err, svclog.ErrPrune) {
+		logger.Warn().Err(err).Str("path", path).Msg("service log prune")
+		return
+	}
 	logger.Warn().Err(err).Str("path", path).Msg("service log file unavailable")
 }

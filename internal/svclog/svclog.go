@@ -27,6 +27,9 @@ const maxRetentionDays = 36500
 // errNoFile is returned by Write while no file is open.
 var errNoFile = errors.New("svclog: no log file open")
 
+// ErrPrune wraps a prune error Switch returns after it switched successfully.
+var ErrPrune = errors.New("svclog: prune")
+
 // Test seams.
 var (
 	removeFile = os.Remove
@@ -55,13 +58,13 @@ func New() *Writer {
 // Switch makes path the log file and retention (days, 0 keeps all) the prune
 // rule, then prunes. For the path already open it only sets the retention. When
 // the new path cannot be opened the current file (or none) stays and the error
-// is returned. A prune error is returned after a successful switch.
+// is returned. A prune error after a successful switch wraps ErrPrune.
 func (w *Writer) Switch(path string, retention int) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.f != nil && samePath(w.path, path) {
 		w.retention = retention
-		return Prune(w.path, retention, w.Now())
+		return pruneErr(Prune(w.path, retention, w.Now()))
 	}
 	f, size, err := openAppend(path)
 	if err != nil {
@@ -71,7 +74,14 @@ func (w *Writer) Switch(path string, retention int) error {
 		w.f.Close()
 	}
 	w.f, w.path, w.size, w.retention, w.retryAt = f, path, size, retention, time.Time{}
-	return Prune(path, retention, w.Now())
+	return pruneErr(Prune(path, retention, w.Now()))
+}
+
+func pruneErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: %w", ErrPrune, err)
 }
 
 // Write appends p, rotating first when p would take the file past MaxBytes.
