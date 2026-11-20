@@ -44,8 +44,8 @@ silently with `--tray`, so a fresh build does not run while the owner's instance
   `$p = Start-Process .\ExternalGateway.exe -PassThru; $p.Id` (the exe is `-H=windowsgui`, so `-PassThru` is how to
   get the pid).
 - Only if the owner keeps theirs: start the test build with
-  `Start-Process .\ExternalGateway-test.exe -ArgumentList '--data-dir',"$env:TEMP\egw-run-app",'--tray' -PassThru`
-  (a fresh data dir gets a random port), and say in the test record that it ran with a scratch data dir (default
+  `Start-Process .\ExternalGateway-test.exe -ArgumentList '--data-dir',"`"$env:TEMP\egw-run-app`"",'--tray' -PassThru`
+  (a fresh data dir gets a random port; a reused one keeps the port in its `instance.json`), and say in the test record that it ran with a scratch data dir (default
   settings, fresh state).
 
 **Drive** it. The UI is a local web page served by the app itself, `http://127.0.0.1:<port>/?s=<session>`
