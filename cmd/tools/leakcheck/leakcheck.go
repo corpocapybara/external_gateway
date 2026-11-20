@@ -45,11 +45,21 @@ var urlRE = regexp.MustCompile(`(?i)https?://[^\s"'<>]+`)
 
 var hunkRE = regexp.MustCompile(`^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 
-// git runs a git command in dir with the inherited environment (inside a hook that is the committing
-// worktree's GIT_DIR / GIT_INDEX_FILE, design D8) and returns its stdout.
-func git(dir string, args ...string) ([]byte, error) {
+// gitStarts counts the git commands gitCommand built; tests assert history's fixed process count (EG0070).
+var gitStarts int
+
+// gitCommand builds every git process leakcheck runs, in dir with the inherited environment (inside a hook that
+// is the committing worktree's GIT_DIR / GIT_INDEX_FILE, design D8).
+func gitCommand(dir string, args ...string) *exec.Cmd {
+	gitStarts++
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	return cmd
+}
+
+// git runs a git command in dir and returns its stdout.
+func git(dir string, args ...string) ([]byte, error) {
+	cmd := gitCommand(dir, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
