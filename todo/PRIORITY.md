@@ -16,13 +16,13 @@ none
 
 - EG0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - EG0054 · draft · server · S — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
+- EG0068 · draft · server · XS — Run govulncheck ./... and record the result in the project review (review R11)
 
 ## P3
 
 - EG0051 · draft · server · S — allow_fields ignored by local-service, postgres and jira-worklog connectors
 - EG0065 · draft · server · M — Audit file retention and a persisted service log under the SCM (review R13)
 - EG0066 · draft · server · M — Runtime metrics: per-op request count and latency, process CPU and RSS (review R13)
-- EG0068 · draft · server · XS — Run govulncheck ./... and record the result in the project review (review R11)
 - EG0069 · draft · server · XS — Config validation: agents[].id must be non-empty and unique (audit agent_id is now the config id, EG0064)
 - EG0070 · draft · cli-tools · S — leakcheck history starts one git ls-tree per distinct tree (~710 on this repo): read trees in one process
 
