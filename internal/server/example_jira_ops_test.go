@@ -20,7 +20,7 @@ type exReq struct{ method, path, query, body string }
 // TestExampleJiraOps drives the six Jira ops of config.example/operations.yaml
 // through the HTTP handler against a recording upstream.
 func TestExampleJiraOps(t *testing.T) {
-	if err := audit.Init(t.TempDir(), 1); err != nil {
+	if err := audit.Init(t.TempDir(), 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	reg, err := policy.NewRegistry("../../config.example/operations.yaml")

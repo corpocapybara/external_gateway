@@ -239,7 +239,7 @@ func newFormSessionServer(t *testing.T, store map[string]string, envs ...fsEnv) 
 	}
 	// audit.Init is process-global (first call wins), so the dir may be an
 	// earlier test's removed TempDir: recreate it.
-	if err := audit.Init(t.TempDir(), 1); err != nil {
+	if err := audit.Init(t.TempDir(), 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(audit.GetLogger().Dir(), 0o700); err != nil {

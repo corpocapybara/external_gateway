@@ -15,12 +15,16 @@ import (
 )
 
 type Logger struct {
-	mu       sync.Mutex
-	log      zerolog.Logger
-	dir      string
-	maxSize  int64
-	sequence uint64
-	current  string // path of the active log file
+	mu        sync.Mutex
+	log       zerolog.Logger
+	dir       string
+	maxSize   int64
+	sequence  uint64
+	current   string // path of the active log file
+	retention int    // days of audit files to keep; 0 keeps all (EG0065)
+	now       func() time.Time
+	prunedDay string // UTC yyyymmdd of the last prune
+	pruneErr  error  // error of the last prune, for PruneErr
 }
 
 type Record struct {
@@ -40,12 +44,24 @@ type Record struct {
 
 var globalLogger *Logger
 
-func Init(dir string, maxSizeMB int) error {
+// Init creates the process-wide audit logger once and prunes audit files older
+// than retentionDays (0 keeps all). A prune failure never fails Init; it is kept
+// for PruneErr.
+func Init(dir string, maxSizeMB int, retentionDays int) error {
 	if globalLogger != nil {
 		return nil
 	}
+	l, err := newLogger(dir, maxSizeMB, retentionDays, time.Now)
+	if err != nil {
+		return err
+	}
+	globalLogger = l
+	return nil
+}
+
+func newLogger(dir string, maxSizeMB int, retentionDays int, now func() time.Time) (*Logger, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fmt.Errorf("creating audit dir: %w", err)
+		return nil, fmt.Errorf("creating audit dir: %w", err)
 	}
 	// A missing/zero max_size_mb must NOT mean "rotate on every record" — default
 	// to a sane cap so an unset config doesn't spin up a new file (and leak a
@@ -53,11 +69,28 @@ func Init(dir string, maxSizeMB int) error {
 	if maxSizeMB <= 0 {
 		maxSizeMB = 100
 	}
-	globalLogger = &Logger{
-		dir:     dir,
-		maxSize: int64(maxSizeMB) * 1024 * 1024,
+	l := &Logger{
+		dir:       dir,
+		maxSize:   int64(maxSizeMB) * 1024 * 1024,
+		retention: retentionDays,
+		now:       now,
 	}
-	return nil
+	l.prune(now())
+	return l, nil
+}
+
+// prune removes expired audit files and records the day it ran; the caller holds
+// l.mu or owns l exclusively.
+func (l *Logger) prune(t time.Time) {
+	l.pruneErr = Prune(l.dir, l.retention, t)
+	l.prunedDay = t.UTC().Format("20060102")
+}
+
+// PruneErr returns the error of the last retention prune, nil when it succeeded.
+func (l *Logger) PruneErr() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.pruneErr
 }
 
 func GetLogger() *Logger {
@@ -74,8 +107,9 @@ func (l *Logger) Log(record *Record) error {
 	if record.RequestID == "" {
 		record.RequestID = uuid.New().String()
 	}
+	t := l.now()
 	if record.Timestamp == "" {
-		record.Timestamp = time.Now().UTC().Format(time.RFC3339)
+		record.Timestamp = t.UTC().Format(time.RFC3339)
 	}
 
 	data, err := json.Marshal(record)
@@ -86,7 +120,12 @@ func (l *Logger) Log(record *Record) error {
 	// Pick the active file, rolling over on date change and rotating when the
 	// CURRENT file (not a stale base name) reaches the size cap. A single file is
 	// opened and closed per record — no reassigned-after-defer descriptor leak.
-	today := time.Now().UTC().Format("20060102")
+	today := t.UTC().Format("20060102")
+	if today != l.prunedDay {
+		// First record of a new UTC day: apply the retention again. Keyed on the
+		// date, so a size rotation within the day never prunes.
+		l.prune(t)
+	}
 	base := filepath.Join(l.dir, fmt.Sprintf("audit_%s.log", today))
 	if l.current == "" || !strings.Contains(filepath.Base(l.current), "audit_"+today) {
 		l.current = base

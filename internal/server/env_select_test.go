@@ -36,7 +36,7 @@ type envFixture struct {
 
 func newEnvFixture(t *testing.T) *envFixture {
 	t.Helper()
-	if err := audit.Init(t.TempDir(), 1); err != nil {
+	if err := audit.Init(t.TempDir(), 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	f := &envFixture{prod: new(atomic.Int32), vpn: new(atomic.Int32), tunnelsUp: fakeTunnelChecker{}}

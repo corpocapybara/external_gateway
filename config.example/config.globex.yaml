@@ -7,6 +7,11 @@ server:
 audit:
   dir: "C:\\ProgramData\\external_gateway\\audit"
   max_size_mb: 100
+  #retention_days: 90   # default 90; 0 keeps every file (see config.yaml)
+
+# Service log under the SCM (default path in the comment below; see config.yaml).
+#log:
+#  file: "C:\\ProgramData\\external_gateway\\logs\\egw-globex.log"
 
 roles:
   dev-bot:

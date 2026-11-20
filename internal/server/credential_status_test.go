@@ -174,7 +174,7 @@ func newCredHarness(t *testing.T, sitesYAML map[string]string, grants []string, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := audit.Init(dir, 1); err != nil {
+	if err := audit.Init(dir, 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	store := &credStore{m: map[string][]byte{}}
