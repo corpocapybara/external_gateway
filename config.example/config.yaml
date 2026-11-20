@@ -7,6 +7,18 @@ server:
 audit:
   dir: "C:\\ProgramData\\external_gateway\\audit"
   max_size_mb: 100
+  # Days of audit_<date>.log files to keep (default 90 when unset; 0 keeps every
+  # file). Pruned at startup and on the first record of each UTC day. Services
+  # that share one audit dir prune it with the shortest retention among them.
+  # Applies from the startup config, not /admin/reload (a reload still validates it).
+  #retention_days: 90
+
+# Operational log. Under the SCM (running as a service) egw also writes it to
+# C:\ProgramData\external_gateway\logs\<svc-name>.log, rotated at 10 MB, rotated
+# files pruned by audit.retention_days. file overrides that path (startup config
+# only); never point two services at one file. Console runs log to stderr only.
+#log:
+#  file: "C:\\ProgramData\\external_gateway\\logs\\egw-acme.log"
 
 secret_store:
   backend: "wincred"

@@ -7,6 +7,7 @@ server:
 audit:
   dir: "C:\\ProgramData\\external_gateway\\audit"
   max_size_mb: 100
+  #retention_days: 90   # default 90; 0 keeps every file (see config.yaml)
 
 roles:
   dev-bot:
