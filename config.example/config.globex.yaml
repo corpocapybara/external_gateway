@@ -1,5 +1,5 @@
 server:
-  listen_addr: "127.0.0.1"
+  # The gateway always listens on plain HTTP at 127.0.0.1:<port> (loopback only).
   # port: assigned alphabetically at deploy time (base 8443, sorted by
   # workspace name). Uncomment + set to pin/override this workspace's port.
   #port: 8443

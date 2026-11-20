@@ -2,13 +2,14 @@
 
 Trello access through the gateway using the legacy **API key + user token** auth
 (Trello does not yet accept Atlassian API tokens). Agents call allow-listed `trello.*`
-operations; the gateway appends both credentials as query parameters.
+operations; the gateway sends both credentials in the `Authorization` header.
 
 ## Auth model
 
-The `trello` auth type sends `key=<apiKey>&token=<userToken>` as URL query parameters
-on every request — the only method that doesn't require an OAuth library or Power-Up
-iframe.
+The `trello` auth type sends
+`Authorization: OAuth oauth_consumer_key="<apiKey>", oauth_token="<userToken>"` on every
+request. Credentials never go in the URL, so they cannot leak into request logs or back
+to the agent through upstream error strings.
 
 ## Getting credentials
 
@@ -57,8 +58,8 @@ Click **Allow** — you'll be redirected to a page with your token. Copy it.
             cookie_secret_ref: secret://<ws>/trello-token
 ```
 
-- `secret_ref` holds the API key (appended as `?key=...`)
-- `cookie_secret_ref` holds the user token (appended as `&token=...`)
+- `secret_ref` holds the API key (sent as `oauth_consumer_key` in the `Authorization` header)
+- `cookie_secret_ref` holds the user token (sent as `oauth_token` in the same header)
 
 ## Secrets
 
