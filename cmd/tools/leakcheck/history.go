@@ -313,20 +313,20 @@ func (c *catFile) read(id, want string) ([]byte, error) {
 // readAny returns the type and content of the object id; a missing object is an error.
 func (c *catFile) readAny(id string) (string, []byte, error) {
 	if c.cmd == nil {
-		c.cmd = gitCommand(c.dir, "--no-replace-objects", "cat-file", "--batch")
-		c.cmd.Stderr = &c.stderr
-		in, err := c.cmd.StdinPipe()
+		cmd := gitCommand(c.dir, "--no-replace-objects", "cat-file", "--batch")
+		cmd.Stderr = &c.stderr
+		in, err := cmd.StdinPipe()
 		if err != nil {
 			return "", nil, err
 		}
-		out, err := c.cmd.StdoutPipe()
+		out, err := cmd.StdoutPipe()
 		if err != nil {
 			return "", nil, err
 		}
-		if err := c.cmd.Start(); err != nil {
-			return "", nil, err
+		if err := cmd.Start(); err != nil {
+			return "", nil, fmt.Errorf("git cat-file --batch: %v", err)
 		}
-		c.in, c.w, c.r = in, bufio.NewWriter(in), bufio.NewReaderSize(out, 1<<16)
+		c.cmd, c.in, c.w, c.r = cmd, in, bufio.NewWriter(in), bufio.NewReaderSize(out, 1<<16) // set once started: kill needs a process
 	}
 	if _, err := c.w.WriteString(id + "\n"); err != nil {
 		return "", nil, fmt.Errorf("git cat-file --batch: writing %s: %v", id, err)
