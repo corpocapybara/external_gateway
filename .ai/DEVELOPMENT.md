@@ -20,6 +20,56 @@ The script does NOT patch configs — all config values are the source of truth 
 Service binary path:
 - `C:\Program Files\external_gateway\egw.exe --config "C:\Program Files\external_gateway\acme\config.yaml" --ops "C:\Program Files\external_gateway\acme\operations.yaml" --port <port> --svc-name egw-acme`
 
+## Running the desktop app (run-app check)
+
+How an agent starts and drives `ExternalGateway.exe` (`cmd/egw-desktop`) to test a change a user sees in its UI
+(core rule "UI work is tested in the real app"). A browser harness or a stubbed backend does not count.
+
+**Build** in the repo root (README.md "Build"):
+
+```powershell
+& "C:\Program Files\Go\bin\go.exe" build -ldflags -H=windowsgui -o ExternalGateway.exe ./cmd/egw-desktop/
+```
+
+The exe must sit in the repo root: `--build-dir` defaults to the exe's folder, and `config.<ws>.yaml`,
+`operations.<ws>.yaml`, `agent-keys.txt` and `deploy\` are read from there (`main.go` flags). A running instance
+locks `ExternalGateway.exe`, so the build fails until it is quit; or build to another name in the repo root, e.g.
+`ExternalGateway-test.exe` (`*.exe` is gitignored).
+
+**Start** it the way its user does. One instance per data dir (`win.go` `acquireSingleInstance`): a second start
+with the same `--data-dir` only reopens the running instance's window (`main.go` `signalRunningInstance`), or exits
+silently with `--tray`, so a fresh build does not run while the owner's instance is up.
+- Owner instance running: ask the owner before quitting it. Once quit, rebuild `ExternalGateway.exe` and start it
+  with no flags (default data dir `%APPDATA%\ExternalGateway`) in the background, keeping its pid:
+  `$p = Start-Process .\ExternalGateway.exe -PassThru; $p.Id` (the exe is `-H=windowsgui`, so `-PassThru` is how to
+  get the pid).
+- Only if the owner keeps theirs: start the test build with
+  `Start-Process .\ExternalGateway-test.exe -ArgumentList '--data-dir',"`"$env:TEMP\egw-run-app`"",'--tray' -PassThru`
+  (a fresh data dir gets a random port; a reused one keeps the port in its `instance.json`), and say in the test record that it ran with a scratch data dir (default
+  settings, fresh state).
+
+**Drive** it. The UI is a local web page served by the app itself, `http://127.0.0.1:<port>/?s=<session>`
+(`main.go` `uiURL`); the page sends the session as `X-Session`. Port and session are in `<data-dir>\instance.json`
+(written at start in `main.go`): `Get-Content "$env:APPDATA\ExternalGateway\instance.json" | ConvertFrom-Json`.
+Open that URL with Claude in Chrome or the built-in browser pane, or use computer-use on the Edge `--app` window it
+opens (`win.go` `openWindow`; not opened with `--tray`). The tray menu, Windows notifications and the tray icon colour
+need computer-use (`tray.go` `runTray`).
+
+**Stop** only what you started, by pid: `Stop-Process -Id <pid>`, never by image name (that would kill the owner's
+instance too). Quit is only in the tray menu. `Stop-Process` skips the tray cleanup, so a stale tray icon may linger
+until hovered (cosmetic). Delete a scratch data dir afterwards, and restart the owner instance you quit (no flags)
+when done.
+
+**Backend and data are real.** The app reads `config.<ws>.yaml`, `operations.<ws>.yaml` and `agent-keys.txt` from
+`--build-dir`, the deployed configs under `--install-dir` (default `C:\Program Files\external_gateway`) and the
+running `egw-<ws>` services.
+- Edits write the real (gitignored) source configs in the repo root: check the diff the app shows before applying.
+  The only undo is the backups folder, `<data-dir>\backups\<yyyyMMdd-HHmmss>\` (`configedit.go`).
+- Publish, deploy and service start/stop/restart run through an elevated helper (`elevate.go` `runElevated`,
+  ShellExecute `runas`): unless the app itself runs elevated, they raise a UAC prompt an agent cannot confirm, so
+  ask the owner to do those steps.
+- Record the run as `test.kind=e2e` with `runner` and `steps` (`.ai/shared/rules/todo.md` "Test runs").
+
 ## Testing operations
 
 No unit tests exist. Testing is done manually via `Invoke-RestMethod` against the running gateway.

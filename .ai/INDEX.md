@@ -6,7 +6,7 @@ Lazy-load by reading the file relevant to your task.
 |------|---------------|
 | `../AGENTS.md` | Agent conventions — build, deploy, secrets, admin API, service lifecycle, architecture |
 | `CONNECTORS.md` | Connector architecture — interface, implementations, adding a new connector |
-| `DEVELOPMENT.md` | Dev setup — building, debugging, testing, project layout |
+| `DEVELOPMENT.md` | Dev setup — building, debugging, testing, project layout, running the desktop app for the run-app check |
 | `OPERATIONS.md` | Operation definitions — YAML structure, params, constraints, response shaping |
 | `PITFALLS.md` | Known bugs, Windows/tooling gotchas, hard-won fixes |
 | `RULES.md` | Code style, workspace convention, naming rules, deploy conventions |
