@@ -277,6 +277,26 @@ func TestAdminMetricsCountsOps(t *testing.T) {
 		t.Fatalf("dry runs changed denied_unattributed: %d", after.DeniedUnattributed)
 	}
 
+	// 405 and an invalid path are not counted either.
+	r := httptest.NewRequest(http.MethodPut, "/v1/workspaces/m/op/api.get", nil)
+	r.Header.Set("Authorization", "Bearer "+tok)
+	w := httptest.NewRecorder()
+	h.s.ServeHTTP(w, r)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("PUT: %d", w.Code)
+	}
+	r = httptest.NewRequest(http.MethodPost, "/v1/workspaces/m/x/api.get", strings.NewReader(`{}`))
+	r.Header.Set("Authorization", "Bearer "+tok)
+	w = httptest.NewRecorder()
+	h.s.ServeHTTP(w, r)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid path: %d", w.Code)
+	}
+	after = getMetrics(t, h)
+	if after.DeniedUnattributed != 5 {
+		t.Fatalf("405/400 changed denied_unattributed: %d", after.DeniedUnattributed)
+	}
+
 	if len(after.Ops) != 3 {
 		t.Fatalf("ops %+v, want only api.get, api.need, api.secret", after.Ops)
 	}

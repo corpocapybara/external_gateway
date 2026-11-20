@@ -23,6 +23,10 @@ func TestHistogramPercentiles(t *testing.T) {
 		{"negative", []int64{-3}, Latency{Count: 1}},
 		{"1..100", seq(1, 100), Latency{Count: 100, P50: 50, P95: 100, P99: 100, Max: 100}},
 		{"capped by max", []int64{3, 3, 3}, Latency{Count: 3, P50: 3, P95: 3, P99: 3, Max: 3}},
+		// Two samples: the lower one's bucket bound shows (not capped by max), so a
+		// wrong bucket mapping cannot hide behind the cap.
+		{"bucket bound", []int64{6, 100}, Latency{Count: 2, P50: 10, P95: 100, P99: 100, Max: 100}},
+		{"last bound vs overflow", []int64{120000, 120001}, Latency{Count: 2, P50: 120000, P95: 120001, P99: 120001, Max: 120001}},
 		// 98 fast and 2 slow: p95 stays in the fast bucket, p99 reaches the slow one.
 		{"tail", append(append([]int64{}, make([]int64, 98)...), 700, 900),
 			Latency{Count: 100, P50: 0, P95: 0, P99: 900, Max: 900}},
