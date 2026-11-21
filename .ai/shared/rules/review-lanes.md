@@ -29,6 +29,9 @@ You are the **correctness** review lane. Your question: does the change work, an
   untested branch or unproven acceptance item), **minor** or **question**;
   `file:line` on the head; the claim; the failing input or state; **FACT** (you read it) or **ASSUMPTION**.
 - About 40 tool calls and at most 200 words. No build, no DB, no decompile, no edits, no git writes, nothing posted.
+- A lane agent has no Write or Edit tool: never call one. The one exception to "no edits" is a throwaway script the
+  brief asks for: write it into your scratch or temp folder with a Bash heredoc (`cat > <dir>/probe.py <<'EOF'`),
+  with no double backslash in it (build each backslash with `chr(92)`), and run it by absolute path.
 - List **every** finding you see, one line each; the word cap shortens wording, never drops a finding. End with
   "checked: …". On a re-review (the brief gives earlier findings), verify those fixes and the changed lines only;
   never reopen a dispositioned finding.
@@ -65,6 +68,9 @@ You are the **design** review lane. Your question: will a careful senior reviewe
   untested branch or unproven acceptance item), **minor** or **question**;
   `file:line` on the head; the claim; the failing input or state; **FACT** (you read it) or **ASSUMPTION**.
 - About 40 tool calls and at most 200 words. No build, no DB, no decompile, no edits, no git writes, nothing posted.
+- A lane agent has no Write or Edit tool: never call one. The one exception to "no edits" is a throwaway script the
+  brief asks for: write it into your scratch or temp folder with a Bash heredoc (`cat > <dir>/probe.py <<'EOF'`),
+  with no double backslash in it (build each backslash with `chr(92)`), and run it by absolute path.
 - List **every** finding you see, one line each; the word cap shortens wording, never drops a finding. End with
   "checked: …". On a re-review (the brief gives earlier findings), verify those fixes and the changed lines only;
   never reopen a dispositioned finding.
@@ -100,6 +106,9 @@ You are the **scope** review lane. Your question: is it the right change, and wa
   untested branch or unproven acceptance item), **minor** or **question**;
   `file:line` on the head; the claim; the failing input or state; **FACT** (you read it) or **ASSUMPTION**.
 - About 40 tool calls and at most 200 words. No build, no DB, no decompile, no edits, no git writes, nothing posted.
+- A lane agent has no Write or Edit tool: never call one. The one exception to "no edits" is a throwaway script the
+  brief asks for: write it into your scratch or temp folder with a Bash heredoc (`cat > <dir>/probe.py <<'EOF'`),
+  with no double backslash in it (build each backslash with `chr(92)`), and run it by absolute path.
 - List **every** finding you see, one line each; the word cap shortens wording, never drops a finding. End with
   "checked: …". On a re-review (the brief gives earlier findings), verify those fixes and the changed lines only;
   never reopen a dispositioned finding.
@@ -135,6 +144,9 @@ You are the **tests** review lane. Your question: is every claim the change make
   untested branch or unproven acceptance item), **minor** or **question**;
   `file:line` on the head; the claim; the failing input or state; **FACT** (you read it) or **ASSUMPTION**.
 - About 40 tool calls and at most 200 words. No build, no DB, no decompile, no edits, no git writes, nothing posted.
+- A lane agent has no Write or Edit tool: never call one. The one exception to "no edits" is a throwaway script the
+  brief asks for: write it into your scratch or temp folder with a Bash heredoc (`cat > <dir>/probe.py <<'EOF'`),
+  with no double backslash in it (build each backslash with `chr(92)`), and run it by absolute path.
 - List **every** finding you see, one line each; the word cap shortens wording, never drops a finding. End with
   "checked: …". On a re-review (the brief gives earlier findings), verify those fixes and the changed lines only;
   never reopen a dispositioned finding.
@@ -149,4 +161,5 @@ You are the **tests** review lane. Your question: is every claim the change make
   interaction mocks; every test ends by asserting its outcome.
 - **Corner cases:** each edge case the correctness lane would raise has a test or is named as a gap.
 - **Real-life coverage:** an integration, API or end-to-end test for the real scenario exists or is named as a gap;
-  say plainly what was not exercised.
+  say plainly what was not exercised. For a UI change, a missing check in the running app, or one done only in a
+  browser harness or over a stubbed backend, is a major finding.
