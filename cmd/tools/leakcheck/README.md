@@ -9,7 +9,7 @@ gitignored files (`.ai/LOCAL.md`, `config.<x>.yaml`).
 From the main checkout, once per clone and again after changing this tool:
 
 ```powershell
-& "C:\Program Files\Go\bin\go.exe" run ./cmd/tools/leakcheck install
+go run ./cmd/tools/leakcheck install
 ```
 
 (or `go run ./cmd/tools/leakcheck install` with Go on PATH). It copies the checker to `.git/hooks/leakcheck.exe` and writes `.git/hooks/pre-commit.local` and

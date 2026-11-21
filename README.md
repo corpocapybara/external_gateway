@@ -7,9 +7,9 @@ A hardened, compiled proxy that lets LLM agents call external services (Jira, Gi
 
 ```powershell
 # 1. Build
-& "C:\Program Files\Go\bin\go.exe" build -o egw.exe      ./cmd/egw/
-& "C:\Program Files\Go\bin\go.exe" build -o egw-admin.exe ./cmd/egw-admin/
-& "C:\Program Files\Go\bin\go.exe" build -o egwctl.exe    ./cmd/egwctl/
+go build -o egw.exe      ./cmd/egw/
+go build -o egw-admin.exe ./cmd/egw-admin/
+go build -o egwctl.exe    ./cmd/egwctl/
 
 # 2. Run in foreground (pick a workspace)
 .\egw.exe --config config.example.yaml --ops operations.example.yaml --port <port>
@@ -23,7 +23,7 @@ Invoke-RestMethod http://127.0.0.1:<port>/healthz
 
 ## Prerequisites
 
-- **Go 1.23+** — installed at `C:\Program Files\Go\bin\go.exe`
+- **Go 1.23+** — on PATH: call `go` and `gofmt`, never the full go.exe path
 - **Windows** — the gateway uses Windows Credential Manager and runs as a Windows service
 - **Administrator** access for service installation and tunnel setup
 - **WireGuard** or **GlobalProtect** for VPN-locked environments
@@ -31,10 +31,10 @@ Invoke-RestMethod http://127.0.0.1:<port>/healthz
 ## Build
 
 ```powershell
-& "C:\Program Files\Go\bin\go.exe" build -o egw.exe      ./cmd/egw/
-& "C:\Program Files\Go\bin\go.exe" build -o egw-admin.exe ./cmd/egw-admin/
-& "C:\Program Files\Go\bin\go.exe" build -o egwctl.exe    ./cmd/egwctl/
-& "C:\Program Files\Go\bin\go.exe" build -ldflags -H=windowsgui -o ExternalGateway.exe ./cmd/egw-desktop/
+go build -o egw.exe      ./cmd/egw/
+go build -o egw-admin.exe ./cmd/egw-admin/
+go build -o egwctl.exe    ./cmd/egwctl/
+go build -ldflags -H=windowsgui -o ExternalGateway.exe ./cmd/egw-desktop/
 ```
 
 Produces three binaries in the project root. Pass `-v` for verbose logging.

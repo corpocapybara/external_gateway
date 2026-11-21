@@ -3,10 +3,10 @@
 ## Building
 
 ```powershell
-# Go 1.23+ required. Installed at: C:\Program Files\Go\bin\go.exe
-& "C:\Program Files\Go\bin\go.exe" build -o egw.exe       ./cmd/egw/
-& "C:\Program Files\Go\bin\go.exe" build -o egw-admin.exe  ./cmd/egw-admin/
-& "C:\Program Files\Go\bin\go.exe" build -o egwctl.exe     ./cmd/egwctl/
+# Go 1.23+ required, on PATH in PowerShell and Git Bash: call `go` / `gofmt`, never the full go.exe path.
+go build -o egw.exe       ./cmd/egw/
+go build -o egw-admin.exe  ./cmd/egw-admin/
+go build -o egwctl.exe     ./cmd/egwctl/
 ```
 
 Builds produce statically-linked `.exe` files in the project root. Go modules are in `go.mod` (module: `github.com/external_gateway`).
@@ -28,7 +28,7 @@ How an agent starts and drives `ExternalGateway.exe` (`cmd/egw-desktop`) to test
 **Build** in the repo root (README.md "Build"):
 
 ```powershell
-& "C:\Program Files\Go\bin\go.exe" build -ldflags -H=windowsgui -o ExternalGateway.exe ./cmd/egw-desktop/
+go build -ldflags -H=windowsgui -o ExternalGateway.exe ./cmd/egw-desktop/
 ```
 
 The exe must sit in the repo root: `--build-dir` defaults to the exe's folder, and `config.<ws>.yaml`,

@@ -24,9 +24,9 @@ Workspace convention: `config.<x>.yaml` is the single source of truth — everyt
 ## Build & Deploy
 
 ```powershell
-& "C:\Program Files\Go\bin\go.exe" build -o egw.exe       ./cmd/egw/
-& "C:\Program Files\Go\bin\go.exe" build -o egw-admin.exe  ./cmd/egw-admin/
-& "C:\Program Files\Go\bin\go.exe" build -o egwctl.exe     ./cmd/egwctl/
+go build -o egw.exe       ./cmd/egw/
+go build -o egw-admin.exe  ./cmd/egw-admin/
+go build -o egwctl.exe     ./cmd/egwctl/
 .\deploy\update.ps1     # Admin shell; rebuilds egw.exe itself
 ```
 
