@@ -360,6 +360,9 @@ func (r *OperationRegistry) loadFromFile(path string) error {
 		if err := validateJiraKeyScope(id, op); err != nil {
 			return err
 		}
+		if err := validateKibanaIndexScope(id, op); err != nil {
+			return err
+		}
 		if err := checkJiraAttachmentContent(id, op); err != nil {
 			return err
 		}
@@ -673,6 +676,10 @@ func (r *OperationRegistry) CheckConstraints(op *Operation, params map[string]in
 				return err
 			}
 			if err := c.Check(op, params, workspace); err != nil {
+				return err
+			}
+		case "kibana_index_scope":
+			if err := checkKibanaIndexScope(op, constraint, params, workspace); err != nil {
 				return err
 			}
 		case "readonly":

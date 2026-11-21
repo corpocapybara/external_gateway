@@ -32,6 +32,7 @@ type envFixture struct {
 	sites     map[string]config.Site
 	ops       map[string]*policy.Operation
 	tunnelsUp fakeTunnelChecker
+	wsPolicy  config.WorkspacePolicy // the acme workspace policy send builds
 }
 
 func newEnvFixture(t *testing.T) *envFixture {
@@ -87,7 +88,7 @@ func (f *envFixture) send(t *testing.T, opID, body string, dryRun bool) (int, ma
 			opIDs = append(opIDs, id)
 		}
 		cfg := &config.Config{
-			Workspaces: map[string]config.Workspace{"acme": {Sites: f.sites}},
+			Workspaces: map[string]config.Workspace{"acme": {Sites: f.sites, Policy: f.wsPolicy}},
 			Roles:      map[string]config.Role{"dev": {Operations: opIDs}},
 			Agents:     []config.Agent{{ID: "bot", TokenSHA: "bot-sha", Grants: []config.Grant{{Workspace: "acme", Role: "dev"}}}},
 			Tunnels:    map[string]config.Tunnel{"acme-vpn": {Type: "globalprotect"}},

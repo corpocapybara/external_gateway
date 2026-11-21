@@ -145,7 +145,7 @@ Each entry under `constraints:` needs a `type` that is exactly one of the 10 typ
 | `allowed_tables` | Marker only; the postgres connector enforces the workspace's `pg_allowed_tables`. |
 | `project_scope`, `repo_scope` | No effect. Their ops scope the param with a literal `enum`, which can drift from the workspace policy. |
 | `max_rows`, `statement_timeout` | No effect. The postgres connector hard-codes 1000 rows and a 5000 ms timeout; YAML values are ignored. |
-| `kibana_index_scope` | No effect: nothing enforces it (EG0021). |
+| `kibana_index_scope` | `indices: $workspace.kibana_indices` (the only accepted value; the op needs a `type: string` `index` param). Checks the `index` param, else its declared default; omitted with no default is refused. The value is split on commas, each element trimmed of space/tab; an empty element is refused, and each must be 1-255 bytes of `A-Z a-z 0-9 . _ - *`, not start with `-` or `_` (so `_all`, `-x`, `_cat` are refused), not be `.`, and hold no `..`. Each element must be covered, case-sensitively, by a `kibana_indices` glob (only `*` wild): every name it can match must match the glob, so `logstash-*` is refused when only `logstash-nth-stg*` is allowed; entry `*` covers all. An empty `kibana_indices` leaves the op unscoped (EG0021). |
 
 Any other type is refused when the ops file loads: `operation <id>: unknown constraint type "<t>"` (matching is
 exact, so `JQL_SCOPE` is refused), or `operation <id>: constraint has no type` when `type` is missing, null, empty
