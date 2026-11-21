@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 $BuildDir = Split-Path -Parent $PSScriptRoot
 . "$PSScriptRoot\workspaces.ps1"
+. "$PSScriptRoot\deploylib.ps1"
 
 $ws = Get-EgwWorkspaces -BuildDir $BuildDir
 $names = ($ws | ForEach-Object { $_.X }) -join ', '
@@ -15,27 +16,31 @@ Write-Host "Building egw.exe..."
 & $GoExe -C $BuildDir build -o egw.exe ./cmd/egw/
 if ($LASTEXITCODE -ne 0) { throw "go build egw failed; nothing deployed" }
 
-foreach ($w in $ws) {
-    Stop-Service $w.Service -ErrorAction SilentlyContinue
-    $svc = Get-Service $w.Service -ErrorAction SilentlyContinue
-    if ($svc -and $svc.Status -ne 'Stopped') {
-        Write-Host "Waiting for $($w.Service) to stop..."
-        $svc.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(15))
+# A failure from here to the start loop (stop timeout, egw.exe still locked, a config copy) starts the
+# gateways that were running again before the script throws, so a failed deploy never leaves them down.
+$running = Select-EgwRunningServices @($ws | ForEach-Object { Get-Service $_.Service -ErrorAction SilentlyContinue })
+Invoke-EgwWithServiceRestore -Services $running -Action {
+    foreach ($w in $ws) {
+        Stop-Service $w.Service -ErrorAction SilentlyContinue
+        $svc = Get-Service $w.Service -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -ne 'Stopped') {
+            Write-Host "Waiting for $($w.Service) to stop..."
+            $svc.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(15))
+        }
     }
-}
-Start-Sleep -Seconds 2
 
-Copy-Item "$BuildDir\egw.exe" "$InstallDir\egw.exe" -Force
-foreach ($w in $ws) {
-    $dir = Join-Path $InstallDir $w.X
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    Copy-Item $w.ConfigFile "$dir\config.yaml"     -Force
-    Copy-Item $w.OpsFile    "$dir\operations.yaml" -Force
-    # Trim trailing whitespace (Go's yaml.v3 parser rejects it)
-    foreach ($f in @("$dir\config.yaml", "$dir\operations.yaml")) {
-        $txt = Get-Content $f -Raw -Encoding UTF8
-        $txt = $txt -replace '(?m)[\t ]+\r?$', ''
-        [IO.File]::WriteAllText($f, $txt, [Text.UTF8Encoding]::new($false))
+    Copy-EgwFileWithRetry -Source "$BuildDir\egw.exe" -Destination "$InstallDir\egw.exe"
+    foreach ($w in $ws) {
+        $dir = Join-Path $InstallDir $w.X
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        Copy-Item $w.ConfigFile "$dir\config.yaml"     -Force
+        Copy-Item $w.OpsFile    "$dir\operations.yaml" -Force
+        # Trim trailing whitespace (Go's yaml.v3 parser rejects it)
+        foreach ($f in @("$dir\config.yaml", "$dir\operations.yaml")) {
+            $txt = Get-Content $f -Raw -Encoding UTF8
+            $txt = $txt -replace '(?m)[\t ]+\r?$', ''
+            [IO.File]::WriteAllText($f, $txt, [Text.UTF8Encoding]::new($false))
+        }
     }
 }
 
