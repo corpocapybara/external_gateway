@@ -119,6 +119,7 @@ type IMAPServer struct {
 type IMAPOptions struct {
 	TLS        *tls.Config // implicit TLS listener; nil = plain text, no STARTTLS, insecure auth allowed
 	ValidToken string      // the only XOAUTH2 token accepted
+	FailFetch  bool        // every FETCH / UID FETCH answers NO
 }
 
 // IRs returns the XOAUTH2 initial responses received (one per AUTHENTICATE).
@@ -159,7 +160,32 @@ func (b recordingBackend) Login(info *imap.ConnInfo, user, pass string) (backend
 	b.s.mu.Lock()
 	b.s.logins = append(b.s.logins, [2]string{user, pass})
 	b.s.mu.Unlock()
-	return b.Backend.Login(info, user, pass)
+	u, err := b.Backend.Login(info, user, pass)
+	return b.s.wrapUser(u), err
+}
+
+// wrapUser makes the user's mailboxes fail FETCH when FailFetch is set.
+func (s *IMAPServer) wrapUser(u backend.User) backend.User {
+	if u == nil || !s.opts.FailFetch {
+		return u
+	}
+	return failFetchUser{u}
+}
+
+type failFetchUser struct{ backend.User }
+
+func (u failFetchUser) GetMailbox(name string) (backend.Mailbox, error) {
+	mb, err := u.User.GetMailbox(name)
+	if err != nil {
+		return nil, err
+	}
+	return failFetchMailbox{mb}, nil
+}
+
+type failFetchMailbox struct{ backend.Mailbox }
+
+func (failFetchMailbox) ListMessages(bool, *imap.SeqSet, []imap.FetchItem, chan<- *imap.Message) error {
+	return errors.New("fetch refused by test server")
 }
 
 // xoauth2Server is one AUTHENTICATE XOAUTH2 exchange. go-imap's server passes
@@ -192,7 +218,7 @@ func (x *xoauth2Server) Next(response []byte) ([]byte, bool, error) {
 		return nil, false, err
 	}
 	ctx := x.conn.Context()
-	ctx.User = user
+	ctx.User = x.s.wrapUser(user)
 	ctx.State = imap.AuthenticatedState
 	return nil, true, nil
 }
