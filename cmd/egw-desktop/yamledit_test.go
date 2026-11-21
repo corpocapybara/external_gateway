@@ -84,12 +84,16 @@ func TestPatchedRemovalAndNewBlock(t *testing.T) {
 }
 
 func TestPatchedRealConfigsUnchangedRoundTrip(t *testing.T) {
+	// The committed fixtures always; the checkout root's live (gitignored) files when present.
+	files := []string{filepath.Join(fixtureDir, "config."+fixtureWS+".yaml")}
+	fixtureOps, _ := filepath.Glob(filepath.Join(fixtureDir, "operations*.yaml"))
+	if len(fixtureOps) == 0 {
+		t.Fatalf("no operations*.yaml in %s", fixtureDir)
+	}
+	files = append(files, fixtureOps...)
 	configs, _ := filepath.Glob(filepath.Join("..", "..", "config.*.yaml"))
 	ops, _ := filepath.Glob(filepath.Join("..", "..", "operations.*.yaml"))
-	files := append(configs, ops...)
-	if len(files) == 0 {
-		t.Skip("no config.<ws>.yaml or operations.<ws>.yaml at the checkout root")
-	}
+	files = append(append(files, configs...), ops...)
 	for _, p := range files {
 		f, err := openYAML(p)
 		if err != nil {
