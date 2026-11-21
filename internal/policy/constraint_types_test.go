@@ -32,7 +32,7 @@ func TestConstraintTypeLoadErrors(t *testing.T) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	all := "    params:\n      fields: {type: list, default: [summary]}\n" +
+	all := "    params:\n      fields: {type: list, default: [summary]}\n      index: {type: string}\n" +
 		`    body_template: '{"fields":{{fields}}}'` + "\n    constraints:\n"
 	for _, name := range names {
 		all += "      - type: " + name + "\n"
@@ -41,6 +41,8 @@ func TestConstraintTypeLoadErrors(t *testing.T) {
 			all += "        allowed: [summary]\n"
 		case "jira_key_scope":
 			all += "        projects: $workspace.jira_projects\n"
+		case "kibana_index_scope":
+			all += "        indices: $workspace.kibana_indices\n"
 		}
 	}
 
@@ -113,8 +115,8 @@ func TestCheckConstraintsUnknownTypeFailsClosed(t *testing.T) {
 			t.Errorf("%s: no-effect type refused: %v", name, err)
 		}
 	}
-	if noEffect != 5 {
-		t.Errorf("checked %d no-effect types, want 5", noEffect)
+	if noEffect != 4 {
+		t.Errorf("checked %d no-effect types, want 4", noEffect)
 	}
 
 	// A type listed as checked but missing its case in CheckConstraints fails closed.

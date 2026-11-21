@@ -21,6 +21,8 @@ var constraintTypes = map[string]constraintKind{
 	"jql_scope":      constraintChecked,
 	"jira_fields":    constraintChecked,
 	"jira_key_scope": constraintChecked,
+	// Index scoped by the workspace kibana_indices globs (EG0021).
+	"kibana_index_scope": constraintChecked,
 
 	// A tag; PostgresReadOnlyConstraint.Check is a no-op.
 	"readonly": constraintMarker,
@@ -36,8 +38,6 @@ var constraintTypes = map[string]constraintKind{
 	// timeout; any other value in the YAML is ignored.
 	"max_rows":          constraintNoEffect,
 	"statement_timeout": constraintNoEffect,
-	// Not enforced (T0021).
-	"kibana_index_scope": constraintNoEffect,
 }
 
 // checkConstraintTypes refuses, at load time, a constraint whose type is
