@@ -1,6 +1,6 @@
 # Windows shell pitfalls (PowerShell 5.1, Git Bash, encoding)
 
-Complements the global CLAUDE.md (PowerShell UTF-8, Python cp1250, Bash `\\`, here-strings). Not repeated here.
+Complements the global core `~/.config/opencode/AGENTS.md` (loaded by both tools: PowerShell UTF-8, Python cp1250) and, for Claude Code only, `~/.claude/CLAUDE.md` (Bash `\\`, here-strings). Not repeated here.
 
 ## PowerShell
 - Never assume bash syntax, Linux path separators or GNU utilities. Check which shell you are in before writing a command.

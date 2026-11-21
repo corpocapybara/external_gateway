@@ -16,6 +16,11 @@ changed modules and of their callers, found by grep), whatever the risk; the ful
 touches what every test runs through (a shared core module, test helpers, the test runner) (user, 2026-11-11).
 No code touched (docs, rules, todos): no tests.
 
+**UI work is tested in the real app** (user, 2026-11-11). For a change a user sees in an app's UI, the check in the
+running app, started the way its user starts it, over its real backend and data, is part of testing and counts for
+more than code tests. Unit tests of the logic do not replace it, nor does a browser harness or a stubbed backend.
+If the app cannot be run, the work is not tested: list the check as open and ask the owner.
+
 ## Review loops converge
 
 **Review loops converge in two or three rounds** (user, 2026-11-10; T0048/T0054 refinement took 7 rounds, one or
