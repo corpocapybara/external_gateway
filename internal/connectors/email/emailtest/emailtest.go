@@ -119,7 +119,7 @@ type IMAPServer struct {
 type IMAPOptions struct {
 	TLS        *tls.Config // implicit TLS listener; nil = plain text, no STARTTLS, insecure auth allowed
 	ValidToken string      // the only XOAUTH2 token accepted
-	FailFetch  bool        // every FETCH / UID FETCH answers NO
+	FailFetch  bool        // every message listing (FETCH, UID FETCH) answers NO
 }
 
 // IRs returns the XOAUTH2 initial responses received (one per AUTHENTICATE).
@@ -184,7 +184,10 @@ func (u failFetchUser) GetMailbox(name string) (backend.Mailbox, error) {
 
 type failFetchMailbox struct{ backend.Mailbox }
 
-func (failFetchMailbox) ListMessages(bool, *imap.SeqSet, []imap.FetchItem, chan<- *imap.Message) error {
+// ListMessages closes ch as the backend contract requires (go-imap's server
+// writer drains it until closed), then fails.
+func (failFetchMailbox) ListMessages(_ bool, _ *imap.SeqSet, _ []imap.FetchItem, ch chan<- *imap.Message) error {
+	close(ch)
 	return errors.New("fetch refused by test server")
 }
 
