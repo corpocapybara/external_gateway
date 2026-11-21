@@ -15,13 +15,13 @@ none
 ## P2
 
 - EG0021 · refined · server · M — kibana_index_scope is never enforced: kibana.search can query any index
-- EG0054 · draft · server · S — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
 - EG0071 · draft · connectors · S — Data race in email connector ReadMessage (go test -race fails TestEmailResponseShaped, TestEmailResponseNoAllowFieldsUnchanged)
 - EG0072 · draft · deploy · S — deploy/update.ps1 leaves every egw service stopped when the egw.exe copy fails (file still locked)
 
 ## P3
 
 - EG0051 · draft · server · S — allow_fields ignored by local-service, postgres and jira-worklog connectors
+- EG0054 · draft · cli-tools · M — Test notes from the project review: affected-subset command, speed tiers, live-config tests, untested critical paths (review R3-R6)
 - EG0069 · draft · server · XS — Config validation: agents[].id must be non-empty and unique (audit agent_id is now the config id, EG0064)
 
 ## Externally blocked
