@@ -93,6 +93,11 @@ func TestKibanaIndexScopeElements(t *testing.T) {
 		{" logstash-nth-stg-1", false},
 		{"<logstash-nth-stg-{now}>", false},
 		{"logstash-nth-stg-1#x", false},
+		{"logstash-nth-stg-1%2Fx", false},
+		{"logstash-nth-stg-1&x", false},
+		{"logstash-nth-stg-1>x", false},
+		{"logstash-nth-stg-1+x", false},
+		{"logstash-nth-stg-1 x", false},
 		{long, true},
 		{long + "a", false},
 	}
