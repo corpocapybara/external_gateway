@@ -343,3 +343,21 @@ func TestSearchEmptyMailbox(t *testing.T) {
 		t.Fatalf("empty mailbox: got %v, %v; want no messages and no error", msgs, err)
 	}
 }
+
+func TestReadMessageNotFound(t *testing.T) {
+	srv := emailtest.StartIMAP(t, emailtest.IMAPOptions{TLS: testTLS.Server, ValidToken: "tok"})
+	seedInbox(t, srv.Backend)
+	_, err := NewConnector().ReadMessage(imapCfg(srv.Port, AuthOAuth2, "tok"), "INBOX", 999)
+	if err == nil || err.Error() != "message uid 999 not found" {
+		t.Fatalf("ReadMessage(999) err = %v, want message uid 999 not found", err)
+	}
+}
+
+func TestReadMessageFetchError(t *testing.T) {
+	srv := emailtest.StartIMAP(t, emailtest.IMAPOptions{TLS: testTLS.Server, ValidToken: "tok", FailFetch: true})
+	seedInbox(t, srv.Backend)
+	_, err := NewConnector().ReadMessage(imapCfg(srv.Port, AuthOAuth2, "tok"), "INBOX", 2)
+	if err == nil || !strings.HasPrefix(err.Error(), "fetching uid 2: ") || !strings.Contains(err.Error(), "fetch refused by test server") {
+		t.Fatalf("ReadMessage(2) err = %v, want fetching uid 2: ... fetch refused by test server", err)
+	}
+}

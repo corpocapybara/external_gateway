@@ -182,11 +182,23 @@ func (c *Connector) ReadMessage(cfg *Config, mailbox string, uid uint32) (map[st
 	section := &imap.BodySectionName{}
 	items := []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchInternalDate, section.FetchItem()}
 	messages := make(chan *imap.Message, 1)
+	done := make(chan error, 1)
 	go func() {
-		imapClient.UidFetch(seqset, items, messages)
+		done <- imapClient.UidFetch(seqset, items, messages)
 	}()
 
-	msg := <-messages
+	// Drain the channel and wait for UidFetch before any return, so the
+	// deferred Logout never runs while the fetch is still using the client
+	// (EG0071). Literals are buffered, so bodies stay readable afterwards.
+	var msg *imap.Message
+	for m := range messages {
+		if msg == nil {
+			msg = m
+		}
+	}
+	if err := <-done; err != nil {
+		return nil, fmt.Errorf("fetching uid %d: %w", uid, err)
+	}
 	if msg == nil || msg.Envelope == nil {
 		return nil, fmt.Errorf("message uid %d not found", uid)
 	}
