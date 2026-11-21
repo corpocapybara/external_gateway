@@ -152,6 +152,26 @@ func TestCopyWithRetryMissingSource(t *testing.T) {
 	assertContent(t, dst, "old")
 }
 
+// A missing destination folder is a DirectoryNotFoundException, an IOException subclass: it must
+// fail at once, not wait out the lock timeout.
+func TestCopyWithRetryMissingDestinationDir(t *testing.T) {
+	t.Parallel()
+	src, dst := copyPair(t)
+	target := filepath.Join(filepath.Dir(dst), "no-such-dir", "egw.exe")
+
+	start := time.Now()
+	out, err := runPS(t, "Copy-EgwFileWithRetry -Source '"+src+"' -Destination '"+target+"' -TimeoutSeconds 30")
+	if err == nil {
+		t.Fatalf("helper succeeded into a missing folder:\n%s", out)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("missing folder took %v, want under 5 s (no retry)", d)
+	}
+	if strings.Contains(out, "retrying") {
+		t.Errorf("missing folder was retried:\n%s", out)
+	}
+}
+
 func TestSelectRunningServices(t *testing.T) {
 	t.Parallel()
 	out, err := runPS(t, `$in = @(

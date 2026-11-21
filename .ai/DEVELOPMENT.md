@@ -13,7 +13,9 @@ Builds produce statically-linked `.exe` files in the project root. Go modules ar
 
 ## Deploying
 
-`deploy\update.ps1` rebuilds `egw.exe` (`-GoExe` overrides the Go path; a build error stops it before any service is touched), copies it + configs + operations to `C:\Program Files\external_gateway\` and restarts both services. **Must run as Administrator.**
+`deploy\update.ps1` rebuilds `egw.exe` (`-GoExe` overrides the Go path; a build error stops it before any service is touched), copies it + configs + operations to `C:\Program Files\external_gateway\` and restarts every workspace's service. **Must run as Administrator.**
+
+The `egw.exe` copy retries for up to 30 s while the file is still locked (the SCM can report a service Stopped before its process lets go of the image). If anything between stopping the services and starting them fails (a stop timeout, the lock outlasting the retry, a config copy), the script starts again the gateways that were running before the deploy and then exits non-zero. They come back on the old `egw.exe`, or with a partly copied config set when a config copy failed; rerun the deploy once the cause is fixed. Helpers and their tests: `deploy/deploylib.ps1`, `go test ./deploy/`.
 
 The script does NOT patch configs — all config values are the source of truth in the repo.
 
