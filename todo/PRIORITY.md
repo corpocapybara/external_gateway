@@ -14,7 +14,6 @@ none
 
 ## P2
 
-- EG0021 · in-testing · server · M — kibana_index_scope is never enforced: kibana.search can query any index
 - EG0072 · draft · deploy · S — deploy/update.ps1 leaves every egw service stopped when the egw.exe copy fails (file still locked)
 
 ## P3
