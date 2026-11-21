@@ -14,7 +14,7 @@ none
 
 ## P2
 
-- EG0072 · draft · deploy · S — deploy/update.ps1 leaves every egw service stopped when the egw.exe copy fails (file still locked)
+none
 
 ## P3
 
