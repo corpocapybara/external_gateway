@@ -23,6 +23,7 @@ func (r *repo) hist(args ...string) (int, string, string) {
 // gitIn runs git in the repo with stdin and returns its trimmed stdout.
 func (r *repo) gitIn(stdin string, args ...string) string {
 	r.t.Helper()
+	skipSlow(r.t)
 	cmd := exec.Command("git", args...)
 	cmd.Dir = r.dir
 	cmd.Stdin = strings.NewReader(stdin)
@@ -235,6 +236,7 @@ func TestHistoryTreeWalk(t *testing.T) {
 
 // TestHistoryNoRepo covers usage and error exits without a repository.
 func TestHistoryNoRepo(t *testing.T) {
+	skipSlow(t)
 	dir := t.TempDir()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {

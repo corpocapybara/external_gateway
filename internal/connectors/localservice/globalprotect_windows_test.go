@@ -13,6 +13,7 @@ import (
 // adapter is up. The PanGPS service runs whether or not the VPN is connected,
 // so a service-based check reported "connected" with the adapter disabled.
 func TestCheckGlobalProtectMatchesPANGPAdapter(t *testing.T) {
+	skipSlow(t)
 	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
 		"@(Get-NetAdapter -InterfaceDescription 'PANGP Virtual Ethernet Adapter*' -ErrorAction SilentlyContinue | Where-Object Status -eq 'Up').Count").Output()
 	if err != nil {
@@ -27,5 +28,13 @@ func TestCheckGlobalProtectMatchesPANGPAdapter(t *testing.T) {
 	t.Logf("PANGP adapter up per Get-NetAdapter: %v; check: connected=%v (%s)", wantUp, status.Connected, status.Details)
 	if status.Connected != wantUp {
 		t.Errorf("connected = %v, want %v (PANGP adapter up per Get-NetAdapter)", status.Connected, wantUp)
+	}
+}
+
+// skipSlow skips a PowerShell-spawning test in the fast tier (go test -short); see .ai/DEVELOPMENT.md "Running tests".
+func skipSlow(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("slow tier: spawns PowerShell; runs without -short")
 	}
 }
