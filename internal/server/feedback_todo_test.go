@@ -197,9 +197,18 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// skipSlow skips a git-spawning test in the fast tier (go test -short); see .ai/DEVELOPMENT.md "Running tests".
+func skipSlow(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("slow tier: spawns git; runs without -short")
+	}
+}
+
 // gitRepo is a fresh copy of the named template repo ("unborn", "plain" or "adopted").
 func gitRepo(t *testing.T, kind string) string {
 	t.Helper()
+	skipSlow(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not found")
 	}

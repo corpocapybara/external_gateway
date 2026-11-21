@@ -50,8 +50,17 @@ func newRepo(t *testing.T, terms string) *repo {
 	return newRepoAt(t, t.TempDir(), terms)
 }
 
+// skipSlow skips a git-spawning test in the fast tier (go test -short); see .ai/DEVELOPMENT.md "Running tests".
+func skipSlow(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("slow tier: spawns git; runs without -short")
+	}
+}
+
 func newRepoAt(t *testing.T, dir, terms string) *repo {
 	t.Helper()
+	skipSlow(t)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -508,6 +517,7 @@ func TestHookChainEndToEnd(t *testing.T) {
 }
 
 func TestRepoWiring(t *testing.T) {
+	skipSlow(t)
 	top, err := git(".", "rev-parse", "--show-toplevel")
 	if err != nil {
 		t.Fatal(err)

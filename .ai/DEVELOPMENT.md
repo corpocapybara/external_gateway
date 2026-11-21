@@ -70,6 +70,23 @@ running `egw-<ws>` services.
   ask the owner to do those steps.
 - Record the run as `test.kind=e2e` with `runner` and `steps` (`.ai/shared/rules/todo.md` "Test runs").
 
+## Running tests
+
+**Affected subset.** For a changed package, test it and every package whose `Deps`, `TestImports` or
+`XTestImports` contain it (set `$p` to the changed package's import path):
+
+```powershell
+$p = 'github.com/external_gateway/internal/config'; go test -count=1 (go list -f '{{.ImportPath}} {{join .Deps " "}} {{join .TestImports " "}} {{join .XTestImports " "}}' ./... | Where-Object { " $_ " -match " $([regex]::Escape($p)) " } | ForEach-Object { ($_ -split ' ')[0] })
+```
+
+It misses a package whose test imports a helper package that in turn imports the changed one (test imports'
+own deps are not listed); add such a package by hand.
+
+**Speed tiers.** `go test -short ./...` is the fast tier. The slow tier is the tests that spawn git or PowerShell
+(leakcheck's repo tests, `internal/server`'s `gitRepo` feedback tests, localservice's PANGP adapter check): each
+package's `skipSlow` test helper skips them with a "slow tier" message under `-short`. The pre-merge run is
+without `-short`.
+
 ## Testing operations
 
 No unit tests exist. Testing is done manually via `Invoke-RestMethod` against the running gateway.

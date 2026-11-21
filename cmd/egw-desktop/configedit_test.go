@@ -49,18 +49,23 @@ func TestRealWorkspacePick(t *testing.T) {
 	}
 }
 
-// testApp copies the first real workspace's config and every operations file (the catalog reads them all) from
-// the checkout root into a temp build dir, and returns the app and that workspace.
+// fixtureDir holds the committed example workspace the tests run on, so they run in worktrees too (EG0054 R5).
+var fixtureDir = filepath.Join("..", "..", "config.example")
+
+// fixtureWS is the workspace of fixtureDir's config.<ws>.yaml.
+const fixtureWS = "globex"
+
+// testApp copies the fixture workspace's config and every fixture operations file (the catalog reads them all)
+// into a temp build dir, and returns the app and that workspace.
 func testApp(t *testing.T) (*app, string) {
 	t.Helper()
-	root := filepath.Join("..", "..")
-	ws, ok := realWorkspace(root)
-	if !ok {
-		t.Skip("no config.<ws>.yaml with an operations.<ws>.yaml at the checkout root")
+	ws := fixtureWS
+	ops, _ := filepath.Glob(filepath.Join(fixtureDir, "operations*.yaml"))
+	if len(ops) == 0 {
+		t.Fatalf("no operations*.yaml in %s", fixtureDir)
 	}
-	ops, _ := filepath.Glob(filepath.Join(root, "operations*.yaml"))
 	dir := t.TempDir()
-	for _, src := range append(ops, filepath.Join(root, "config."+ws+".yaml")) {
+	for _, src := range append(ops, filepath.Join(fixtureDir, "config."+ws+".yaml")) {
 		data, err := os.ReadFile(src)
 		if err != nil {
 			t.Fatal(err)
@@ -206,7 +211,7 @@ func TestCustomOperationValidation(t *testing.T) {
 
 func TestDisableAndEnableSite(t *testing.T) {
 	a, ws := testApp(t)
-	// The test runs on the real config, so pick a site that is enabled there now.
+	// The test runs on the fixture config, so pick a site that is enabled there now.
 	cfg, err := loadConfig(a.repoConfigPath(ws))
 	if err != nil {
 		t.Fatal(err)
@@ -253,7 +258,10 @@ func TestDisableAndEnableSite(t *testing.T) {
 	if cfg, _ = loadConfig(a.repoConfigPath(ws)); cfg.Workspaces[workspaceKey(ws, cfg)].Sites[site].Disabled {
 		t.Fatal("enable left the flag in place")
 	}
-	original, _ := os.ReadFile(filepath.Join("..", "..", "config."+ws+".yaml"))
+	original, err := os.ReadFile(filepath.Join(fixtureDir, "config."+ws+".yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if after, _ := os.ReadFile(a.repoConfigPath(ws)); string(after) != string(original) {
 		r, ad := changedLines(string(original), string(after))
 		i := 0
