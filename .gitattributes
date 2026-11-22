@@ -1,3 +1,4 @@
 todo/** text eol=lf
 handovers/** text eol=lf
 .ai/shared/** text eol=lf
+todo/attachments/** -text
