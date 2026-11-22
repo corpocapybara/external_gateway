@@ -6,10 +6,10 @@ One todo = one file `todo/<ID>.md`. `todo/PRIORITY.md` lists every open todo in 
 then `order`, then id). Work from the repo's main checkout, never inside a worktree.
 
 **The tool is available** when the `todo` command is on PATH (a shim that runs
-`python -I -X utf8 C:/dev/_tools/todo/todo.py`; run it from your own folder, e.g. `todo list`). Then edit todos and
+`python -I -X utf8 C:/dev/shared/todo/todo.py`; run it from your own folder, e.g. `todo list`). Then edit todos and
 handovers **only** through it (`todo list|show|new|set|move|…`); never by hand or with plain git. `todo <cmd> --help`
 prints each command's options and examples; **DESIGN.md**, cited below by section, is the tool's design
-(`C:/dev/_tools/todo/DESIGN.md`): what the tool checks, refuses and prints is there, not here.
+(`C:/dev/shared/todo/DESIGN.md`): what the tool checks, refuses and prints is there, not here.
 **CLI edits** (`set move block unblock`) are pending: written to the working tree, not committed; `new` and
 `subtask` commit at once. Master gets a `todo:` commit only on creation, on a **park** (the claim released by
 `todo work clear`, a handover or the session's end, or `owner_question` set or cleared, `external_blocker` set)
@@ -21,7 +21,7 @@ running**; **without the tool** see the last section.
 **From another repo** only `todo new --repo <repo>` writes (a draft; `todo list --inbox` there shows it; DESIGN.md 15).
 Into a **non-git target** it is one write at once (id from `todo/_counter`, no commit, no queue); `todo split
 --to-repo` (run from the home repo) writes a non-git target's parts as one nogit write (DESIGN.md 15, 16; design
-`C:/dev/_tools/todo/docs/design/nogit-cli-writes.md`). **Read another store** with `todo show ID --repo <repo>` /
+`C:/dev/shared/todo/docs/design/nogit-cli-writes.md`). **Read another store** with `todo show ID --repo <repo>` /
 `todo list --repo <repo>`, never by opening its `todo/*.md` or `_config.yaml`.
 
 ## States
@@ -48,6 +48,10 @@ for this session. Refused: another session holds it: stop and report (an orchest
 (`--takeover`) or clear another holder's only on the brief's or the owner's word, or when that session is gone;
 "needs --session": carry on without the claim. **When the step is done** (the todo moved on) **or the session stops
 working on it**, release it with `todo work clear ID` so the next session can assign it (DESIGN.md 17).
+**A to-the-end run** (the owner or the brief says "to the end", deliver or finish it; owner 2026-11-21) assigns with
+`todo assign ID --to-end`: the claim then survives step ends while the session works or waits on background work
+(no re-assign after a move); it ends when a turn ends with nothing pending, on an API error (e.g. a usage limit), or
+with the session: a desktop session once archived or deleted, a terminal session when its process exits.
 `todo assign ID --worktree` also checks out the todo's branch (default `agent/<id>`) in `.worktrees/<ID>` and records
 it in the `branch` field (TD0360).
 
@@ -76,12 +80,12 @@ returns PASS with no open **blocking** finding lets the todo move to `refined`; 
 go to the design step, and a finding naming a missing test or an unproven acceptance item is blocking. Rounds follow
 the core rule "Review loops converge" (`.ai/shared/rules/core.md`): round 1 is a full pass (each acceptance item checked for traceability,
 checkability against the code and a named test; stress-style acceptance moves to an opt-in script), later rounds
-verify the fixes only. Every critic brief states "round N of max 3" and, from round 2, carries the finding ledger
+verify the fixes only. Every critic brief states "round N" and, from round 2, carries the finding ledger
 and the diff (bigger cap: about 40 tool calls, 500 words; a blocking defect in unchanged text is "missed in round
-1"). Never start a round 4: open blocking findings after round 3 go to the owner as questions. A round counts only
+1"). There is no round limit: until a round is green, fix and run the next round. A round counts only
 when the critic ends with `checked: …`; what it did not check goes to a continuation critic in the same round.
 Record the move as `todo move ID refined --evidence refine_review.result=passed --evidence refine_review.rounds=N
---note "..."` (refused without it). The note names the rounds, every rejected finding and `risk: high (<reasons>)`
+--evidence refine_review.lanes=scope,tests --note "..."` (refused without it). The note names the rounds, every rejected finding and `risk: high (<reasons>)`
 or `risk: low`, and ends with the **design verdict** (owner 2026-11-11): `design: needed (<which point below
 holds>)` or `design: not needed (<why none holds>)`, by the no-design test below. When not needed, the refining
 session sets `design=none` and moves the todo on to `designed` at once (that move's note repeats the reason).
@@ -97,8 +101,19 @@ takes the core map's (lane map, `.ai/shared/rules/core.md`) one-lane or no-panel
 finding classes. The code-review lane briefs are `.ai/shared/rules/review-lanes.md` (T0097): run a lane as the
 installed `review-<lane>` agent, else as a read-only agent briefed with that lane's section.
 **Lane names**: `review.lanes` accepts only the names in the store's `review_lanes` (`todo/_config.yaml`; plus
-`none` alone); any other value is refused. The high-risk panel's adversarial challenge is the lane `adversarial`
+`none` alone); any other value (e.g. a bracketed `[scope]`) is refused, in the moves below as `lane-names`. The high-risk panel's adversarial challenge is the lane `adversarial`
 (owner 2026-11-19): record it in `review.lanes`; a store whose `review_lanes` lacks it adds it there first.
+**Recorded and checked** (TD0280, owner 2026-11-21): the critic lanes go in `refine_review.lanes` and
+`design_review.lanes` (*code and scope* as `scope`, *tests and edge cases* as `tests`; `none` is not a lane there).
+An agent's forward move into `refined` (note names the risk and the design verdict), `designed` (design not none) or
+`reviewed` is refused when its lanes do not fit size and risk as above; the refusal names the rule. A justified
+exception: rerun with `--override "<reason>"` after ID STATE; every miss is logged for the daily review.
+**Spawn check** (TD0437, owner 2026-11-21): the same moves also need, in the claiming session's Claude or opencode
+transcript, a spawned agent naming the todo id per claimed lane (reviewed: agent type `review-<lane>` or the lane in
+its description; refined/designed: as many refine/design spawns as the lane need above, 1 for an S todo with
+risk low; TD0451), else `spawn-review` / `spawn-refine` /
+`spawn-design`; a transcript that cannot be read is `spawn-unverified`. Both refuse like the checks above.
+`TODO_SPAWN_CHECK=off` is for tests only: it skips the check and logs the skip.
 
 ### No design
 
@@ -269,9 +284,13 @@ the app could not be run, the todo does not move to `tested`: set `owner_questio
 the owner.
 
 ## Found work
-A worker that finds new work outside its todo lists it in its closing report: title, why, proposed acceptance.
-The orchestrator creates the todo (`draft`) from that report. Scope found inside a todo never widens that todo's
-frozen acceptance; it becomes a new todo.
+A small finding is fixed in the todo's own branch, never a new todo (core rule "Small findings are fixed along the
+way", owner 2026-11-21): the worker fixes it with its test, and names it under "Fixed along the way" in the commit
+and closing report. The frozen acceptance stays as it is; the fix rides along and the review lanes cover it.
+A small finding that needs one or two owner answers is still fixed there: ask, keep working, fix it once answered.
+Only bigger found work (or one that sits in files another session is editing) goes into the closing report: title,
+why, proposed acceptance. The orchestrator creates one todo (`draft`) for the lot from that report. Such scope
+never widens the todo's frozen acceptance.
 
 ## Handovers
 Handovers live at `handovers/<descr>_<YYYY-MM-DD>.md` in the main checkout. Create one with
@@ -313,6 +332,7 @@ todo check
 ```
 todo assign T0042
 todo assign T0042 --worktree
+todo rules in-testing
 ```
 ```
 todo handover new parser-fix --todo T0042 --branch agent/t0042-crlf

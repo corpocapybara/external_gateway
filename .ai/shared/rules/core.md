@@ -38,7 +38,10 @@ two new findings each, because capped critics reported the first few and stopped
   each fix landed and the changed text adds no blocking defect, and does not re-review unchanged text or reopen
   dispositioned findings.
   A blocking defect it still sees in unchanged text is reported as "missed in round 1".
-- After round 3 still fails, stop: put the open blocking findings to the owner, don't start round 4.
+- No round limit (owner 2026-11-21): while a round is not green, fix and run another round. Only a finding that
+  needs an owner decision goes to the owner; keep looping on everything else. From round 4 on, write a
+  `REVIEW-LOOP round N: <why it is still not green>` line into the todo note (or the closing report when there is
+  no todo), so long loops can be found and investigated later.
 
 ## Review-lane map
 

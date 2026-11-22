@@ -134,7 +134,7 @@ Token SHAs in config (`agents[].token_sha256`). Gateway hashes Bearer token and 
 
 ## ToDo
 
-- Open work lives in `todo/` (one file per todo; `todo/PRIORITY.md` gives the order), written only through the ToDo CLI (`python -I -X utf8 C:/dev/_tools/todo/todo.py … --repo C:/dev/apps/external_gateway`, or the `todo` shim; not Claude Task tools; by hand only while the tool is down), under the rule `.ai/shared/rules/todo.md`.
+- Open work lives in `todo/` (one file per todo; `todo/PRIORITY.md` gives the order), written only through the ToDo CLI (`python -I -X utf8 C:/dev/shared/todo/todo.py … --repo C:/dev/apps/external_gateway`, or the `todo` shim; not Claude Task tools; by hand only while the tool is down), under the rule `.ai/shared/rules/todo.md`.
 - Todo ids use the EG prefix (EG plus four digits); older commits, notes and branches use T-numbered ids for the same todos.
 
 ## Briefing worktree-isolated subagents

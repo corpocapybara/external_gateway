@@ -115,8 +115,9 @@ You are the **scope** review lane. Your question: is it the right change, and wa
 - Stay in your lane; a finding for another lane gets one line, not an investigation.
 
 ### Check
-- **Smallest diff:** anything the ticket doesn't need (a refactor, a rename, an unrelated fix) is flagged to split
-  out.
+- **Smallest diff:** anything the ticket doesn't need (a refactor, a rename, a bigger unrelated fix) is flagged to
+  split out. A small fix named under "Fixed along the way" in the commit or brief is in scope (core rule "Small
+  findings are fixed along the way"): review it like the rest, never flag it to split out.
 - **In the story:** trace every behaviour change to a line of the ticket or an acceptance criterion; anything you
   can't find there is a finding.
 - **AC map:** for each acceptance criterion, the code that meets it, "met by other merged work" (name it), or "not

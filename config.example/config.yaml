@@ -30,7 +30,7 @@ secret_store:
 # does not run), before that appended to the legacy to-do list file todo_path (default: in todo_repo).
 #feedback:
 #  todo_repo: "C:\\dev\\apps\\external_gateway"
-#  todo_tool: "C:\\dev\\_tools\\todo\\todo.py"
+#  todo_tool: "C:\\dev\\shared\\todo\\todo.py"
 #  todo_python: "C:\\Python313\\python.exe"   # required, absolute (services run as LocalSystem)
 #  todo_bucket: "feedback"                        # required, a bucket of todo_repo's todo/_config.yaml
 

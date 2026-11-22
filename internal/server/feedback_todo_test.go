@@ -526,7 +526,7 @@ func todoCheck(t *testing.T, repo string) {
 	t.Helper()
 	tool := os.Getenv("TODO_TOOL")
 	if tool == "" {
-		tool = "C:/dev/_tools/todo/todo.py"
+		tool = "C:/dev/shared/todo/todo.py"
 	}
 	py, err := exec.LookPath("python")
 	if _, serr := os.Stat(tool); err != nil || serr != nil {
