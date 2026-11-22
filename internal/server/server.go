@@ -1195,8 +1195,16 @@ func shapeResponse(status int, body []byte, allowFields []string) []byte {
 	if len(allowFields) == 0 || status >= 400 {
 		return body
 	}
+	// UseNumber keeps integers above 2^53 (e.g. postgres bigint ids) exact; the
+	// shaper copies values as they are. Trailing data after the value makes the
+	// body non-JSON, as json.Unmarshal would refuse it.
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
 	var jsonData interface{}
-	if err := json.Unmarshal(body, &jsonData); err != nil {
+	if err := dec.Decode(&jsonData); err != nil {
+		return body
+	}
+	if _, err := dec.Token(); err != io.EOF {
 		return body
 	}
 	shaper := redact.NewResponseShaper(allowFields)

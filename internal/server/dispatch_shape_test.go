@@ -35,6 +35,8 @@ func TestDispatchShapesBody(t *testing.T) {
 		{"error unshaped", true, 200, pgBody, boom, allow, pgBody, true},
 		{"non-JSON unshaped", true, 200, "plain text", nil, allow, "plain text", false},
 		{"shape false", false, 200, pgBody, nil, allow, pgBody, false},
+		{"bigint id exact", true, 200, `{"rows":[{"id":9007199254740993,"x":1.50}],"count":1}`, nil, allow, `{"count":1,"rows":[{"id":9007199254740993}]}`, false},
+		{"trailing data unshaped", true, 200, pgBody + " junk", nil, allow, pgBody + " junk", false},
 	}
 	for _, c := range cases {
 		d := connectorDispatch{shape: c.shape, run: stub(c.status, c.body, c.err)}
