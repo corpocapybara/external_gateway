@@ -318,6 +318,23 @@ func TestWorklogReportWeek(t *testing.T) {
 
 // Every search page and Tempo page is read: one issue and one worklog per page
 // must give the same totals as the unpaged report.
+// A jira-worklog op's allow_fields shapes its body in dispatch (EG0051).
+func TestWorklogAllowFields(t *testing.T) {
+	_, s, ws, _ := worklogFixture(t)
+	params := map[string]interface{}{"period": "week", "date": "2026-11-12"}
+	op := &policy.Operation{ID: "jira.worklog_report", Connector: "jira-worklog", Site: "jira", Path: "report",
+		Response: policy.ResponsePolicy{AllowFields: []string{"week.logged_hours"}}}
+	if _, body, err := s.dispatchConnector(ws, op, params, "acme"); err != nil || string(body) != `{"week":{"logged_hours":8}}` {
+		t.Errorf("shaped: %s, %v", body, err)
+	}
+	op.Response.AllowFields = nil
+	_, raw, err := s.dispatchConnector(ws, op, params, "acme")
+	_, direct, err2 := s.executeJiraWorklog(ws, op, params, "acme")
+	if err != nil || err2 != nil || string(raw) != string(direct) || !strings.Contains(string(raw), `"days"`) {
+		t.Errorf("unshaped: %v %v, dispatch %s != connector %s", err, err2, raw, direct)
+	}
+}
+
 func TestWorklogReportFollowsPages(t *testing.T) {
 	f, _, _, run := worklogFixture(t)
 	f.paged = true
