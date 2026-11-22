@@ -18,7 +18,6 @@ none
 
 ## P3
 
-- EG0051 · tested · server · S — allow_fields ignored by local-service, postgres and jira-worklog connectors
 - EG0069 · draft · server · XS — Config validation: agents[].id must be non-empty and unique (audit agent_id is now the config id, EG0064)
 
 ## Externally blocked
