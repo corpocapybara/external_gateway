@@ -1322,17 +1322,8 @@ func (s *Server) executeMcpConnector(ws *config.Workspace, op *policy.Operation,
 		return callResp.StatusCode, nil, fmt.Errorf("mcp error: %s", rpcErrMsg)
 	}
 
-	body := []byte(result)
-	if len(op.Response.AllowFields) > 0 {
-		var jsonData map[string]interface{}
-		if err := json.Unmarshal(body, &jsonData); err == nil {
-			shaper := redact.NewResponseShaper(op.Response.AllowFields)
-			if filtered, err := json.Marshal(shaper.Shape(jsonData)); err == nil {
-				body = filtered
-			}
-		}
-	}
-	return callResp.StatusCode, body, nil
+	// allow_fields is applied by connectorDispatch.exec (shape entry, EG0051).
+	return callResp.StatusCode, []byte(result), nil
 }
 
 // resolveMcpAuthHeader builds the Authorization header for an MCP site from the
@@ -1503,25 +1494,28 @@ func (s *Server) executePostgresConnector(ws *config.Workspace, op *policy.Opera
 	return 200, body, nil
 }
 
+// queryService runs `sc query <name>` for the local-service STATUS method; a
+// variable so tests can stub the Windows service query.
+var queryService = func(name string) ([]byte, error) {
+	return exec.CommandContext(context.Background(), "sc", "query", name).Output()
+}
+
 func (s *Server) executeLocalServiceConnector(ws *config.Workspace, op *policy.Operation, params map[string]interface{}) ([]byte, error) {
-	tunnelName, _ := params["tunnel"].(string)
-	if tunnelName == "" {
-		tunnelName = "vpn1"
-	}
-
-	tunCfg := s.cfg().GetTunnel(tunnelName)
-	if tunCfg == nil {
-		return nil, fmt.Errorf("tunnel %s not configured", tunnelName)
-	}
-
 	switch op.Method {
 	case "STATUS":
+		tunnelName, _ := params["tunnel"].(string)
+		if tunnelName == "" {
+			tunnelName = "vpn1"
+		}
+		tunCfg := s.cfg().GetTunnel(tunnelName)
+		if tunCfg == nil {
+			return nil, fmt.Errorf("tunnel %s not configured", tunnelName)
+		}
 		if _, ok := ws.Sites[op.Site]; !ok {
 			return nil, fmt.Errorf("site %s not found", op.Site)
 		}
 		svcName := fmt.Sprintf("WireGuardTunnel$%s", tunCfg.Tunnel)
-		cmd := exec.CommandContext(context.Background(), "sc", "query", svcName)
-		output, err := cmd.Output()
+		output, err := queryService(svcName)
 		if err != nil {
 			return nil, fmt.Errorf("service query failed: %v", err)
 		}
@@ -1534,8 +1528,15 @@ func (s *Server) executeLocalServiceConnector(ws *config.Workspace, op *policy.O
 		})
 	case "TEST":
 		host, _ := params["host"].(string)
-		portStr, _ := params["port"].(string)
-		port, _ := strconv.Atoi(portStr)
+		// An int param arrives as the JSON number the handler decoded (float64);
+		// a numeric string is still accepted.
+		var port int
+		switch v := params["port"].(type) {
+		case float64:
+			port = int(v)
+		case string:
+			port, _ = strconv.Atoi(v)
+		}
 		if host == "" || port == 0 {
 			return nil, fmt.Errorf("host and port required")
 		}
@@ -1543,10 +1544,10 @@ func (s *Server) executeLocalServiceConnector(ws *config.Workspace, op *policy.O
 		conn, err := net.DialTimeout("tcp", target, 5*time.Second)
 		if err != nil {
 			return json.Marshal(map[string]interface{}{
-				"host":     host,
-				"port":     port,
+				"host":      host,
+				"port":      port,
 				"reachable": false,
-				"error":    err.Error(),
+				"error":     err.Error(),
 			})
 		}
 		conn.Close()

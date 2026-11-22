@@ -70,7 +70,7 @@ sets `MaxBodyBytes`; a larger body fails with "response exceeds N bytes". Redire
 
 ### Response shaping (wired)
 
-If an operation defines `response.allow_fields`, the server applies `ResponseShaper` after receiving the upstream response. The JSON body is unmarshalled, filtered to only the allowed fields (dot-notation supported), and re-marshalled. Non-JSON responses pass through unchanged. See `internal/redact/hook.go`.
+If an operation defines `response.allow_fields`, the server shapes the success body of every connector with `shapeResponse` (`internal/server/server.go`, using `ResponseShaper` from `internal/redact/hook.go`): the JSON body is unmarshalled, filtered to only the allowed fields (dot-notation and `[]` array paths), and re-marshalled. A top-level array is shaped element by element, dropping non-object items. Error bodies (upstream status >= 400 or a connector error) and non-JSON bodies pass through unchanged. http-rest, form-session and email shape inside the connector; postgres, local-service, jira-worklog and mcp are shaped by `connectorDispatch.exec` (`shape` entries in `internal/server/dispatch.go`, EG0051). executeOp wraps only a JSON object; any other body, such as a shaped top-level array from mcp, reaches the agent as `upstream_body`.
 
 ### Cross-tenant isolation
 

@@ -1274,8 +1274,9 @@ operations:
         default: vpn1
     response:
       allow_fields:
-        - tunnels[].name
-        - tunnels[].status
+        - tunnel
+        - type
+        - connected
 
   wireguard.test:
     connector: local-service
@@ -1291,3 +1292,4 @@ operations:
     response:
       allow_fields:
         - reachable
+        - error
