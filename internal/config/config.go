@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -272,6 +273,17 @@ func (c *Config) Validate() error {
 	}
 	if len(c.Agents) == 0 {
 		return fmt.Errorf("no agents defined")
+	}
+	// The audit agent_id is agents[].id (EG0064), so it must be set and unique (EG0069).
+	seenID := make(map[string]int, len(c.Agents))
+	for i, agent := range c.Agents {
+		if strings.TrimSpace(agent.ID) == "" {
+			return fmt.Errorf("agents[%d] has no id", i)
+		}
+		if j, dup := seenID[agent.ID]; dup {
+			return fmt.Errorf("agents[%d]: duplicate agent id %q (also agents[%d])", i, agent.ID, j)
+		}
+		seenID[agent.ID] = i
 	}
 	for _, agent := range c.Agents {
 		if agent.TokenSHA == "" {
