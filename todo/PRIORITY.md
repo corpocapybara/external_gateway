@@ -18,7 +18,7 @@ none
 
 ## P3
 
-- EG0069 · draft · server · XS — Config validation: agents[].id must be non-empty and unique (audit agent_id is now the config id, EG0064)
+none
 
 ## Externally blocked
 
