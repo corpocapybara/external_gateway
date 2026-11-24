@@ -14,7 +14,7 @@ none
 
 ## P2
 
-- EG0073 · draft · unset · S — Apply ToDo tool changes to this repo's docs
+none
 
 ## P3
 
