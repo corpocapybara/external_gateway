@@ -14,7 +14,9 @@ prove its point; stress runs and measurements go in an opt-in script. A needed s
 is not evidence). Before the merge, run once every test that could exercise a changed file (the tests of the
 changed modules and of their callers, found by grep), whatever the risk; the full suite only when the change
 touches what every test runs through (a shared core module, test helpers, the test runner) (user, 2026-11-11).
-No code touched (docs, rules, todos): no tests.
+Keep a run's full output in a file (`tee` it to a temp or scratch folder, never only through a filter such as `grep`
+or `tail`; a runner that already logs it in full needs none), read a failure from that file, and never rerun a suite
+to find a failure (user, 2026-11-23). No code touched (docs, rules, todos): no tests.
 
 **UI work is tested in the real app** (user, 2026-11-11). For a change a user sees in an app's UI, the check in the
 running app, started the way its user starts it, over its real backend and data, is part of testing and counts for
@@ -52,6 +54,13 @@ acceptance criteria, diff, risk profile, selected lanes, and ≤ 3 key files per
 - Docs-only, isolated test-only, and one-line config changes: no formal panel; author evidence plus lightweight
   verification by the primary assistant (architect).
 - Trivial, isolated production change: one relevant independent lane.
+- **Small todo** (owner 2026-11-23, T0250): size S or smaller, risk low, under 150 changed lines; the S case of
+  the next tier, with both lanes in one agent. One refine (and design) critic covering both critic lanes, its
+  description saying "refine" (or "design") and the todo id, with a round 2 only after a blocking finding; one
+  combined correctness+tests code-review lane (one agent, its description naming both lanes and the todo id); a
+  verifier only after a blocking finding. The other tiers apply instead when the change is high risk (the last
+  tier; touching another bucket counts), changes agent instructions (AGENTS.md, CLAUDE.md, the shared rules in
+  `.ai`), hooks or agent settings, or has 150 changed lines or more.
 - Under 150 changed lines and not high risk (below): correctness and tests only (user, 2026-11-05).
 - Normal behavior or multi-file change: select relevant lanes; behavior changes normally include correctness and
   tests, add scope for broad diffs/requirement risk, and add design for ownership/interface/structural risk.
