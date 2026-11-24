@@ -264,8 +264,11 @@ satisfies the test phase (enforced at the move into `tested`; `none`: record `no
 --evidence review.signoff=owner`; enforced, TD0172). Ask the owner in chat, then run the move with `--evidence
 review.signoff=owner` and the OK quoted in `--note` (the owner's own path stays `--by human`). The approval guard
 denies that call first and prints the sentence `Sign off T0042 "<title>" (state in-review, branch <branch|none>):
-reviewed`: paste it as is, wait for the owner's OK, rerun the call unchanged (TD0396; plain form only, which may carry `--override "<reason>"`, TD0449); touch the todo in between and the OK is stale (the
-sign-off move clears owner_question itself, TD0421). Paraphrase the
+reviewed`: paste it as is (or ask in the next-step box or an AskUserQuestion, where `Sign off T0042` is enough and
+"signed off" approves, TD0489), wait for the owner's OK, rerun the call unchanged (TD0396; plain form only, which may carry `--override "<reason>"`, TD0449); touch the todo in between and the OK is stale (the
+sign-off move clears owner_question itself, TD0421; the OK must be later than the todo's last write: a git store
+keeps its minute, a store without git uses the todo's latest `_log.jsonl second + 1 s` in that minute (none: the
+minute), so an OK after a same-minute write passes, TD0481). Paraphrase the
 OK in `--note` with no `$`, backticks, `%x%`, word starting `#` or doubled quotes (the guard denies those). The `note`
 of the flow entry is the project's own instruction.
 **Change a flow only with `todo flow set [--bucket B] PHASE.FIELD=VALUE ...`** (TD0314, DESIGN.md 2.3): it sets the
@@ -278,6 +281,8 @@ A todo that should not exist (empty umbrella, duplicate, superseded) is removed 
 `Remove T0042 "<title>" (…): <reason>`: paste it as is in a chat message, wait for the user's OK, then repeat the
 same call (approval in a subagent does not count). Use the plain command form only (no `bash -c`, `$(…)`,
 variables, no word starting with `#`). `git revert` of the removal commit brings a todo back.
+A help call passes the guard (TD0476): `todo remove`, `todo split` or the sign-off move with
+an exact `--help` or `-h`, in a plain command with no `--`, prints the help instead of being refused.
 
 ## Splitting a todo
 - A todo too big for one atomic change is split (DESIGN.md 4.8), every part with its size, the other fields carried:
@@ -316,7 +321,9 @@ are the same in every repo; only the priority levels come from that repo's `todo
    Grooming does not set `owner_question` (it stops forward moves).
 7. Have a critic try to break the plan first (core rule "Never present an unreviewed outcome"). Then apply every
    line it supports at once (each merge, removal, block, order and bucket change), except priority changes, and
-   `todo commit` (owner 2026-11-24). Priorities are the one thing asked: show the owner the todos grouped by kind
+   `todo commit` (owner 2026-11-24). Field, block and unblock changes go in bulk calls (`todo set --many -`,
+   `todo block --many -`, `todo unblock --many -`; TD0487): one call, one claim pass and one commit each, instead of
+   assign, set and work clear per todo. Priorities are the one thing asked: show the owner the todos grouped by kind
    (feature, bug, perf, tests, docs, tooling, investigation) with each proposed priority and its reason, apply what
    they answer with the `order` changes it implies (rule 5) and a dated owner note for the kind ranking, then
    `todo commit`. The skill `groom` runs this.
@@ -384,6 +391,17 @@ todo move T0042 in-review --commit
 ```
 ```
 todo block T0042 T0040
+```
+```
+todo set T0042,T0043 bucket=docs
+todo set --many - <<'EOF'
+T0042 order=1
+T0043 order=2
+EOF
+todo block --many - <<'EOF'
+T0042 T0040
+T0043 T0040
+EOF
 ```
 ```
 todo check
