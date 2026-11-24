@@ -18,7 +18,7 @@ none
 
 ## P3
 
-none
+- EG0075 · draft · ops-config · S — egw: restrict mcp.call to read-only Rovo MCP tools for the thp workspace
 
 ## Externally blocked
 
