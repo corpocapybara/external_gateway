@@ -68,6 +68,8 @@ orchestrator is the single writer during the wave. Refining means:
 1. Set every field: `priority` from the project's goals (`P!` for really important work, at most 5 open per repo,
    DESIGN.md 22; `P4` for trivial / nice-to-have work), `bucket` from the files it touches (replace `unset`), `size`.
    Decide the **risk**: high when it touches a public API, persistence/schema, concurrency or another bucket, else low.
+   In a store without git, set `work_repo` (the repo the work lands in, or `none`) unless the store config has a
+   default; an agent's move into `designed` is refused as `work-repo` without one (TD0488).
 2. Write acceptance as checkable outcomes (an observable behaviour, an exact test or command, a file). Each one
    traces to the todo's problem, and nothing goes beyond it.
 3. Check the claim against the code. Already implemented: say so with `file:line`. Duplicate or superseded:
@@ -166,7 +168,8 @@ the answers into `acceptance` (the design critics check them), and moves only wh
 
 Done is not a move target. `todo done --apply` deletes each `tested` todo whose work landed on the done branch (no
 `--apply`: a dry run; DESIGN.md 4.3). Work landed in another repo: first `todo set ID work_repo=<repo>`. Where the
-config says `announce: required`, done keeps a todo without `announce`; each deleted todo's announce (not `none`)
+config says `announce: required`, done keeps a todo without `announce`, and an agent's move into `tested` is
+refused as `announce` (set it before; TD0488); each deleted todo's announce (not `none`)
 becomes a line of `todo/CHANGES.md` (TD0442). Where it also says `contract_docs: fan_out`, `--apply` appends the
 run's `[contract]` lines to the docs draft of every other ToDo workspace, or creates one there (a busy git one gets
 them queued, `docs queued in <workspace>`, and applies them on its next clean write; TD0472, TD0473, DESIGN.md 4.3). With git, a non-merge commit subject on the todo's branch names its
@@ -273,7 +276,8 @@ OK in `--note` with no `$`, backticks, `%x%`, word starting `#` or doubled quote
 of the flow entry is the project's own instruction.
 **Change a flow only with `todo flow set [--bucket B] PHASE.FIELD=VALUE ...`** (TD0314, DESIGN.md 2.3): it sets the
 project's default flow, or bucket B's with `--bucket`, in one `todo: flow set` commit (an empty value clears the
-field); the ToDo-file guard denies a hand edit of `todo/_config.yaml`.
+field); the ToDo-file guard denies a hand edit of `todo/_config.yaml`. The store's default work repo is set the same
+way with `todo config set work_repo=<repo|none>` (empty removes it; git or not; TD0488, DESIGN.md 2.3).
 
 ## Removing a todo
 A todo that should not exist (empty umbrella, duplicate, superseded) is removed with `todo remove ID --reason "..."`
