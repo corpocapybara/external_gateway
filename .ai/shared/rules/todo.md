@@ -18,11 +18,14 @@ review, test, branch) stays out of git (DESIGN.md 4.0, 14.7). `todo commit` comm
 included, when another clone must see it. Every rule above the last section applies **only while the tool is
 running**; **without the tool** see the last section.
 
-**From another repo** only `todo new --repo <repo>` writes (a draft; `todo list --inbox` there shows it; DESIGN.md 15).
+**From another repo** only `todo new --repo <repo>` writes (a draft; `todo list --inbox` there shows it; DESIGN.md 15),
+except from the store config's `work_repo`, where every command with `--repo <store>` runs as from the store (T0219).
 Into a **non-git target** it is one write at once (id from `todo/_counter`, no commit, no queue); `todo split
 --to-repo` (run from the home repo) writes a non-git target's parts as one nogit write (DESIGN.md 15, 16; design
 `C:/dev/shared/todo/docs/design/nogit-cli-writes.md`). **Read another store** with `todo show ID --repo <repo>` /
 `todo list --repo <repo>`, never by opening its `todo/*.md` or `_config.yaml`.
+**Name another repo by its absolute path**: `todo <cmd> ID --repo C:/abs/repo`; never `cd X && todo` (after a `cd`
+the approval guard cannot tell which repo a relative `--repo` writes and refuses the call; TD0475).
 
 ## States
 `draft` → `refined` → `designed` → `in-progress` → `in-review` → `reviewed` → `in-testing` → `tested` → done.
@@ -47,7 +50,9 @@ Each move goes one step. Backward moves are allowed (`in-review` and later → `
 for this session. Refused: another session holds it: stop and report (an orchestrator skips it). Take a claim over
 (`--takeover`) or clear another holder's only on the brief's or the owner's word, or when that session is gone;
 "needs --session": carry on without the claim. **When the step is done** (the todo moved on) **or the session stops
-working on it**, release it with `todo work clear ID` so the next session can assign it (DESIGN.md 17).
+working on it**, release it with `todo work clear ID` so the next session can assign it (DESIGN.md 17). A session whose claim was
+released (a step end, a turn's end) runs `todo assign ID` again before it works on the todo; `move`, `set` and
+`split` refuse a session without a claim while another session holds the todo (TD0359).
 **A to-the-end run** (the owner or the brief says "to the end", deliver or finish it; owner 2026-11-21) assigns with
 `todo assign ID --to-end`: the claim then survives step ends while the session works or waits on background work
 (no re-assign after a move); it ends when a turn ends with nothing pending, on an API error (e.g. a usage limit), or
@@ -85,7 +90,8 @@ and the diff (bigger cap: about 40 tool calls, 500 words; a blocking defect in u
 1"). There is no round limit: until a round is green, fix and run the next round. A round counts only
 when the critic ends with `checked: …`; what it did not check goes to a continuation critic in the same round.
 Record the move as `todo move ID refined --evidence refine_review.result=passed --evidence refine_review.rounds=N
---evidence refine_review.lanes=scope,tests --note "..."` (refused without it). The note names the rounds, every rejected finding and `risk: high (<reasons>)`
+--evidence refine_review.lanes=scope,tests --note "..."` (refused without it; an S todo with risk low: one critic
+covering both lanes, T0250). The note names the rounds, every rejected finding and `risk: high (<reasons>)`
 or `risk: low`, and ends with the **design verdict** (owner 2026-11-11): `design: needed (<which point below
 holds>)` or `design: not needed (<why none holds>)`, by the no-design test below. When not needed, the refining
 session sets `design=none` and moves the todo on to `designed` at once (that move's note repeats the reason).
@@ -96,8 +102,10 @@ session sets `design=none` and moves the todo on to `designed` at once (that mov
 `risk: high`, gets two lanes in parallel in round 1 of every review (refinement, design and code review). In
 refinement and design they are *code and scope* (every caller by grep, every cited anchor resolved in the current
 tree) and *tests and edge cases* (a named test per acceptance item, failure paths, races); in code review it never
-takes the core map's (lane map, `.ai/shared/rules/core.md`) one-lane or no-panel tier, and `risk: high` takes its high-risk panel. An S todo with
-`risk: low` gets one critic. Round 2+ is one verifier on the round-1 model. Move notes give rounds, lanes and the r2+
+takes the core map's (lane map, `.ai/shared/rules/core.md`) one-lane or no-panel tier, and `risk: high` takes its high-risk panel. An S (or smaller) todo with
+`risk: low` gets one critic covering both critic lanes (still recorded `scope,tests`), and in code review the core
+map's small-todo tier: one combined correctness+tests lane (record `correctness,tests`), a verifier only after a
+blocking finding, unless that tier names a case that keeps the full set (T0250). Round 2+ is one verifier on the round-1 model. Move notes give rounds, lanes and the r2+
 finding classes. The code-review lane briefs are `.ai/shared/rules/review-lanes.md` (T0097): run a lane as the
 installed `review-<lane>` agent, else as a read-only agent briefed with that lane's section.
 **Lane names**: `review.lanes` accepts only the names in the store's `review_lanes` (`todo/_config.yaml`; plus
@@ -108,11 +116,12 @@ installed `review-<lane>` agent, else as a read-only agent briefed with that lan
 An agent's forward move into `refined` (note names the risk and the design verdict), `designed` (design not none) or
 `reviewed` is refused when its lanes do not fit size and risk as above; the refusal names the rule. A justified
 exception: rerun with `--override "<reason>"` after ID STATE; every miss is logged for the daily review.
-**Spawn check** (TD0437, owner 2026-11-21): the same moves also need, in the claiming session's Claude or opencode
-transcript, a spawned agent naming the todo id per claimed lane (reviewed: agent type `review-<lane>` or the lane in
-its description; refined/designed: as many refine/design spawns as the lane need above, 1 for an S todo with
-risk low; TD0451), else `spawn-review` / `spawn-refine` /
-`spawn-design`; a transcript that cannot be read is `spawn-unverified`. Both refuse like the checks above.
+**Spawn check** (TD0437, owner 2026-11-21): the same moves also need, in the Claude or opencode transcripts of the
+sessions that claimed the todo (every past claimer, so lanes run before a handover count; TD0458), a spawned
+agent naming the todo id per claimed lane (reviewed: agent type `review-<lane>` or the lane in its description;
+refined/designed: as many refine/design spawns as the lane need above, 1 for an S todo with risk low; TD0451),
+else `spawn-review` / `spawn-refine` / `spawn-design`; an unreadable transcript, while a lane is still missing, is
+`spawn-unverified`. Both refuse like the checks above.
 `TODO_SPAWN_CHECK=off` is for tests only: it skips the check and logs the skip.
 
 ### No design
@@ -142,6 +151,10 @@ anchor against the current tree; a line-number or unresolved anchor is blocking.
 design doc's `## Decisions in brief` first, then only the section a question needs: list the headings with
 `grep -n '^## ' <doc>` and read that heading's line range, or grep for the symbol or anchor. Never read a whole
 design doc for one fact; DESIGN.md is read the same way. Only writing or reviewing that design reads the whole doc.
+A brief that sends a subagent (worker, review lane or critic) to a design doc names by heading the sections it
+needs and tells it to list the headings with `grep -n '^## ' <doc>` and read only those line ranges, since a
+subagent does not load this rule (T0226: a worker briefed without them read a whole 36k design); a critic of that
+design is briefed to read it whole.
 
 ### Acceptance freeze
 
@@ -152,7 +165,16 @@ the answers into `acceptance` (the design critics check them), and moves only wh
 ### Done
 
 Done is not a move target. `todo done --apply` deletes each `tested` todo whose work landed on the done branch (no
-`--apply`: a dry run; DESIGN.md 4.3). Work landed in another repo: first `todo set ID work_repo=<repo>`.
+`--apply`: a dry run; DESIGN.md 4.3). Work landed in another repo: first `todo set ID work_repo=<repo>`. Where the
+config says `announce: required`, done keeps a todo without `announce`; each deleted todo's announce (not `none`)
+becomes a line of `todo/CHANGES.md` (TD0442). Where it also says `contract_docs: fan_out`, `--apply` appends the
+run's `[contract]` lines to the docs draft of every other ToDo workspace, or creates one there (a busy git one gets
+them queued, `docs queued in <workspace>`, and applies them on its next clean write; TD0472, TD0473, DESIGN.md 4.3). With git, a non-merge commit subject on the todo's branch names its
+id (`todo:`, `tasks:` and `docs:` subjects never count, DESIGN.md 4.3); an agent's move into `in-review` checks it
+as `commit-names` (not for a `work_repo` todo; TD0458). The todo's commits go on its own branch, never straight on the
+done branch: an agent's move into `in-review` is refused as `own-branch` when the branch tip is already on the done
+branch, and into `reviewed` when `review.head` is (a work repo too; a `branch` naming the done branch is exempt;
+TD0463, DESIGN.md 23).
 
 ## Who moves them
 The tools enforce the field and step rules above; the roles below are convention.
@@ -161,8 +183,11 @@ The tools enforce the field and step rules above; the roles below are convention
 - **Implementer** (the agent working on the todo: the orchestrator itself or a session it dispatched) **delivers it
   to the end** (owner 2026-11-10), without waiting for anyone: records the review lanes' and test verdicts as
   evidence (the tests run after rebasing onto master), merges the branch to master with `--no-ff` at once (standing
-  approval; no re-test on the merge, even if master moved), pushes (when there is a remote), runs
-  `todo done --apply`, then removes its worktree and branch; `todo deliver ID` does all of these from `tested`
+  approval; no re-test on the merge, even if master moved), pushes (when there is a remote), sets the changelog
+  line before `todo done` or `todo deliver` (`todo set ID announce="<what changed for users>"`, prefixed
+  `contract: ` when a command, option, field, rule or file format other projects use changes; `announce=none` for an
+  internal-only change), runs `todo done --apply`, then removes its worktree and branch (2 to 4 small todos together:
+  Batch delivery below); `todo deliver ID` does all of these from `tested`
   (from `reviewed` with `--test CMD`). It runs detached by default (TD0223): the run takes over the session's claim
   as a testing marker, so the implementer starts it, does not run `todo work clear`, and ends its turn (`--wait`
   runs it in the foreground). A failed run leaves a `failed` marker (and an owner_question when a step failed):
@@ -194,6 +219,9 @@ The tools enforce the field and step rules above; the roles below are convention
   changed design, a large diff) moves back to `in-progress` with the reason in the move note.
   When a review or test needs the owner's input, set `owner_question=<one line>`, ask in chat and keep working on
   what does not depend on it; once answered, clear it (`owner_question=`) and record the answer in the next move note.
+  Answer options go at its end as `Ship it? [options: Yes | Not yet]` (`\|`, `\]`, `\[`, `\\` inside a label): the
+  watchdog card then shows one button per option (an older watchdog or a label it would refuse: text only; DESIGN.md
+  19, TD0434).
   A sign-off (Flow rules) is the exception: ask in chat without setting it and clear one already set before asking,
   since an update after the OK makes that OK stale; the sign-off move clears one still set (TD0421).
   With the watchdog installed, `todo set`, `todo move` and a failed `todo deliver` step also send the question to
@@ -209,6 +237,24 @@ The tools enforce the field and step rules above; the roles below are convention
   the implementer records them.
 - **Owner** (human): may change frozen acceptance, jump states, and mark a todo done from the web page.
 
+### Batch delivery
+One session delivers 2 to 4 related todos together (T0251) when they share one store and one bucket, each is size S
+or smaller and risk low, and the combined diff stays under 150 changed lines. The author checks these (the page's
+Deliver N keeps only small draft or refined todos; nothing checks risk or diff size). Steps:
+- `todo assign ID --to-end` for each. Refine the drafts together under the small-todo tier: one critic over all of
+  them, its spawn description naming every id. Design none.
+- One branch `agent/<first id, lower case>-batch`: the first todo takes `todo assign ID --worktree BRANCH`, each
+  other `todo set ID branch=BRANCH` (never `--worktree`: git checks a branch out in one worktree only).
+- Each commit subject names every id it covers. One review over the combined diff: one spawn whose description
+  names every id and the lanes.
+- Each todo moves through `reviewed`, `in-testing` and `tested` on the same final tip; testing each on that tip is
+  the author's step (`done` checks only that the tip is on master).
+- One `--no-ff` merge to master and push, then one `todo done --apply` (it takes no id and finishes every merged
+  todo, each with its own entry), then `git worktree remove .worktrees/<first ID>` and `git branch -d BRANCH`.
+  Never `todo deliver`: it removes the branch after the first todo.
+- A todo that turns out risk high or bigger than S leaves the batch: `todo work clear ID`, deliver the rest, and
+  report it.
+
 ## Flow rules
 `todo assign ID` and `todo show ID` print the project's flow for the todo's bucket (`flow (<bucket|default>,
 <phase>):`; DESIGN.md 2.3). Read it at assign and follow it in each phase: `tests` is the kind of test run that
@@ -218,10 +264,13 @@ satisfies the test phase (enforced at the move into `tested`; `none`: record `no
 --evidence review.signoff=owner`; enforced, TD0172). Ask the owner in chat, then run the move with `--evidence
 review.signoff=owner` and the OK quoted in `--note` (the owner's own path stays `--by human`). The approval guard
 denies that call first and prints the sentence `Sign off T0042 "<title>" (state in-review, branch <branch|none>):
-reviewed`: paste it as is, wait for the owner's OK, rerun the call unchanged (TD0396; plain form only); touch the todo in between and the OK is stale (the
+reviewed`: paste it as is, wait for the owner's OK, rerun the call unchanged (TD0396; plain form only, which may carry `--override "<reason>"`, TD0449); touch the todo in between and the OK is stale (the
 sign-off move clears owner_question itself, TD0421). Paraphrase the
 OK in `--note` with no `$`, backticks, `%x%`, word starting `#` or doubled quotes (the guard denies those). The `note`
 of the flow entry is the project's own instruction.
+**Change a flow only with `todo flow set [--bucket B] PHASE.FIELD=VALUE ...`** (TD0314, DESIGN.md 2.3): it sets the
+project's default flow, or bucket B's with `--bucket`, in one `todo: flow set` commit (an empty value clears the
+field); the ToDo-file guard denies a hand edit of `todo/_config.yaml`.
 
 ## Removing a todo
 A todo that should not exist (empty umbrella, duplicate, superseded) is removed with `todo remove ID --reason "..."`
@@ -265,8 +314,12 @@ are the same in every repo; only the priority levels come from that repo's `todo
 6. The plan lists every todo that waits on an owner answer (a question in its body or `owner_question`) with the
    question; they are asked together with the plan, and each answer goes into the todo body as a dated owner note.
    Grooming does not set `owner_question` (it stops forward moves).
-7. Show the owner the plan (each merge, removal, block, priority, order and bucket change with its reason), apply it
-   only on their OK, then `todo commit`. Have a critic try to break the plan first (core rule "Never present an unreviewed outcome").
+7. Have a critic try to break the plan first (core rule "Never present an unreviewed outcome"). Then apply every
+   line it supports at once (each merge, removal, block, order and bucket change), except priority changes, and
+   `todo commit` (owner 2026-11-24). Priorities are the one thing asked: show the owner the todos grouped by kind
+   (feature, bug, perf, tests, docs, tooling, investigation) with each proposed priority and its reason, apply what
+   they answer with the `order` changes it implies (rule 5) and a dated owner note for the kind ranking, then
+   `todo commit`. The skill `groom` runs this.
 
 ## Test runs
 A worker brief forbids measurement runs and full-suite runs unless the todo is a perf todo: it runs only the affected
@@ -306,7 +359,8 @@ prunes a note once every todo it names is done (DESIGN.md 7).
 
 ## Command reference
 `todo <cmd> --help` prints the options and examples of every command (also `unblock attach fold bucket flow show
-deliver stats audit priority serve`); one example each:
+deliver stats audit priority serve`); one example each. Another repo: `todo <cmd> ID --repo C:/abs/repo`; never
+`cd X && todo`.
 
 ```
 todo new --title "Parser keeps CRLF" --bucket core --priority P2 --size S --acceptance "parse() keeps CRLF" --acceptance "Test: tests/test_parse.py test_crlf"
@@ -317,6 +371,11 @@ todo set T0042 acceptance="parse() keeps CRLF" acceptance="Test: tests/test_pars
 todo set T0042 --body-file - <<'EOF'
 First line of the body.
 Any number of lines, read from stdin.
+EOF
+todo set T0042 --acceptance-file - <<'EOF'
+parse() keeps CRLF (one acceptance item per paragraph; new takes the flag too)
+
+Test: tests/test_parse.py test_crlf
 EOF
 ```
 ```
