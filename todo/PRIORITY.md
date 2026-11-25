@@ -18,7 +18,7 @@ none
 
 ## P3
 
-none
+- EG0076 · draft · ops-config · S — egw: open notes from EG0075 (second workspace mcp.call, mcp dry-run test, live ops drift)
 
 ## Externally blocked
 
