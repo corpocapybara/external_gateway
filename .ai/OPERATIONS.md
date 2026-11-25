@@ -418,7 +418,7 @@ field names). The `jira.create` / `jira.edit` rows in the globex/acme tables bel
 | confluence.edit | http-rest | confluence | Update page (**write**) |
 | confluence.export | http-rest | confluence | Export page as rendered HTML |
 | mcp.tools | mcp | mcp | List Atlassian Rovo MCP tools (JSON-RPC `tools/list`) |
-| mcp.call | mcp | mcp | Invoke a Rovo MCP tool (`tools/call`) |
+| mcp.call | mcp | mcp | Invoke a Rovo MCP tool (`tools/call`). Read-only: `tool` is an enum of `getContentFormatGuide`, `getTeamworkGraphContext`, `getTeamworkGraphObject`; a write tool such as `addTeamworkGraphContext` (or any tool not listed) is refused 403 `rule:"validation"` before Rovo is called. A new Rovo tool needs a YAML line and a deploy (EG0075) |
 | gitlab.mr | http-rest | gitlab | Get merge request — **metadata only** (no diff) |
 | gitlab.mr_changes | http-rest | gitlab | Get MR **diff**: changed files + unified diff (the code). Use this, not `gitlab.mr`, when you need the changes. |
 | gitlab.mr_comments | http-rest | gitlab | Get MR comments |

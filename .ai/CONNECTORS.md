@@ -122,6 +122,10 @@ Speaks JSON-RPC 2.0 over MCP Streamable HTTP to an upstream MCP server (e.g. Atl
 - Performs the `initialize` handshake, captures the `Mcp-Session-Id` response header, then reuses it on the follow-up call.
 - Sends `Accept: application/json, text/event-stream`, so it handles both plain JSON and SSE responses.
 - Operations: `mcp.tools` (`tools/list`) and `mcp.call` (`tools/call`).
+- Restrict `mcp.call` to a tool allowlist by declaring its `tool` param as `type: enum` with `values:` (e.g. only
+  the upstream's read-only tools). Param validation then refuses any other tool name with 403 `rule:"validation"`
+  before the handshake starts, and the list fails closed when the server adds tools; `mcp.tools` still lists every
+  tool (EG0075, `TestMcpCallToolAllowlist`).
 
 ## Email Connector (`email`)
 
