@@ -18,7 +18,7 @@ none
 
 ## P3
 
-- EG0076 · draft · server · S — egw: open notes from EG0075 (second workspace mcp.call, mcp dry-run test, live ops drift)
+- EG0076 · in-review · server · S — egw: open notes from EG0075 (second workspace mcp.call, mcp dry-run test, live ops drift)
 
 ## Externally blocked
 
