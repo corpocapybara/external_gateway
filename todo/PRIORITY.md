@@ -6,7 +6,7 @@ same commit as the todo change (todo rules, section "Without the tool").
 
 ## P0
 
-none
+- EG0077 · draft · connectors · M — add ability to connect to edu.gdansk.pl
 
 ## P1
 
