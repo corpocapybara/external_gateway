@@ -1267,29 +1267,9 @@ func (s *Server) executeMcpConnector(ws *config.Workspace, op *policy.Operation,
 		headers["Authorization"] = authHeader
 	}
 
-	// 1. initialize — capture the session id.
-	initBody := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"egw","version":"1.0"}}}`)
-	initResp, err := s.httpClient.Execute(context.Background(), &connectors.Request{Method: "POST", Path: endpoint, Headers: headers, Body: initBody})
-	if err != nil {
-		return 0, nil, fmt.Errorf("mcp initialize failed: %w", err)
-	}
-	if initResp.StatusCode >= 400 {
-		return initResp.StatusCode, nil, fmt.Errorf("mcp initialize HTTP %d: %s", initResp.StatusCode, string(initResp.Body[:min(300, len(initResp.Body))]))
-	}
-	sessionID := headerLookup(initResp.Headers, "Mcp-Session-Id")
-
-	sessHeaders := map[string]string{}
-	for k, v := range headers {
-		sessHeaders[k] = v
-	}
-	if sessionID != "" {
-		sessHeaders["Mcp-Session-Id"] = sessionID
-	}
-
-	// 2. notifications/initialized (best-effort; server returns 202/no content).
-	_, _ = s.httpClient.Execute(context.Background(), &connectors.Request{Method: "POST", Path: endpoint, Headers: sessHeaders, Body: []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)})
-
-	// 3. tools/list or tools/call.
+	// The tools/list or tools/call body is built and checked before anything goes
+	// upstream: invalid arguments JSON is refused here instead of reaching the MCP
+	// server as a tools/call with params null after the handshake (EG0076).
 	var rpcBody []byte
 	if op.Path == "tools/list" {
 		rpcBody = []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
@@ -1313,10 +1293,42 @@ func (s *Server) executeMcpConnector(ws *config.Workspace, op *policy.Operation,
 		} else {
 			argsRaw = json.RawMessage("{}")
 		}
-		callParams, _ := json.Marshal(map[string]interface{}{"name": toolName, "arguments": argsRaw})
-		rpcBody, _ = json.Marshal(map[string]interface{}{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": json.RawMessage(callParams)})
+		if !json.Valid(argsRaw) {
+			return 0, nil, fmt.Errorf("mcp op %s: invalid arguments JSON", op.ID)
+		}
+		var merr error
+		rpcBody, merr = json.Marshal(map[string]interface{}{
+			"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+			"params": map[string]interface{}{"name": toolName, "arguments": argsRaw},
+		})
+		if merr != nil {
+			return 0, nil, fmt.Errorf("mcp op %s: building tools/call: %w", op.ID, merr)
+		}
 	}
 
+	// 1. initialize — capture the session id.
+	initBody := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"egw","version":"1.0"}}}`)
+	initResp, err := s.httpClient.Execute(context.Background(), &connectors.Request{Method: "POST", Path: endpoint, Headers: headers, Body: initBody})
+	if err != nil {
+		return 0, nil, fmt.Errorf("mcp initialize failed: %w", err)
+	}
+	if initResp.StatusCode >= 400 {
+		return initResp.StatusCode, nil, fmt.Errorf("mcp initialize HTTP %d: %s", initResp.StatusCode, string(initResp.Body[:min(300, len(initResp.Body))]))
+	}
+	sessionID := headerLookup(initResp.Headers, "Mcp-Session-Id")
+
+	sessHeaders := map[string]string{}
+	for k, v := range headers {
+		sessHeaders[k] = v
+	}
+	if sessionID != "" {
+		sessHeaders["Mcp-Session-Id"] = sessionID
+	}
+
+	// 2. notifications/initialized (best-effort; server returns 202/no content).
+	_, _ = s.httpClient.Execute(context.Background(), &connectors.Request{Method: "POST", Path: endpoint, Headers: sessHeaders, Body: []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)})
+
+	// 3. tools/list or tools/call (body built above).
 	callResp, err := s.httpClient.Execute(context.Background(), &connectors.Request{Method: "POST", Path: endpoint, Headers: sessHeaders, Body: rpcBody})
 	if err != nil {
 		return 0, nil, fmt.Errorf("mcp call failed: %w", err)
